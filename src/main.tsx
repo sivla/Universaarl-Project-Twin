@@ -1,114 +1,69 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { phases, type Artifact, type ProjectState } from './model';
+import { areas, parseRoute, projectUrl, type Area } from './navigation/routes';
+import type { Artifact, ProjectContext, ProjectState } from './model';
+import type { PublicProject } from './projects/registry';
 import './styles.css';
+import './theme/responsive.css';
 
-const kindOrder: Record<Artifact['kind'], number> = { milestone: 0, change: 1, epic: 2, story: 3, task: 4, architecture: 5, capability: 6, document: 7, evidence: 8 };
-const phaseLabels = { Strategize: 'Strategie', Initiate: 'Initiierung', Implement: 'Umsetzung', Prepare: 'Vorbereitung', Operate: 'Betrieb' } as const;
-const kindLabels: Record<Artifact['kind'], string> = { milestone: 'Meilenstein', epic: 'Epic', story: 'Story', task: 'Aufgabe', change: 'Änderung', capability: 'Fähigkeit', architecture: 'Architektur', document: 'Dokument', evidence: 'Nachweis' };
-const workstreamLabels: Record<string, string> = { Finance: 'Finanzen', Reporting: 'Berichtswesen', 'Delivery Readiness Testing and Adoption': 'Lieferbereitschaft, Tests und Einführung', 'Project Governance': 'Projektsteuerung' };
-const statusLabels: Record<string, string> = { planned: 'Geplant', deferred: 'Zurückgestellt', proposed: 'Vorgeschlagen', active: 'Aktiv', archived: 'Archiviert', approved: 'Freigegeben', passed: 'Bestanden', done: 'Erledigt', 'in review': 'In Prüfung', documented: 'Dokumentiert', unknown: 'Unbekannt', explicit: 'Explizit', 'w0 complete': 'W0 abgeschlossen', 'w0 passed': 'W0 bestanden' };
-const germanStatus = (status: string) => statusLabels[status.toLowerCase()] ?? status;
-const germanWorkstream = (workstream: string) => workstreamLabels[workstream] ?? workstream;
-const germanGap = (gap: string) => gap
-  .replace('Architecture baseline unknown:', 'Architektur-Baseline unbekannt:')
-  .replace('company experience', 'Unternehmenserfahrung')
-  .replace('complete German localization app inventory', 'vollständiges Inventar deutscher Lokalisierungs-Apps')
-  .replace('complete installed extension inventory', 'vollständiges Inventar installierter Erweiterungen')
-  .replace('complete feature inventory', 'vollständiges Funktionsinventar')
-  .replace('Project calendar and milestone dates are not normalized by the approved source contract.', 'Projektkalender und Meilensteintermine sind im freigegebenen Quellenvertrag nicht normalisiert.')
-  .replace('Meetings and decision chronology beyond evidenced Jira transitions are not normalized.', 'Meetings und Entscheidungsverläufe jenseits belegter Jira-Übergänge sind nicht normalisiert.')
-  .replace('Worklogs, rates, invoices and T&M data are intentionally outside the MVP source contract.', 'Arbeitsprotokolle, Verrechnungssätze, Rechnungen und T&M-Daten liegen bewusst außerhalb des MVP-Quellenvertrags.');
-const germanWarning = (warning: string) => warning.replace('Unresolved source references:', 'Nicht aufgelöste Quellreferenzen:').replace('Duplicate normalized artifact IDs:', 'Doppelte normalisierte Artefakt-IDs:');
+const labels: Record<Area, string> = { 'aktueller-stand': 'Aktueller Stand', projektverlauf: 'Projektverlauf', arbeit: 'Arbeit', planung: 'Planung', lieferung: 'Lieferung', abrechnung: 'Abrechnung', quellen: 'Quellen' };
+const phaseLabels: Record<string, string> = { Strategize: 'Strategie', Initiate: 'Initiierung', Implement: 'Umsetzung', Prepare: 'Vorbereitung', Operate: 'Betrieb' };
+const kindLabels: Record<string, string> = { epic: 'Epic', story: 'Story', task: 'Aufgabe', change: 'Änderung', capability: 'Fähigkeit', architecture: 'Architektur', document: 'Dokument', evidence: 'Nachweis' };
+const statusLabels: Record<string, string> = { approved: 'Freigegeben', planned: 'Geplant', deferred: 'Zurückgestellt', passed: 'Bestanden', active: 'Aktiv', archived: 'Archiviert', proposed: 'Vorgeschlagen', done: 'Erledigt', backlog: 'Backlog', ready: 'Bereit', 'in progress': 'In Arbeit', 'in review': 'In Prüfung', unknown: 'Unbekannt', unbekannt: 'Unbekannt', documented: 'Dokumentiert' };
+const displayStatus = (value: string) => statusLabels[value.toLowerCase()] ?? value;
+const unsupported: Record<Exclude<Area, 'aktueller-stand' | 'quellen'>, { title: string; text: string }> = {
+  projektverlauf: { title: 'Projektverlauf noch nicht unterstützt', text: 'Projektverlauf und historische Wiedergabe werden in diesem Stand noch nicht unterstützt.' },
+  arbeit: { title: 'Arbeitsansichten noch nicht unterstützt', text: 'Jira-Tafeln, Sprints und operative Arbeitsansichten folgen in einer späteren freigegebenen Änderung.' },
+  planung: { title: 'Planungsansichten noch nicht unterstützt', text: 'Gantt, Kalender und Meilensteinplanung sind in diesem Stand nicht enthalten.' },
+  lieferung: { title: 'Lieferungsansichten noch nicht unterstützt', text: 'Lieferungs- und Portfolioansichten werden erst auf Basis eines freigegebenen Quellenvertrags ergänzt.' },
+  abrechnung: { title: 'Abrechnung noch nicht unterstützt', text: 'Arbeitszeiten, Preise und Rechnungen sind nicht im aktuellen Quellenvertrag enthalten.' },
+};
+type Theme = 'system' | 'light' | 'dark';
+
+function useTheme() {
+  const [theme, setTheme] = useState<Theme>(() => { const saved = localStorage.getItem('twin-theme'); return saved === 'light' || saved === 'dark' ? saved : 'system'; });
+  useEffect(() => {
+    const media = matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => { document.documentElement.dataset.theme = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme; document.documentElement.dataset.themeMode = theme; };
+    apply(); media.addEventListener('change', apply); localStorage.setItem('twin-theme', theme); return () => media.removeEventListener('change', apply);
+  }, [theme]);
+  return [theme, setTheme] as const;
+}
 
 function App() {
-  const [state, setState] = useState<ProjectState>();
-  const [error, setError] = useState('');
-  const [selected, setSelected] = useState<Artifact>();
-  const [selectedImage, setSelectedImage] = useState<ProjectState['evidenceImages'][number]>();
-  const [stream, setStream] = useState('All');
-  const worldRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetch('/api/project-state').then(async (response) => {
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? 'Unknown source error');
-      return body;
-    }).then(setState).catch((reason: Error) => setError(reason.message));
-  }, []);
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setSelected(undefined); setSelectedImage(undefined); } };
-    window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close);
-  }, []);
-
-  const artifactIndex = useMemo(() => new Map(state?.artifacts.map((artifact) => [artifact.id, artifact]) ?? []), [state]);
-  const visibleStreams = stream === 'All' ? state?.workstreams ?? [] : [stream];
-  const jump = (phase: string) => worldRef.current?.querySelector<HTMLElement>(`[data-phase="${phase}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-  const nudge = (direction: number) => worldRef.current?.scrollBy({ left: direction * Math.min(window.innerWidth * .75, 720), behavior: 'smooth' });
-
-  if (error) return <main className="state-screen error" role="alert"><p>UABC / QUELLE NICHT VERFÜGBAR</p><h1>Blueprint konnte nicht gelesen werden.</h1><code>{error}</code><small>Konfiguration und Quelldaten prüfen. Es wird kein Ersatzstatus erzeugt.</small></main>;
-  if (!state) return <main className="state-screen loading"><span /><p>PROJEKT-ZWILLING</p><h1>SCHREIBGESCHÜTZTE QUELLE WIRD GELESEN</h1></main>;
-
-  const ReferenceList = ({ ids }: { ids: string[] }) => ids.length ? <div className="reference-list">{ids.map((id) => artifactIndex.has(id)
-    ? <button key={id} onClick={() => setSelected(artifactIndex.get(id))}>{id} ↗</button>
-    : <span key={id}>{id}</span>)}</div> : <p className="empty-value">Nicht erfasst</p>;
-
-  return <div className="shell">
-    <header>
-      <div className="brand"><b>UNIVERSAARL</b><span>PROJEKT / ZWILLING</span></div>
-      <div className="source" aria-label="Herkunft der Blueprint-Quelle"><i className={state.source.dirty ? 'dirty' : 'clean'} /><span>{state.source.pathLabel}</span><strong>{state.source.branch}</strong><code>{state.source.commit}</code><small>{state.source.dirty ? 'QUELLE MIT ÄNDERUNGEN' : 'SAUBERE QUELLE'} · NUR LESEN · {new Date(state.source.readAt).toLocaleString('de-DE')}</small></div>
-    </header>
-
-    <main>
-      <section className="world-intro">
-        <div><p>PROJEKTWELT / BELEGTES W0—W1</p><h1>NUR LESEN<br /><em>PROJEKTKARTE</em></h1></div>
-        <div className="metrics"><span><b>{state.stats.jira}</b> Jira-Vorgänge</span><span><b>{state.stats.capabilities}</b> Fähigkeiten</span><span><b>{state.stats.changes}</b> Änderungen</span><span><b>{state.stats.evidence}</b> Nachweise</span></div>
-      </section>
-
-      <section className="world-tools" aria-label="Navigation der Projektwelt">
-        <div className="phase-jumps">{phases.map((phase, index) => <button key={phase} onClick={() => jump(phase)}><span>0{index + 1}</span>{phaseLabels[phase]}</button>)}</div>
-        <div className="nudges"><button aria-label="Projektwelt nach links bewegen" onClick={() => nudge(-1)}>←</button><button aria-label="Projektwelt nach rechts bewegen" onClick={() => nudge(1)}>→</button></div>
-      </section>
-
-      <nav className="streams" aria-label="Filter für Arbeitsströme"><button className={stream === 'All' ? 'active' : ''} onClick={() => setStream('All')}>ALLE ARBEITSSTRÖME</button>{state.workstreams.map((name) => <button className={stream === name ? 'active' : ''} onClick={() => setStream(name)} key={name}>{germanWorkstream(name)}</button>)}</nav>
-
-      <section className="world" ref={worldRef} aria-label="Horizontale Projektwelt">
-        <div className="phase-row"><div className="corner">ARBEITSSTROM / PHASE</div>{phases.map((phase, index) => <div className="phase-head" data-phase={phase} key={phase}><span>0{index + 1}</span><h2>{phaseLabels[phase]}</h2></div>)}</div>
-        {visibleStreams.map((workstream) => <div className="lane" key={workstream}>
-          <button className="lane-name" onClick={() => setStream(workstream)}><span>ARBEITSSTROM</span>{germanWorkstream(workstream)}<small>{state.artifacts.filter((item) => item.workstream === workstream).length} Datensätze</small></button>
-          {phases.map((phase) => {
-            const matches = state.artifacts.filter((item) => item.workstream === workstream && item.phase === phase).sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind]);
-            const shown = stream === 'All' ? matches.slice(0, 5) : matches;
-            return <div className="cell" key={phase}>{shown.map((artifact) => <button className={`node kind-${artifact.kind} status-${artifact.status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} onClick={() => setSelected(artifact)} key={`${artifact.kind}-${artifact.id}`}>
-              <small>{kindLabels[artifact.kind]}{artifact.wave ? ` / ${artifact.wave}` : ''}</small><strong>{artifact.id}</strong><span>{artifact.title}</span><i title={`Quellstatus: ${artifact.status}`}>{germanStatus(artifact.status)}</i>
-            </button>)}{matches.length === 0 && <span className="no-record">—</span>}{matches.length > shown.length && <button className="more" onClick={() => setStream(workstream)}>+ {matches.length - shown.length} WEITERE</button>}</div>;
-          })}
-        </div>)}
-      </section>
-
-      <section className="chronology">
-        <div className="section-title"><p>QUELLENBELEGTE CHRONOLOGIE</p><h2>W0- / W1-EREIGNISSE</h2><span>{state.stats.history} Jira-Übergänge · keine abgeleiteten Daten</span></div>
-        <div className="event-strip">{state.history.map((event) => <button key={event.id} onClick={() => setSelected(artifactIndex.get(event.artifactId))}><time>{new Date(event.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</time><b>{event.wave} / {event.artifactId}</b><span>{germanStatus(event.from)} → {germanStatus(event.to)}</span></button>)}</div>
-      </section>
-
-      <section className="evidence-section">
-        <div className="section-title"><p>GEPRÜFTER VISUELLER NACHWEIS</p><h2>NACHWEISE,<br />KEINE DEKORATION.</h2><span>Identitätsmaskierte Screenshots der Quelle</span></div>
-        <div className="evidence-strip">{state.evidenceImages.map((item) => <button key={item.path} onClick={() => setSelectedImage(item)}><img src={`/api/evidence/${encodeURIComponent(item.path)}`} alt={`${item.title}, visueller Nachweis`} loading="lazy" /><span>{item.title}</span><small>{item.evidenceIds[0]}</small></button>)}</div>
-      </section>
-
-      <section className="gaps" id="data-gaps"><div><p>BEKANNTE LÜCKEN</p><h2>UNBEKANNT<br />BLEIBT UNBEKANNT.</h2></div><ol>{state.gaps.map((gap) => <li key={gap}>{germanGap(gap)}</li>)}</ol>{state.warnings.length > 0 && <div className="warnings"><b>HINWEISE ZUR QUELLE</b>{state.warnings.map((warning) => <span key={warning}>{germanWarning(warning)}</span>)}</div>}</section>
-    </main>
-
-    <footer><span>KEIN ZURÜCKSCHREIBEN / KEINE ERFUNDENEN STATUSWERTE / KEINE SPIELENTSCHEIDUNGEN</span><a href="#data-gaps">DATENLÜCKEN ANZEIGEN ↑</a></footer>
-
-    {selected && <div className="scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(undefined); }}><aside className="drawer" role="dialog" aria-modal="true" aria-label="Artefaktdetails">
-      <button className="close" onClick={() => setSelected(undefined)}>SCHLIESSEN ×</button><p>{kindLabels[selected.kind]} / {phaseLabels[selected.phase]} {selected.wave && `/ ${selected.wave}`}</p><h2>{selected.id}</h2><h3>{selected.title}</h3><span className="status" title={`Quellstatus: ${selected.status}`}>{germanStatus(selected.status)}</span>
-      <h4>BEGRÜNDUNG / BASIS</h4><p className="rationale">{selected.rationale || 'In der normalisierten Quelle ist keine Begründung erfasst.'}</p>
-      <h4>ABHÄNGIGKEITEN</h4><ReferenceList ids={selected.dependencies} /><h4>DOKUMENTE</h4><ReferenceList ids={selected.documents} /><h4>NACHWEISE</h4><ReferenceList ids={selected.evidence} />
-      <div className="source-path"><span>QUELLE</span><code>{selected.sourcePath}</code></div>
-    </aside></div>}
-    {selectedImage && <div className="lightbox" role="dialog" aria-modal="true" aria-label="Vorschau des Nachweises" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedImage(undefined); }}><button onClick={() => setSelectedImage(undefined)}>SCHLIESSEN ×</button><img src={`/api/evidence/${encodeURIComponent(selectedImage.path)}`} alt={`${selectedImage.title}, vollständiger Nachweis`} /><div><b>{selectedImage.title}</b><span>{selectedImage.evidenceIds.join(' · ')}</span></div></div>}
+  const [projects, setProjects] = useState<PublicProject[]>(); const [projectsError, setProjectsError] = useState('');
+  const [route, setRoute] = useState(() => parseRoute(location.pathname, [])); const [state, setState] = useState<ProjectState>(); const [stateError, setStateError] = useState('');
+  const [theme, setTheme] = useTheme(); const [moreOpen, setMoreOpen] = useState(false); const [selected, setSelected] = useState<Artifact>();
+  const moreButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { const controller = new AbortController(); fetch('/api/projects', { signal: controller.signal }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error('Projektliste nicht verfügbar.'); return body.projects as PublicProject[]; }).then((items) => { setProjects(items); if (location.pathname === '/' && items.length === 1) history.replaceState(null, '', projectUrl(items[0].id, 'aktueller-stand')); setRoute(parseRoute(location.pathname, items.map((item) => item.id))); }).catch((error: Error) => { if (error.name !== 'AbortError') setProjectsError(error.message); }); return () => controller.abort(); }, []);
+  useEffect(() => { const pop = () => projects && setRoute(parseRoute(location.pathname, projects.map((item) => item.id))); addEventListener('popstate', pop); return () => removeEventListener('popstate', pop); }, [projects]);
+  useEffect(() => { if (route.kind !== 'project') { setState(undefined); return; } const projectId = route.projectId; const controller = new AbortController(); setState(undefined); setStateError(''); setSelected(undefined); fetch(`/api/projects/${encodeURIComponent(projectId)}/state`, { signal: controller.signal }).then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.code === 'SOURCE_UNAVAILABLE' ? 'Die freigegebene Projektquelle ist nicht verfügbar.' : 'Projektzustand nicht verfügbar.'); return body as ProjectState; }).then((next) => { if (!controller.signal.aborted && route.kind === 'project' && route.projectId === projectId) setState(next); }).catch((error: Error) => { if (error.name !== 'AbortError') setStateError(error.message); }); return () => controller.abort(); }, [route]);
+  useEffect(() => { if (matchMedia('(min-width: 721px)').matches) setMoreOpen(false); const media = matchMedia('(min-width: 721px)'); const close = () => media.matches && setMoreOpen(false); media.addEventListener('change', close); return () => media.removeEventListener('change', close); }, []);
+  const navigate = (projectId: string, area: Area) => { history.pushState(null, '', projectUrl(projectId, area)); setRoute({ kind: 'project', projectId, area }); setMoreOpen(false); };
+  if (projectsError) return <StatusPage title="Projektliste nicht verfügbar" text={projectsError} />;
+  if (!projects) return <StatusPage title="Project Twin wird geladen" text="Die freigegebene Projektregistry wird gelesen." busy />;
+  if (route.kind === 'project-not-found') return <StatusPage title="Projekt nicht gefunden" text="Für diese Projekt-ID ist keine freigegebene Quelle registriert." />;
+  if (route.kind === 'area-not-found' || route.kind === 'root') return <StatusPage title="Ansicht nicht verfügbar" text="Die angeforderte Projektansicht ist nicht vorhanden." />;
+  const project = projects.find((item) => item.id === route.projectId)!;
+  const context: ProjectContext = { projectId: project.id, projectKey: project.key, projectName: project.name };
+  return <div className="app-shell">
+    <a className="skip-link" href="#main">Zum Hauptinhalt springen</a>
+    <Header context={context} projects={projects} area={route.area} navigate={navigate} theme={theme} setTheme={setTheme} />
+    <Sidebar context={context} active={route.area} navigate={navigate} />
+    <main id="main" tabIndex={-1}><div className="page-heading"><p>{context.projectKey} / {context.projectName}</p><h1>{labels[route.area]}</h1></div>{stateError ? <StatusPage title="Quelle nicht verfügbar" text={stateError} embedded /> : !state ? <StatusPage title="Projektstand wird geladen" text="Die freigegebene Quellen-Momentaufnahme wird gelesen." busy embedded /> : route.area === 'aktueller-stand' ? <CurrentState state={state} context={context} open={setSelected} /> : route.area === 'quellen' ? <Sources state={state} context={context} /> : <Unsupported area={route.area} />}</main>
+    <nav className="bottom-nav" aria-label="Mobile Hauptnavigation">{(['aktueller-stand', 'projektverlauf', 'arbeit'] as Area[]).map((area) => <button key={area} aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(context.projectId, area)}><span>{area === 'aktueller-stand' ? '◉' : area === 'projektverlauf' ? '↝' : '▦'}</span>{labels[area]}</button>)}<button ref={moreButton} aria-expanded={moreOpen} aria-controls="mobile-more" onClick={() => setMoreOpen(true)}><span>•••</span>Mehr</button></nav>
+    {moreOpen && <MobileMore context={context} projects={projects} active={route.area} navigate={navigate} theme={theme} setTheme={setTheme} close={() => { setMoreOpen(false); moreButton.current?.focus(); }} />}
+    {selected && <Detail artifact={selected} close={() => setSelected(undefined)} />}
   </div>;
 }
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+function Header({ context, projects, area, navigate, theme, setTheme }: { context: ProjectContext; projects: PublicProject[]; area: Area; navigate: (id: string, area: Area) => void; theme: Theme; setTheme: (value: Theme) => void }) { return <header className="topbar"><div className="brand"><strong>UNIVERSAARL</strong><span>PROJECT TWIN</span></div><label className="project-switcher">Projekt wechseln<select aria-label="Projekt wechseln" value={context.projectId} onChange={(event) => navigate(event.target.value, area)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {project.key}</option>)}</select></label><ThemeSelect theme={theme} setTheme={setTheme} /></header>; }
+function Sidebar({ context, active, navigate }: { context: ProjectContext; active: Area; navigate: (id: string, area: Area) => void }) { return <aside className="sidebar"><nav aria-label="Projektbereiche">{areas.map((area) => <button key={area} aria-current={active === area ? 'page' : undefined} onClick={() => navigate(context.projectId, area)}>{labels[area]}</button>)}</nav><p>NUR LESEN · {context.projectKey}</p></aside>; }
+function ThemeSelect({ theme, setTheme }: { theme: Theme; setTheme: (value: Theme) => void }) { return <label className="theme-select">Darstellung<select aria-label="Darstellung wählen" value={theme} onChange={(event) => setTheme(event.target.value as Theme)}><option value="system">System</option><option value="light">Hell</option><option value="dark">Dunkel</option></select></label>; }
+function MobileMore({ context, projects, active, navigate, theme, setTheme, close }: { context: ProjectContext; projects: PublicProject[]; active: Area; navigate: (id: string, area: Area) => void; theme: Theme; setTheme: (value: Theme) => void; close: () => void }) { const dialog = useRef<HTMLDivElement>(null); useEffect(() => { const focusable = () => [...dialog.current!.querySelectorAll<HTMLElement>('button,select')]; focusable()[0]?.focus(); const key = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); if (event.key === 'Tab') { const items = focusable(); const first = items[0]; const last = items.at(-1); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, [close]); return <div className="modal-scrim" role="presentation"><div id="mobile-more" className="more-dialog" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="more-title"><header><h2 id="more-title">Weitere Bereiche</h2><button onClick={close} aria-label="Menü schließen">×</button></header><label>Projekt wechseln<select aria-label="Projekt wechseln" value={context.projectId} onChange={(event) => navigate(event.target.value, active)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {project.key}</option>)}</select></label><ThemeSelect theme={theme} setTheme={setTheme} /><nav aria-label="Weitere Projektbereiche">{areas.slice(3).map((area) => <button key={area} aria-current={active === area ? 'page' : undefined} onClick={() => navigate(context.projectId, area)}>{labels[area]}</button>)}</nav></div></div>; }
+function CurrentState({ state, context, open }: { state: ProjectState; context: ProjectContext; open: (artifact: Artifact) => void }) { const visible = state.artifacts.slice(0, 18); return <><section className="snapshot-intro"><div><p>MOMENTAUFNAHME</p><h2>Aktueller Projektstand</h2><p>Momentaufnahme des freigegebenen Blueprint-Stands – keine historische Wiedergabe.</p></div><dl><dt>Projekt</dt><dd>{context.projectName}</dd><dt>Projekt-Key</dt><dd>{context.projectKey}</dd><dt>Quellen-Commit</dt><dd><code>{state.source.commit}</code></dd><dt>Eingelesen</dt><dd>{new Date(state.source.readAt).toLocaleString('de-DE')}</dd></dl></section><section className="summary-grid" aria-label="Aktuelle belegte Artefakte"><div><b>{state.stats.jira}</b><span>Jira-Vorgänge</span></div><div><b>{state.stats.capabilities}</b><span>Fähigkeiten</span></div><div><b>{state.stats.changes}</b><span>OpenSpec-Änderungen</span></div><div><b>{state.stats.evidence}</b><span>Prüfnachweise</span></div></section><section className="records"><header><div><p>BELEGTE ARTEFAKTE</p><h2>Aktuelle Momentaufnahme</h2></div><span>{state.artifacts.length} Datensätze</span></header><div className="record-list">{visible.map((artifact) => <button key={`${artifact.kind}-${artifact.id}`} onClick={() => open(artifact)}><code>{artifact.id}</code><span>{artifact.title}</span><small>{displayStatus(artifact.status)} · {artifact.workstream}</small></button>)}</div>{state.artifacts.length > visible.length && <p className="honest-note">Weitere {state.artifacts.length - visible.length} belegte Datensätze sind im normalisierten Zustand vorhanden.</p>}</section><section className="evidence"><header><p>NACHWEISE</p><h2>Quellgebundene Bildnachweise</h2></header>{state.evidenceItems.length ? <div className="evidence-grid">{state.evidenceItems.slice(0, 8).map((item) => <figure key={item.id}><img src={`/api/projects/${context.projectId}/evidence/${item.id}`} alt={item.title} /><figcaption>{item.title}</figcaption></figure>)}</div> : <p>Keine sicher auflösbaren PNG-Nachweise in der Momentaufnahme.</p>}</section><section className="gaps"><header><p>BEKANNTE DATENLÜCKEN</p><h2>Fehlendes bleibt sichtbar</h2></header><ul>{state.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul></section></>; }
+function Sources({ state, context }: { state: ProjectState; context: ProjectContext }) { const provenance = [...new Set(state.artifacts.map((artifact) => artifact.sourcePath))].slice(0, 12); return <section className="sources"><p>SICHERE QUELLENINFORMATION</p><h2>{context.projectName} · {context.projectKey}</h2><dl><dt>Registrierungs-ID</dt><dd>{context.projectId}</dd><dt>Registrierungsname</dt><dd>{context.projectName}</dd><dt>Projekt-Key</dt><dd>{context.projectKey}</dd><dt>Quellenzweig</dt><dd>{state.source.branch}</dd><dt>Vollständiger Commit</dt><dd><code>{state.source.commit}</code></dd><dt>Quellenstatus</dt><dd>{state.source.dirty ? 'Arbeitskopie mit Änderungen' : 'Saubere Momentaufnahme'}</dd><dt>Einlesezeit</dt><dd>{new Date(state.source.readAt).toLocaleString('de-DE')}</dd></dl><h3>Sichere repository-bezogene Provenienz</h3><ul>{provenance.map((entry) => <li key={entry}><code>{entry}</code></li>)}</ul>{state.warnings.length > 0 && <><h3>Quellenhinweise</h3><ul>{state.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></>}</section>; }
+function Unsupported({ area }: { area: Exclude<Area, 'aktueller-stand' | 'quellen'> }) { const item = unsupported[area]; return <section className="unsupported"><span aria-hidden="true">∅</span><p>NOCH NICHT UNTERSTÜTZT</p><h2>{item.title}</h2><p>{item.text}</p><small>Es werden keine Beispieldaten oder Ersatzwerte erzeugt.</small></section>; }
+function Detail({ artifact, close }: { artifact: Artifact; close: () => void }) { const ref = useRef<HTMLDivElement>(null); const trigger = useRef(document.activeElement as HTMLElement | null); useEffect(() => { ref.current?.querySelector<HTMLElement>('button')?.focus(); const key = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); }; addEventListener('keydown', key); return () => { removeEventListener('keydown', key); trigger.current?.focus(); }; }, [close]); return <div className="drawer-scrim" onMouseDown={(event) => event.target === event.currentTarget && close()}><div className="drawer" ref={ref} role="dialog" aria-modal="true" aria-labelledby="detail-title"><button className="drawer-close" onClick={close}>Schließen ×</button><p>{kindLabels[artifact.kind] ?? artifact.kind} · {phaseLabels[artifact.phase] ?? artifact.phase}</p><h2 id="detail-title">{artifact.id}</h2><h3>{artifact.title}</h3><dl><dt>Status</dt><dd>{displayStatus(artifact.status)}</dd><dt>Arbeitsstrom</dt><dd>{artifact.workstream}</dd><dt>Quelle</dt><dd><code>{artifact.sourcePath}</code></dd></dl><h4>Begründung</h4><p>{artifact.rationale || 'Nicht in der Quelle erfasst.'}</p></div></div>; }
+function StatusPage({ title, text, busy, embedded }: { title: string; text: string; busy?: boolean; embedded?: boolean }) { return <main className={`status-page ${embedded ? 'embedded' : ''}`} aria-busy={busy || undefined}><p>{busy ? 'WIRD GELADEN' : 'NICHT VERFÜGBAR'}</p><h1>{title}</h1><span>{text}</span></main>; }
+createRoot(document.getElementById('root')!).render(<App />);

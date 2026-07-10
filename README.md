@@ -1,16 +1,23 @@
 # Universaarl Project Twin
 
-Read-only visualization of the external Universaarl BC Blueprint. The Twin owns only adapters, the normalized and Zod-validated read model, UI, replay visualization, tests and its software OpenSpec. Blueprint truth remains external and is referenced by stable `UABC-*` IDs.
+Schreibgeschützte Project-Twin-App-Shell mit serverseitiger Projektregistry. Produktiv ist ausschließlich `universaarl` (`UABC`, Anzeigename `Universaarl`) registriert. Der Browser erhält weder den absoluten Quellenpfad noch Dateipfade von Nachweisen.
 
-## Source contract
+## Verträge
 
-The Node boundary reads only `architecture/`, `capabilities/`, `openspec/`, `atlassian/jira/`, `atlassian/confluence/` and curated PNG files plus the verification register below `evidence/`. Authentication state, tenant/token/secret material, traces and videos are excluded. The browser receives no absolute source path. There is no write route.
+- Kanonische UI-Routen: `/projekte/:projektId/:bereich`
+- Schreibgeschützte APIs: `GET /api/projects`, `GET /api/projects/:projectId/state`, `GET /api/projects/:projectId/evidence/:evidenceId`
+- `ProjectContext` bezeichnet das aktive Registry-Projekt.
+- `SourceSnapshot` bezeichnet den geladenen vollständigen Git-Commit samt Einlesezeit.
+- `ProjectTimeContext` ist für spätere fachliche Replay-/Stichtagsfunktionen reserviert und hier nicht implementiert.
 
-## Run
+Nachweise werden nur über opake, projektgebundene IDs ausgeliefert. Repository-relative Provenienz bleibt auf die vorhandenen Safe-Roots begrenzt. Es gibt keine Schreib-API.
 
-1. Copy `.env.example` to ignored `.env.local` and set the absolute `UABC_SOURCE_REPO` path.
-2. Run `npm install`.
-3. Run `npm run check`.
-4. Run `npm run dev` and open `http://127.0.0.1:4173`.
+## Lokal starten
 
-Local source paths, generated build output, browser traces, videos and authentication state remain ignored.
+1. `.env.example` nach `.env.local` kopieren und `UABC_SOURCE_REPO` auf eine freigegebene, eingefrorene Blueprint-Momentaufnahme setzen.
+2. `npm ci`
+3. `npm run check`
+4. `npm run dev`
+5. `http://127.0.0.1:4173/projekte/universaarl/aktueller-stand` öffnen.
+
+Projektverlauf, historische Wiedergabe, Tafeln, Sprints, Gantt, Kalender und Abrechnung sind bewusste Nicht-Ziele dieser Änderung und erscheinen als ehrliche deutsche Nicht-unterstützt-Zustände.

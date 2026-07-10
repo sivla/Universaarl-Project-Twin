@@ -1,0 +1,6 @@
+@media (min-width:721px) and (max-width:1000px){
+  :root{--sidebar:216px}
+  .sidebar button{font-size:initial;padding:12px 14px}
+  .sidebar button::first-letter{font-size:initial}
+  .sidebar p{display:block}
+}
