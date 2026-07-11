@@ -56,6 +56,7 @@ consumerRules: [Nur positivgelistete Pfade lesen.]
 artifacts:
   - { id: UABC-SRC-JIRA, kindId: jira-issues, path: atlassian/jira/issues/bc-basic.yaml, format: yaml, required: true }
   - { id: UABC-SRC-VER, kindId: verification-register, path: evidence/verification-register.yaml, selector: 'verifications[changeRef=deliver-bc-basic-customer-project]', format: yaml, required: true }
+  - { id: UABC-SRC-TEMPLATE, kindId: customer-data-template, path: project/bc-basic/customers.blank.csv, format: csv, required: true }
   - { id: UABC-SRC-OPTIONAL, kindId: confluence-page, path: atlassian/confluence/pages/optional.md, format: markdown, required: false }
 `);
   write(root, 'atlassian/jira/issues/bc-basic.yaml', `issues:
@@ -87,7 +88,9 @@ artifacts:
     type: automated-test
     evidence: Fremder Nachweis
 `);
+  write(root, 'project/bc-basic/customers.blank.csv', 'number;name;city\nC-10000;Musterkunde;Frankfurt\n');
   write(root, 'architecture/unreferenziert.yaml', 'ungueltig: [');
+  write(root, 'project/bc-basic/unreferenziert.csv', Buffer.from([0xff]));
   write(root, 'evidence/unreferenziert.png', validPng);
   commitAll(root, 'indexgebundene fixture'); return root;
 }
@@ -422,6 +425,7 @@ describe('indexgebundener project-data/v1-Vertrag', () => {
     const ticket = state.artifacts.find((item) => item.id === 'UABC-22'); const verification = state.artifacts.find((item) => item.id === 'UABC-VER-BCB-LOCAL-001');
     expect(ticket).toMatchObject({ effort: null, estimateHours: 2, actualHours: null, phase: null, wave: null, workstream: null });
     expect(verification).toMatchObject({ status: 'pending', rationale: null });
+    expect(state.artifacts.find((item) => item.id === 'UABC-SRC-TEMPLATE')).toMatchObject({ kind: 'document', title: 'customers.blank.csv', sourceType: 'customer-data-template', documentType: 'customer-data-template', sourcePath: 'project/bc-basic/customers.blank.csv' });
     expect(state.artifacts.some((item) => item.id === 'UABC-VER-FREMD-001')).toBe(false);
     expect(state.evidenceItems).toEqual([]);
     expect(JSON.stringify(state)).not.toMatch(/unreferenziert|Fremder Nachweis|architecture/i);
@@ -441,8 +445,29 @@ describe('indexgebundener project-data/v1-Vertrag', () => {
       (root: string) => git(root, ['rm', 'exports/project-data/v1/index.yaml']),
       (root: string) => { const file = path.join(root, 'exports/project-data/v1/index.yaml'); fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('projectId: UABC-BC-BASIC-001', 'projectId: UABC-FREMD-001')); git(root, ['add', '.']); },
       (root: string) => git(root, ['rm', 'atlassian/jira/issues/bc-basic.yaml']),
+      (root: string) => git(root, ['rm', 'project/bc-basic/customers.blank.csv']),
     ];
     for (const mutate of cases) { const root = projectDataFixture(); mutate(root); git(root, ['commit', '-m', 'negativer Vertragsfall']); await expect(createBoundTwinState('bc-basic', root, { projectDataContract: bcBasicContract })).rejects.toBeInstanceOf(AdapterSourceError); }
+  });
+
+  it('liest CSV-Datenvorlagen nur als begrenzte UTF-8-Quellen und lehnt falsche Bindungen geschlossen ab', async () => {
+    const invalidEncoding = projectDataFixture(); updateAndCommit(invalidEncoding, 'project/bc-basic/customers.blank.csv', Buffer.from([0xff]));
+    await expect(createBoundTwinState('bc-basic', invalidEncoding, { projectDataContract: bcBasicContract })).rejects.toBeInstanceOf(AdapterSourceError);
+
+    const wrongExtension = projectDataFixture(); const indexFile = path.join(wrongExtension, 'exports/project-data/v1/index.yaml');
+    fs.writeFileSync(indexFile, fs.readFileSync(indexFile, 'utf8').replace('path: project/bc-basic/customers.blank.csv, format: csv', 'path: project/bc-basic/customers.blank.csv, format: yaml'));
+    commitAll(wrongExtension, 'falsche CSV-Formatbindung');
+    await expect(createBoundTwinState('bc-basic', wrongExtension, { projectDataContract: bcBasicContract })).rejects.toBeInstanceOf(AdapterSourceError);
+
+    const selector = projectDataFixture(); const selectorIndex = path.join(selector, 'exports/project-data/v1/index.yaml');
+    fs.writeFileSync(selectorIndex, fs.readFileSync(selectorIndex, 'utf8').replace('path: project/bc-basic/customers.blank.csv, format: csv', "path: project/bc-basic/customers.blank.csv, selector: 'rows[id=C-10000]', format: csv"));
+    commitAll(selector, 'unzulässiger CSV-Selektor');
+    await expect(createBoundTwinState('bc-basic', selector, { projectDataContract: bcBasicContract })).rejects.toBeInstanceOf(AdapterSourceError);
+
+    const foreignKind = projectDataFixture(); const foreignKindIndex = path.join(foreignKind, 'exports/project-data/v1/index.yaml');
+    fs.writeFileSync(foreignKindIndex, fs.readFileSync(foreignKindIndex, 'utf8').replace('kindId: customer-data-template, path: project/bc-basic/customers.blank.csv', 'kindId: jira-issues, path: project/bc-basic/customers.blank.csv'));
+    commitAll(foreignKind, 'unzulässige CSV-Quellfamilie');
+    await expect(createBoundTwinState('bc-basic', foreignKind, { projectDataContract: bcBasicContract })).rejects.toBeInstanceOf(AdapterSourceError);
   });
 
   it('lehnt Pfadüberschreitung, Symlink, falschen Modus und verschärfte Größenüberschreitung ab', async () => {

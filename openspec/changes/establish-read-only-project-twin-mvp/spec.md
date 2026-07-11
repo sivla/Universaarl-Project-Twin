@@ -28,7 +28,7 @@ Akzeptanz: Jira-Typ, Status, Phase, Arbeitsstrom, Aufwand, Abhängigkeiten, expl
 
 Die Projektbindung für `bc-basic` MUSS ausschließlich über `exports/project-data/v1/index.yaml` erfolgen. Dieser Index MUSS schreibgeschützt, schemavalidiert, an die erwartete fachliche Projekt-ID gebunden und die einzige Einstiegskante zu den positiv referenzierten Jira-, Confluence-, Meeting-, Planungs-, Trainings-, Handbuch-, Budget-, Arbeitsprotokoll- und Nachweisquellen sein.
 
-Akzeptanz: Nicht im Index referenzierte Fachdaten werden für `bc-basic` nicht normalisiert. Der vorhandene Walkthrough-Vertrag wird nicht als Projektindex umgedeutet. Der Twin speichert keine Kopie der fachlichen Projektdaten.
+Akzeptanz: Nicht im Index referenzierte Fachdaten werden für `bc-basic` nicht normalisiert. Positivgelistete CSV-Datenvorlagen werden größenbegrenzt und UTF-8-validiert als Dokumentartefakte dargestellt, ohne ihre Zeilen als fachliche Fakten auszulegen. Der vorhandene Walkthrough-Vertrag wird nicht als Projektindex umgedeutet. Der Twin speichert keine Kopie der fachlichen Projektdaten.
 
 ## Offene Freigabe- und Archivgrenze
 

@@ -503,10 +503,11 @@ class CommitBlobReader {
 
   preflight() {
     for (const entry of this.entries) {
-      if (/\.(?:md|ya?ml|json)$/i.test(entry.path) && entry.size > this.limits.maxTextBytes) sourceError('Ein Textblob ueberschreitet die zulaessige Groesse.');
+      if (/\.(?:md|ya?ml|json|csv)$/i.test(entry.path) && entry.size > this.limits.maxTextBytes) sourceError('Ein Textblob ueberschreitet die zulaessige Groesse.');
       if (/\.ya?ml$/i.test(entry.path)) this.yaml(entry.path);
       else if (/\.json$/i.test(entry.path)) this.json(entry.path);
       else if (/\.png$/i.test(entry.path)) this.png(entry.path);
+      else if (/\.csv$/i.test(entry.path)) this.text(entry.path);
     }
   }
 }
@@ -591,7 +592,7 @@ const projectDataArtifactSchema = z.object({
   kindId: technicalId,
   path: z.string().min(1).max(1_000).refine(validateContractPath),
   selector: z.string().min(1).max(1_000).optional(),
-  format: z.enum(['yaml', 'json', 'markdown', 'png']),
+  format: z.enum(['yaml', 'json', 'markdown', 'csv', 'png']),
   required: z.boolean(),
 }).strict();
 
@@ -1113,11 +1114,14 @@ function prepareRepo(repo: string) {
 
 function assertProjectDataFormat(declaration: ProjectDataArtifact) {
   const extension = path.posix.extname(declaration.path).toLowerCase();
+  const csvContractValid = declaration.format !== 'csv'
+    || (['customer-data-template', 'synthetic-data-example'].includes(declaration.kindId) && declaration.selector === undefined);
   const valid = declaration.format === 'yaml' ? ['.yaml', '.yml'].includes(extension)
     : declaration.format === 'markdown' ? extension === '.md'
       : declaration.format === 'json' ? extension === '.json'
-        : extension === '.png';
-  if (!valid || declaration.path === 'exports/project-data/v1/index.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
+        : declaration.format === 'csv' ? extension === '.csv'
+          : extension === '.png';
+  if (!valid || !csvContractValid || declaration.path === 'exports/project-data/v1/index.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
 }
 
 function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
@@ -1181,6 +1185,12 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
   const add = (value: z.input<typeof artifactSchema>) => artifacts.push(sanitizeArtifact(artifactSchema.parse(value)));
   for (const source of sources) {
     const { declaration } = source;
+    if (declaration.format === 'csv') {
+      reader.text(declaration.path);
+      add({ id: declaration.id, kind: 'document', title: path.posix.basename(declaration.path), status: null, phase: null, wave: null, workstream: null, rationale: null,
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     if (declaration.kindId === 'jira-issues') {
       const data = schema(selectedYaml(reader, source), indexedJiraSchema);
       for (const issue of data.issues) {

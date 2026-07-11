@@ -20,16 +20,21 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
     expect(expectedCommit).toMatch(/^[a-f0-9]{40}$/);
     expect(git(['rev-parse', 'HEAD'])).toBe(expectedCommit);
     expect(git(['status', '--porcelain=v1', '--untracked-files=all'])).toBe('');
-    const index = YAML.parse(git(['show', `${expectedCommit}:exports/project-data/v1/index.yaml`])) as { artifacts: Array<{ path: string }> };
+    const index = YAML.parse(git(['show', `${expectedCommit}:exports/project-data/v1/index.yaml`])) as { artifacts: Array<{ id: string; kindId: string; path: string; format: string }> };
     const allowedPaths = new Set(index.artifacts.map((artifact) => artifact.path));
+    const csvSources = index.artifacts.filter((artifact) => artifact.format === 'csv');
     const state = await createTwinState('bc-basic', sourceRepo!, { projectDataContract: contract });
     expect(state.source).toMatchObject({ projectId: 'bc-basic', commit: expectedCommit });
     expect(state.artifacts.length).toBeGreaterThan(20);
     expect(state.artifacts.every((artifact) => allowedPaths.has(artifact.sourcePath))).toBe(true);
-    expect(state.artifacts.some((artifact) => artifact.id === 'UABC-18' && artifact.estimateHours === 76 && artifact.effort === null)).toBe(true);
+    expect(state.artifacts.some((artifact) => artifact.id === 'UABC-18' && artifact.estimateHours === 68 && artifact.effort === null)).toBe(true);
     expect(state.artifacts.some((artifact) => artifact.id === 'UABC-22' && artifact.estimateHours === 2 && artifact.effort === '2h')).toBe(true);
     expect(state.artifacts.filter((artifact) => artifact.kind === 'evidence')).toHaveLength(8);
     expect(state.artifacts.filter((artifact) => artifact.kind === 'evidence').every((artifact) => artifact.status === 'pending' && artifact.rationale === null)).toBe(true);
+    expect(csvSources).toHaveLength(14);
+    for (const source of csvSources) expect(state.artifacts).toContainEqual(expect.objectContaining({
+      id: source.id, kind: 'document', sourcePath: source.path, sourceType: source.kindId, documentType: source.kindId,
+    }));
     expect(state.evidenceItems).toEqual([]);
     expect(JSON.stringify(state)).not.toMatch(/UABC-ARCH-|UABC-CAP-|frame\.png|walkthrough\.webm/);
   }, 30_000);
