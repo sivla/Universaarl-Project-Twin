@@ -606,7 +606,7 @@ const projectDataArtifactSchema = z.object({
   kindId: technicalId,
   path: z.string().min(1).max(1_000).refine(validateContractPath),
   selector: z.string().min(1).max(1_000).optional(),
-  format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png']),
+  format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png', 'javascript']),
   required: z.boolean(),
 }).strict();
 
@@ -1162,6 +1162,7 @@ function assertProjectDataFormat(declaration: ProjectDataArtifact, branchMode = 
   const valid = declaration.format === 'yaml' ? ['.yaml', '.yml'].includes(extension)
     : declaration.format === 'markdown' ? extension === '.md'
       : ['json', 'json-schema'].includes(declaration.format) ? extension === '.json'
+        : declaration.format === 'javascript' ? extension === '.js' || extension === '.mjs'
         : declaration.format === 'csv' ? extension === '.csv'
           : extension === '.png';
   if (!valid || (!branchMode && !csvContractValid) || declaration.path === 'exports/project-data/v1/index.yaml' || declaration.path === 'governance/consumer-bindings.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
@@ -1280,7 +1281,8 @@ function readBranchProjectDataSources(repo: string, commit: string, projectId: s
 }
 
 function selectedYaml(reader: CommitBlobReader, source: IndexedProjectSource) {
-  const value = reader.yaml(source.declaration.path);
+  let value: RecordValue;
+  try { value = reader.yaml(source.declaration.path); } catch { sourceError('Ein YAML-Quellblob ist ungueltig.'); }
   const selector = source.declaration.selector;
   if (!selector) return value;
   const equals = selector.match(/^([A-Za-z][A-Za-z0-9]*)\[([A-Za-z][A-Za-z0-9]*)=([A-Za-z0-9._-]+)\]$/);
@@ -1366,6 +1368,7 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
         ticketRefs: technicalId.safeParse(item.jiraRef).success ? [item.jiraRef as string] : [], sourcePath: declaration.path }); }
       continue;
     }
+    if (declaration.format !== 'yaml' && declaration.format !== 'json') continue;
     const data = selectedYaml(reader, source);
     const families: Array<[string, string, string, string?]> = [
       ['deliverables', 'id', 'title', 'status'], ['decisions', 'id', 'statement', 'status'], ['templates', 'id', 'purpose', 'approvalStatus'],
@@ -1397,7 +1400,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
   if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich während des Lesens verändert; die Momentaufnahme ist ungültig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
   return projectStateSchema.parse({ source: { projectId, branch: safeBranchDisplay(before.branch), commit: before.commit, dirty: before.dirty,
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
-    snapshot: { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
+    snapshot: process.env.UABC_BRANCH_COMMIT_CONTRACT === '1' ? null : { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
       spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
     artifacts, evidenceItems, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
