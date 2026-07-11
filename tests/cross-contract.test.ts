@@ -41,6 +41,10 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
     expect(state.artifacts.every((artifact) => allowedPaths.has(artifact.sourcePath))).toBe(true);
     expect(state.artifacts.some((artifact) => artifact.id === 'UABC-18' && artifact.estimateHours === 68 && artifact.effort === null)).toBe(true);
     expect(state.artifacts.some((artifact) => artifact.id === 'UABC-22' && artifact.estimateHours === 2 && artifact.effort === '2h')).toBe(true);
+    expect(state.artifacts.filter((artifact) => artifact.sourceType === 'project-plan').map((artifact) => [artifact.id, artifact.ticketRefs])).toEqual([
+      ['UABC-PHASE-01', ['UABC-19']], ['UABC-PHASE-02', ['UABC-20']], ['UABC-PHASE-03', ['UABC-21']],
+    ]);
+    expect(state.artifacts.filter((artifact) => artifact.sourceType === 'project-plan').every((phase) => phase.ticketRefs.every((id) => state.artifacts.some((artifact) => artifact.id === id)))).toBe(true);
     expect(state.artifacts.filter((artifact) => artifact.kind === 'evidence')).toHaveLength(8);
     expect(state.artifacts.filter((artifact) => artifact.kind === 'evidence').every((artifact) => artifact.status === 'pending' && artifact.rationale === null)).toBe(true);
     expect(csvSources).toHaveLength(14);

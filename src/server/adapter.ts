@@ -1244,7 +1244,8 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
         title: typeof item.name === 'string' ? item.name : null, status: null, phase: null, wave: null, workstream: null, rationale: null, phaseId: item.id as string,
         sourcePhase: typeof item.name === 'string' ? item.name : null, estimateHours: typeof item.plannedBillableHours === 'number' ? item.plannedBillableHours : null,
         startDate: sourceDateSchema.safeParse(item.startDate).success ? item.startDate as string : null, dueDate: sourceDateSchema.safeParse(item.endDate).success ? item.endDate as string : null,
-        sourceType: declaration.kindId, documentType: declaration.kindId, dependencies: nullableTechnicalStrings(item.dependencies), sourcePath: declaration.path }); }
+        sourceType: declaration.kindId, documentType: declaration.kindId, dependencies: nullableTechnicalStrings(item.dependencies),
+        ticketRefs: technicalId.safeParse(item.jiraRef).success ? [item.jiraRef as string] : [], sourcePath: declaration.path }); }
       continue;
     }
     const data = selectedYaml(reader, source);

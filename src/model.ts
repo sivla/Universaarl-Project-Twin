@@ -32,7 +32,7 @@ export const deliverableSchema = z.object({
 export const artifactSchema = z.object({
   id: z.string().min(1), kind: z.enum(artifactKinds), title: z.string().min(1).nullable().default(null), status: z.string().min(1).nullable().default(null), phase: z.enum(normalizedPhases).nullable().default(null),
   wave: z.enum(['', 'W0', 'W1', 'W2', 'W3', 'W4', 'W5']).nullable().default(null), workstream: z.string().min(1).nullable().default(null), rationale: z.string().nullable().default(null), parentId: z.string().nullable().default(null),
-  dependencies: z.array(z.string()).default([]), documents: z.array(z.string()).default([]), evidence: z.array(z.string()).default([]),
+  dependencies: z.array(z.string()).default([]), documents: z.array(z.string()).default([]), evidence: z.array(z.string()).default([]), ticketRefs: z.array(sourceTechnicalIdSchema).default([]),
   sourceType: z.string().min(1).max(80).nullable().default(null), sourcePhase: z.string().min(1).max(80).nullable().default(null), phaseId: sourceTechnicalIdSchema.nullable().default(null),
   effort: sourceEffortSchema.nullable().default(null), estimateHours: z.number().finite().nonnegative().nullable().default(null), actualHours: z.number().finite().nonnegative().nullable().default(null),
   billable: z.boolean().nullable().default(null), billingWeek: sourceBillingWeekSchema.nullable().default(null), billingStatus: sourceBillingStatusSchema.nullable().default(null),

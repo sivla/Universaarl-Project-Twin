@@ -52,4 +52,4 @@ Akzeptanz: Die Ausgangsstand-Chronologie wird nicht dargestellt; keine Vorgänge
 
 Der Bereich Planung MUSS belegte Phasen mit Beginn und Ende aus dem commitgebundenen Projektplan auf einer gemeinsamen Zeitachse darstellen. Die Darstellung DARF fehlende oder ungültige Datumswerte nicht ergänzen und DARF keine Kundenzusage, Freigabe oder Terminberechnung behaupten.
 
-Akzeptanz: Phasen werden chronologisch mit Kennung, Name, Zeitraum und belegtem Planaufwand dargestellt. Balkenpositionen entstehen deterministisch aus dem frühesten Beginn und spätesten Ende. Die Ansicht bleibt in Hell und Dunkel sowie auf Mobilgeräten lesbar und besitzt eine textuelle barrierefreie Entsprechung.
+Akzeptanz: Phasen werden chronologisch mit Kennung, Name, Zeitraum, belegtem Planaufwand und ausdrücklich referenzierten Jira-Tickets dargestellt. Aufgelöste Tickets sind direkt erreichbar; unbekannte Referenzen bleiben sichtbar. Balkenpositionen entstehen deterministisch aus dem frühesten Beginn und spätesten Ende. Die Ansicht bleibt in Hell und Dunkel sowie auf Mobilgeräten lesbar und besitzt eine textuelle barrierefreie Entsprechung.
