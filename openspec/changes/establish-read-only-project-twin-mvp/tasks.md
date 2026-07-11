@@ -10,3 +10,4 @@
 - [x] Identische Snapshotbindung für Zustand und Nachweisauflösung nachweisen
 - [x] Den bekannten Blueprint-Commit ohne Manifest als deutschen Blockierzustand im Cross-Contract- und Browserlauf nachweisen
 - [ ] Menschliche Freigabe und Archivierung
+- [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
