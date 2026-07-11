@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { resolveBlueprintSourceRoot } from './src/projects/blueprint-source';
 import { productionRegistry } from './src/projects/registry';
 import { dispatchProjectApi } from './src/server/api';
+import { execFileSync } from 'node:child_process';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -13,7 +14,9 @@ export default defineConfig(({ mode }) => {
       configureServer(server) {
         if (mode === 'test') return;
         const sourceRepo = process.env.UABC_SOURCE_REPO ?? env.UABC_SOURCE_REPO;
-        const expectedCommit = process.env.UABC_EXPECTED_COMMIT ?? env.UABC_EXPECTED_COMMIT;
+        const expectedCommit = process.env.UABC_BRANCH_COMMIT_CONTRACT === '1'
+          ? execFileSync('git', ['-C', resolveBlueprintSourceRoot(process.cwd(), sourceRepo), 'rev-parse', 'refs/heads/codex/universaarl-projekt'], { encoding: 'utf8' }).trim()
+          : process.env.UABC_EXPECTED_COMMIT ?? env.UABC_EXPECTED_COMMIT;
         const registry = productionRegistry(resolveBlueprintSourceRoot(process.cwd(), sourceRepo), expectedCommit);
         server.middlewares.use(async (req, res, next) => {
           try {

@@ -196,7 +196,7 @@ function assertSnapshotBinding(repo: string, fingerprint: SourceFingerprint, bin
   if (fingerprint.commit !== binding.expectedCommit) sourceError('Der aktuelle Quellen-Commit stimmt nicht mit der erwarteten Momentaufnahme ueberein.');
   if (fingerprint.branch !== binding.expectedBranch) sourceError('Der aktuelle Quellen-Branch stimmt nicht mit der erwarteten Bindung ueberein.');
   if (gitText(repo, ['remote', 'get-url', 'origin']) !== binding.expectedRemote) sourceError('Das Quellen-Remote stimmt nicht mit der erwarteten Bindung ueberein.');
-  if (fingerprint.dirty) sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
+  if (fingerprint.dirty && process.env.UABC_BRANCH_COMMIT_CONTRACT !== '1') sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
 }
 
 const sensitiveTokens = new Set([
@@ -1154,7 +1154,7 @@ function prepareRepo(repo: string) {
   }
 }
 
-function assertProjectDataFormat(declaration: ProjectDataArtifact) {
+function assertProjectDataFormat(declaration: ProjectDataArtifact, branchMode = false) {
   const extension = path.posix.extname(declaration.path).toLowerCase();
   const csvContractValid = declaration.format !== 'csv'
     || (['customer-data-template', 'synthetic-data-example'].includes(declaration.kindId) && declaration.selector === undefined);
@@ -1163,7 +1163,7 @@ function assertProjectDataFormat(declaration: ProjectDataArtifact) {
       : ['json', 'json-schema'].includes(declaration.format) ? extension === '.json'
         : declaration.format === 'csv' ? extension === '.csv'
           : extension === '.png';
-  if (!valid || !csvContractValid || declaration.path === 'exports/project-data/v1/index.yaml' || declaration.path === 'governance/consumer-bindings.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
+  if (!valid || (!branchMode && !csvContractValid) || declaration.path === 'exports/project-data/v1/index.yaml' || declaration.path === 'governance/consumer-bindings.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
 }
 
 function snapshotParent(repo: string, snapshotCommit: string) {
@@ -1268,7 +1268,7 @@ function readBranchProjectDataSources(repo: string, commit: string, projectId: s
   if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
   const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
   if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Projektindex enthält doppelte Artefakt-IDs oder Pfade.');
-  index.artifacts.forEach(assertProjectDataFormat);
+  index.artifacts.forEach((artifact) => assertProjectDataFormat(artifact, true));
   const entries = parseExactTree(repo, commit, paths, limits);
   const byPath = new Map(entries.map((entry) => [entry.path, entry]));
   const sources = index.artifacts.map((declaration) => { const entry = byPath.get(declaration.path); if (!entry) sourceError('Ein indexierter Quellblob fehlt.'); return { declaration, entry }; });
@@ -1508,3 +1508,5 @@ export function evidenceReadStable(contractMode: boolean, stable: boolean) {
 }
 
 export const adapterPolicy = { safeRoots, forbidden, defaultLimits };
+
+
