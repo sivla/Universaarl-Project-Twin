@@ -1,0 +1,14 @@
+:root {
+  --muted: #4f5a63;
+  --turquoise-dark: #2f6f6b;
+}
+
+html[data-theme='dark'] {
+  --turquoise-dark: #81c7c2;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) {
+    --turquoise-dark: #81c7c2;
+  }
+}

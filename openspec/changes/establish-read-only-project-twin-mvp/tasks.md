@@ -1,9 +1,9 @@
-# Tasks
+# Aufgaben
 
-- [x] Configure local read-only source
-- [x] Parse architecture-adjacent capabilities, OpenSpec, Jira, Confluence and evidence
-- [x] Validate normalized model
-- [x] Display Git provenance and data gaps
-- [x] Build horizontal project world and detail views
-- [x] Add parser, reference-safety and invalid-source tests
-- [ ] Human approval and archive
+- [x] Lokale schreibgeschützte Quelle konfigurieren
+- [x] Architekturbezogene Fähigkeiten, OpenSpec, Jira, Confluence und Nachweise einlesen
+- [x] Normalisiertes Modell validieren
+- [x] Git-Provenienz und Datenlücken anzeigen
+- [x] Horizontale Projektwelt und Detailansichten erstellen
+- [x] Parserprüfungen, Prüfungen der Referenzsicherheit und Prüfungen für ungültige Quellen ergänzen
+- [ ] Menschliche Freigabe und Archivierung

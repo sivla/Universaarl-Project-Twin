@@ -1,6 +1,18 @@
-@media (min-width:721px) and (max-width:1000px){
-  :root{--sidebar:216px}
-  .sidebar button{font-size:initial;padding:12px 14px}
-  .sidebar button::first-letter{font-size:initial}
-  .sidebar p{display:block}
+@media (min-width:721px) and (max-width:1000px) {
+  :root { --sidebar: 88px; }
+  html, body, #root, .app-shell { max-width: 100%; overflow-x: hidden; }
+  .app-shell { min-width: 0; }
+  .topbar { min-width: 0; gap: 10px; padding-inline: 12px; }
+  .brand { min-width: 132px; }
+  .project-switcher { min-width: 0; max-width: 240px; }
+  .project-switcher select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+  .theme-select { min-width: 96px; }
+  .sidebar nav { padding: 12px 6px; overflow-y: auto; }
+  .sidebar button { min-width: 0; padding: 10px 7px; font-size: 10px; line-height: 1.25; overflow-wrap: anywhere; }
+  .sidebar button::first-letter { font-size: inherit; }
+  .sidebar p { display: none; }
+  .app-shell > main { min-width: 0; padding-inline: clamp(16px, 3vw, 28px); }
+  .page-heading { min-width: 0; gap: 12px; }
+  .page-heading > * { min-width: 0; overflow-wrap: anywhere; }
+  .bottom-nav { display: none; }
 }

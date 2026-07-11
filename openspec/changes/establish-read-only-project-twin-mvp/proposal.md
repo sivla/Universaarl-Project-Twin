@@ -1,11 +1,11 @@
-# Change Proposal: Read-only Project Twin MVP
+# Änderungsvorschlag: MVP des schreibgeschützten Projektzwillings
 
-- Change: `establish-read-only-project-twin-mvp`
+- Änderung: `establish-read-only-project-twin-mvp`
 - Status: `implemented-awaiting-approval`
-- Scope: adapter, normalized read model, horizontal UI, tests
+- Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, Prüfungen
 
 ## Problem
-The Blueprint is authoritative but difficult to explore as a connected project world. The Twin must visualize it without copying domain truth or writing back.
+Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängende Projektwelt erkunden. Der Projektzwilling muss ihn darstellen, ohne fachliche Wahrheit zu kopieren oder Änderungen zurückzuschreiben.
 
-## Non-goals
-No status mutation, meetings, worklogs, billing, game decisions, source authentication state, traces, videos, tenant identifiers, or secrets.
+## Nicht-Ziele
+Keine Statusänderungen, Besprechungen, Arbeitsprotokolle, Abrechnung, Spielentscheidungen, Authentifizierungszustände der Quelle, Ablaufspuren, Videos, Mandantenkennungen oder Geheimnisse.

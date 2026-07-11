@@ -1,41 +1,47 @@
-# Commit- und Publishing-Regel
+# Regel für Versionsstände und Veröffentlichungen
 
-Dieses Projekt erstellt seine Arbeit lokal und uebergibt sie als Commit an das **Universaarl Kontrollzentrum** unter `C:\Users\kkali\Documents\Universaarl ai`.
+Dieses Projekt erstellt seine Arbeit ausschließlich lokal als Git-Commit und übergibt diesen fertigen Commit an das **Universaarl Kontrollzentrum** unter `C:\Users\kkali\Documents\Universaarl ai`.
 
-## Projekt-Agenten duerfen
+## Verbindliche Sprachregel
 
-- den Project Twin im vereinbarten Scope bearbeiten;
-- Tests und Build ausfuehren;
-- zusammenhaengende, fertige Arbeit lokal committen;
-- einen fertigen Commit mit Branch, vollstaendiger Commit-SHA, Pruefergebnis und sauberem Git-Status uebergeben.
+- Ganze Sätze, Überschriften, Inhalte der Benutzeroberfläche, Dokumentation, Fehlermeldungen, Barrierefreiheitstexte und Prüftitel sind natürlich deutsch formuliert.
+- Etablierte Fachsprache und gebräuchliches Denglisch wie Workshop, Support, Go-live, Hypercare, Commit, read-only, Registry, API oder Worktree sind in einem deutschen Satz ausdrücklich erlaubt.
+- Technische Kennungen, Typnamen, Pfade, API-Routen, Statuswerte, Befehle und echte Produktnamen bleiben unverändert, soweit ihre Übersetzung den Vertrag verfälschen würde.
+- Das Sprachgate erkennt englische Sätze und Überschriften. Es betreibt keine Wortreinheit und sperrt keine Fachbegriffe allein wegen ihrer Herkunft.
+- Vor jeder Übergabe muss das maschinenlesbare Deutschgate gegen die neue vollständige SHA des Versionsstands bestanden sein.
 
-Change-spezifische Freigabegates bleiben verbindlich. Ein Commit darf erst erstellt werden, wenn diese Gates ihn zulassen.
+## Projekt-Agenten dürfen
 
-## Commit-Qualitaet
+- den Projektzwilling im ausdrücklich vereinbarten Umfang bearbeiten;
+- Prüfungen und Erstellungsläufe ausführen;
+- ein zusammenhängendes, fertiges Arbeitspaket als lokalen Git-Commit erstellen;
+- den fertigen Stand mit Zweig, vollständiger SHA, Prüfergebnis und sauberem Git-Status übergeben.
 
-- Nicht jeden kleinen Handgriff, Platzhalter oder unfertigen Zwischenstand einzeln committen.
-- Ein Commit soll ein zusammenhaengendes, fachlich sinnvolles Arbeitspaket abschliessen und darf dafuer bewusst zwei bis drei aufeinander aufbauende Umsetzungsschritte enthalten.
-- Typische gute Einheit: Implementierung, passende Tests und eine erforderliche Vertrags- oder Dokumentationsanpassung.
-- Erst committen, wenn das Arbeitspaket in sich konsistent, pruefbar und verstaendlich reviewbar ist.
-- Keine kuenstliche Aufteilung in inhaltsarme Mikro-Commits, aber auch keine sachfremden Aenderungen in einen grossen Sammel-Commit mischen.
-- Wenn eine Aufgabe groesser wird, mehrere jeweils eigenstaendige und gruene Commits erstellen.
+Änderungsspezifische Freigabeschranken bleiben verbindlich. Ein Versionsstand darf erst erstellt werden, wenn diese Schranken ihn zulassen.
 
-## Review-Datei nach jedem Commit
+## Qualität des Versionsstands
 
-- Die verbindliche Review-Warteschlange ist `REVIEW.md` im Projektroot.
-- Vor jedem Commit alle Eintraege aus `REVIEW.md` nachvollziehbar bearbeiten und die Datei danach vollstaendig leeren.
-- Nach jedem neuen Commit ausdruecklich pruefen, dass sowohl die Arbeitskopie als auch die in `HEAD` enthaltene `REVIEW.md` leer beziehungsweise rein whitespace sind.
-- Empfohlene Kontrolle: `git show HEAD:REVIEW.md` darf keinen inhaltlichen Text ausgeben; `git status --short -- REVIEW.md` muss leer bleiben.
-- Ist die Review-Datei nach dem Commit nicht leer oder fehlt sie im Commit, ist die Uebergabe ungueltig. Den Zustand korrigieren und erneut sauber committen, bevor das Kontrollzentrum informiert wird.
-- Der uebergebene Pruefnachweis nennt ausdruecklich: `REVIEW.md in HEAD: leer`.
+- Nicht jeden kleinen Handgriff, Platzhalter oder unfertigen Zwischenstand einzeln festschreiben.
+- Ein fachlich zusammenhängendes und nachvollziehbar prüfbares Paket darf bewusst zwei bis drei notwendige Umsetzungsschritte enthalten und wird dennoch als genau ein kohärenter Versionsstand übergeben.
+- Eine gute Einheit verbindet beispielsweise Implementierung, passende Prüfungen und die notwendige Vertrags- oder Dokumentationsanpassung.
+- Erst festschreiben, wenn das Paket in sich konsistent, prüfbar und verständlich begutachtbar ist.
+- Keine inhaltsarmen Mikrostände und keine sachfremden Änderungen in einem Sammelstand.
+- Wird eine Aufgabe größer, entstehen mehrere jeweils eigenständige und grüne Versionsstände.
 
-## Projekt-Agenten duerfen nicht
+## Prüfwarteschlange nach jedem Versionsstand
 
-- `git push` oder Force-Push ausfuehren;
-- Remotes, Push-URLs oder Upstreams anlegen oder veraendern;
-- Tags, Releases oder Pull Requests veroeffentlichen;
-- unfertige oder fremde Aenderungen in den eigenen Commit aufnehmen.
+- Die verbindliche Prüfwarteschlange ist `REVIEW.md` im Projektwurzelverzeichnis.
+- Vor dem Festschreiben alle Einträge nachvollziehbar bearbeiten und die Datei vollständig leeren.
+- Nach jedem neuen Versionsstand ausdrücklich prüfen, dass `REVIEW.md` sowohl in der Arbeitskopie als auch in `HEAD` leer oder reiner Leerraum ist.
+- `git show HEAD:REVIEW.md` darf keinen Inhalt ausgeben; `git status --short -- REVIEW.md` muss leer bleiben.
+- Anschließend `UNIVERSAARL_PROJECT_ID=project-twin` und `UNIVERSAARL_EXPECTED_COMMIT=<vollständige-neue-sha>` setzen und `npm --silent run test:german` ausführen.
+- Ist eine dieser Prüfungen rot, ist die Übergabe ungültig. Der Prüfnachweis nennt ausdrücklich: `REVIEW.md in HEAD: leer` und `Deutschgate: bestanden`.
 
-Nach dem lokalen Commit endet die normale Aufgabe mit der Uebergabe an das Kontrollzentrum. Ausschliesslich das Kontrollzentrum prueft den vorhandenen Commit noch einmal und veroeffentlicht ihn ueber sein zentrales Push-Gate.
+## Rollen- und Veröffentlichungsgrenze
 
-Eine Ausnahme benoetigt eine ausdrueckliche Benutzeranweisung, die dieses Projekt und die erlaubte Publishing-Aktion konkret nennt.
+- Der Projekt-Agent erstellt ausschließlich lokale Git-Commits. Nur das Kontrollzentrum führt den zentral geprüften Push aus; der Projekt-Agent führt niemals `git push` oder eine erzwungene Übertragung aus.
+- Er legt keine entfernten Repositories, Übertragungsadressen, Nachverfolgungszweige, Git-Marken, Freigaben oder Zusammenführungsanfragen an und verändert sie nicht.
+- Unfertige oder fremde Änderungen dürfen nicht in den eigenen Versionsstand gelangen.
+- Nach der lokalen Commit-Übergabe prüft ausschließlich das Kontrollzentrum den vorhandenen Commit erneut und überträgt ihn über seine zentrale Veröffentlichungsschranke.
+
+Eine Ausnahme benötigt eine ausdrückliche Benutzeranweisung, die dieses Projekt und die konkret erlaubte Veröffentlichungsaktion nennt.

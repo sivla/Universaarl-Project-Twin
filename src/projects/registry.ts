@@ -2,14 +2,20 @@ import { z } from 'zod';
 import path from 'node:path';
 
 const projectId = z.string().regex(/^[a-z][a-z0-9-]{1,47}$/).refine((value) => !['constructor', 'prototype', '__proto__'].includes(value));
+const sourceContract = z.object({
+  path: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((value) => value.split('/').every((segment) => segment && segment !== '.' && segment !== '..')),
+  expectedProjectId: z.string().min(1).max(120).regex(/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,118}[A-Za-z0-9])?$/),
+}).strict();
 const projectEntry = z.object({
   id: projectId,
   key: z.string().regex(/^[A-Z][A-Z0-9]{1,11}$/),
   name: z.string().min(1).max(80),
   sourceRoot: z.string().min(1).refine(path.isAbsolute),
+  sourceContract: sourceContract.nullable().default(null),
 });
 
 export type ProjectEntry = z.infer<typeof projectEntry>;
+export type ProjectSourceContract = z.infer<typeof sourceContract>;
 export type PublicProject = Pick<ProjectEntry, 'id' | 'key' | 'name'>;
 
 export function createProjectRegistry(entries: unknown): readonly ProjectEntry[] {
@@ -20,7 +26,10 @@ export function createProjectRegistry(entries: unknown): readonly ProjectEntry[]
 }
 
 export function productionRegistry(sourceRoot: string) {
-  return createProjectRegistry([{ id: 'universaarl', key: 'UABC', name: 'Universaarl', sourceRoot }]);
+  return createProjectRegistry([
+    { id: 'universaarl', key: 'UABC', name: 'Universaarl', sourceRoot },
+    { id: 'bc-basic', key: 'BCB', name: 'Business Central Basic', sourceRoot, sourceContract: { path: 'exports/project-data/v1/index.yaml', expectedProjectId: 'UABC-BC-BASIC-001' } },
+  ]);
 }
 
 export function publicProjects(registry: readonly ProjectEntry[]): PublicProject[] {

@@ -1,54 +1,665 @@
+/// <reference types="node" />
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import fg from 'fast-glob';
-import YAML from 'yaml';
-import matter from 'gray-matter';
 import { createHash } from 'node:crypto';
-import { type Artifact, projectStateSchema, type ProjectState } from '../model';
+import YAML from 'yaml';
+import { z } from 'zod';
+import { artifactSchema, displayVerificationType, type Artifact, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, type ProjectState } from '../model';
+import type { ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
-const forbidden = /(^|[\\/._-])(auth|storage-?state|trace|video|tenant|token|secret)([\\/._-]|$)/i;
-const uabcId = /\bUABC-[A-Z0-9][A-Z0-9-]*\b/g;
+const exactSafePaths = ['governance/reference-lifecycle.yaml', 'exports/project-data/v1/index.yaml'] as const;
+const fullSha = /^[a-f0-9]{40}$/;
+const blobSha = /^[a-f0-9]{40}$/;
+const projectIdPattern = /^[a-z][a-z0-9-]{1,47}$/;
+const pngSignature = Buffer.from('89504e470d0a1a0a', 'hex');
+const gitNullDevice = process.platform === 'win32' ? 'NUL' : os.devNull;
+const forbidden = /(^|[\/._-])(auth|authentication|authorization|storage-?state|trace|traces|video|videos|credential|credentials|cookie|cookies|session|sessions|tenant|token|tokens|secret|secrets|password|passwords|passwd|oauth2?|bearer|jwt|ssh|keystore|connection-?string|service-?account)([\/._-]|$)/i;
+const sensitiveIdentifier = /(?:^|[^0-9a-f])(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?=$|[^0-9a-f])/i;
 
-type RecordValue = Record<string, any>;
-type ReadResult = { artifacts: Artifact[]; warnings: string[]; knownIds: Set<string> };
+type RecordValue = Record<string, unknown>;
+type TreeEntry = { mode: '100644' | '100755'; oid: string; path: string; size: number };
+type ArtifactInput = z.input<typeof artifactSchema>;
+type ReadResult = { artifacts: ArtifactInput[]; warnings: string[]; knownIds: Set<string>; actualUnknowns?: string[] };
+type EvidenceResult = ReadResult & { items: ProjectState['evidenceItems'] };
+type SourceFingerprint = {
+  branch: string;
+  commit: string;
+  dirty: boolean;
+  headFingerprint: string;
+  indexFingerprint: string;
+  statusFingerprint: string;
+  repositoryFingerprint: string;
+};
+
+type ReaderLimits = {
+  maxFiles: number;
+  maxTotalBytes: number;
+  maxTextBytes: number;
+  maxFrontmatterBytes: number;
+  maxPngBytes: number;
+  maxPngWidth: number;
+  maxPngHeight: number;
+  maxPngPixels: number;
+  maxArrayItems: number;
+};
+
+export type AdapterReadOptions = {
+  /** Nur fuer deterministische Sicherheitsregressionen; produktive Aufrufer lassen diese Option leer. */
+  testHookAfterRead?: () => void;
+  /** Testwerte koennen die produktiven Grenzen ausschliesslich verschaerfen. */
+  limits?: Partial<ReaderLimits>;
+  /** Technische, serverseitige Bindung an einen expliziten schreibgeschuetzten Projektvertrag. */
+  projectDataContract?: ProjectSourceContract;
+};
+
+export type EvidenceBlob = { contentType: 'image/png'; bytes: Buffer };
+
+const defaultLimits: ReaderLimits = {
+  maxFiles: 5_000,
+  maxTotalBytes: 64 * 1024 * 1024,
+  maxTextBytes: 2 * 1024 * 1024,
+  maxFrontmatterBytes: 256 * 1024,
+  maxPngBytes: 15 * 1024 * 1024,
+  maxPngWidth: 10_000,
+  maxPngHeight: 10_000,
+  maxPngPixels: 40_000_000,
+  maxArrayItems: 10_000,
+};
 
 const empty = (): ReadResult => ({ artifacts: [], warnings: [], knownIds: new Set() });
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-const rel = (repo: string, file: string) => path.relative(repo, file).replaceAll('\\', '/');
-const git = (repo: string, args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-const parseYaml = (file: string): RecordValue => YAML.parse(fs.readFileSync(file, 'utf8')) as RecordValue;
+const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+
+export const adapterErrorCodes = ['QUELLKONFIGURATION_UNGUELTIG', 'QUELLVERTRAG_UNGUELTIG', 'GIT_QUELLE_NICHT_VERFUEGBAR', 'QUELLE_WAEHREND_LESEN_GEAENDERT'] as const;
+export type AdapterErrorCode = typeof adapterErrorCodes[number];
+
+export class AdapterSourceError extends Error {
+  constructor(readonly code: AdapterErrorCode, message: string) { super(message); this.name = 'AdapterSourceError'; }
+}
+
+function sourceError(message: string, code: AdapterErrorCode = 'QUELLVERTRAG_UNGUELTIG'): never {
+  throw new AdapterSourceError(code, message);
+}
+
+function assertProjectId(projectId: string) {
+  if (!projectIdPattern.test(projectId) || ['constructor', 'prototype', '__proto__'].includes(projectId)) sourceError('Die Projektkennung ist nicht gültig.', 'QUELLKONFIGURATION_UNGUELTIG');
+  return projectId;
+}
+
+function cleanGitEnvironment(): NodeJS.ProcessEnv {
+  const allowed = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'LANG', 'LC_ALL']);
+  const environment: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) if (allowed.has(key.toUpperCase()) && value !== undefined) environment[key] = value;
+  environment.GIT_OPTIONAL_LOCKS = '0';
+  environment.GIT_TERMINAL_PROMPT = '0';
+  environment.GIT_CONFIG_NOSYSTEM = '1';
+  environment.GIT_CONFIG_GLOBAL = gitNullDevice;
+  environment.GIT_PAGER = 'cat';
+  environment.GIT_LITERAL_PATHSPECS = '1';
+  environment.GIT_NO_REPLACE_OBJECTS = '1';
+  return environment;
+}
+
+function gitBuffer(repo: string, args: string[], input?: Buffer, maxBuffer = 16 * 1024 * 1024) {
+  try {
+    return execFileSync('git', [
+      '-C', repo,
+      '--no-pager',
+      '--no-optional-locks',
+      '-c', 'core.bare=false',
+      '-c', `core.hooksPath=${gitNullDevice}`,
+      '-c', 'core.fsmonitor=false',
+      '-c', 'core.untrackedCache=false',
+      '-c', 'core.ignoreStat=false',
+      '-c', 'core.trustctime=true',
+      '-c', 'core.checkStat=default',
+      '-c', 'status.aheadBehind=false',
+      '-c', 'credential.helper=',
+      ...args,
+    ], {
+      encoding: null,
+      input,
+      maxBuffer,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: cleanGitEnvironment(),
+    });
+  } catch {
+    return sourceError('Die Git-Quelle konnte nicht sicher gelesen werden.', 'GIT_QUELLE_NICHT_VERFUEGBAR');
+  }
+}
+
+function gitText(repo: string, args: string[]) {
+  return gitBuffer(repo, args).toString('utf8').trim();
+}
+
+function tightenLimits(overrides: Partial<ReaderLimits> | undefined): ReaderLimits {
+  const result = { ...defaultLimits };
+  for (const key of Object.keys(defaultLimits) as Array<keyof ReaderLimits>) {
+    const value = overrides?.[key];
+    if (value !== undefined) {
+      if (!Number.isSafeInteger(value) || value < 1) sourceError('Die Lesebegrenzung ist ungueltig.');
+      result[key] = Math.min(result[key], value);
+    }
+  }
+  return result;
+}
+
+function captureFingerprint(repo: string): SourceFingerprint {
+  const repositoryFingerprint = captureRepositoryIdentity(repo);
+  const commit = gitText(repo, ['rev-parse', '--verify', 'HEAD^{commit}']);
+  if (!fullSha.test(commit)) sourceError('Die Quelle besitzt keinen eindeutigen vollstaendigen Commit.');
+  const branch = gitText(repo, ['branch', '--show-current']) || '(abgeloest)';
+  const status = gitBuffer(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+  const symbolicHead = gitBuffer(repo, ['rev-parse', '--symbolic-full-name', 'HEAD']);
+  const indexName = gitText(repo, ['rev-parse', '--git-path', 'index']);
+  const indexPath = path.isAbsolute(indexName) ? indexName : path.resolve(repo, indexName);
+  let index: Buffer;
+  try {
+    const gitDirectory = fs.realpathSync(gitText(repo, ['rev-parse', '--absolute-git-dir']));
+    const indexStat = fs.lstatSync(indexPath);
+    const realIndex = fs.realpathSync(indexPath);
+    const indexRelative = path.relative(gitDirectory, realIndex);
+    if (indexStat.isSymbolicLink() || !indexStat.isFile() || !indexRelative || indexRelative === '..' || indexRelative.startsWith(`..${path.sep}`) || path.isAbsolute(indexRelative)) throw new Error();
+    index = fs.readFileSync(realIndex);
+  }
+  catch { return sourceError('Der Git-Index konnte nicht sicher gelesen werden.'); }
+  return {
+    branch,
+    commit,
+    dirty: status.length > 0,
+    headFingerprint: hash(Buffer.concat([Buffer.from(commit), Buffer.from([0]), symbolicHead])),
+    indexFingerprint: hash(index),
+    statusFingerprint: hash(status),
+    repositoryFingerprint,
+  };
+}
+
+function sameFingerprint(before: SourceFingerprint, after: SourceFingerprint) {
+  return before.commit === after.commit
+    && before.branch === after.branch
+    && before.dirty === after.dirty
+    && before.headFingerprint === after.headFingerprint
+    && before.indexFingerprint === after.indexFingerprint
+    && before.statusFingerprint === after.statusFingerprint
+    && before.repositoryFingerprint === after.repositoryFingerprint;
+}
+
+const sensitiveTokens = new Set([
+  'auth', 'authentication', 'authorization', 'bearer', 'cookie', 'cookies', 'credential', 'credentials', 'jwt', 'oauth', 'oauth2',
+  'password', 'passwords', 'passwd', 'secret', 'secrets', 'session', 'sessions', 'ssh', 'tenant', 'token', 'tokens', 'trace', 'traces', 'video', 'videos',
+]);
+
+const sensitiveProfileContexts = new Set([
+  'auth', 'authentication', 'authorization', 'browser', 'browsers', 'credential', 'credentials', 'user', 'users',
+]);
+
+const sensitiveNameFamilies = [
+  'storagestate', 'clientsecret', 'accesstoken', 'refreshtoken', 'privatekey', 'accesskey', 'apikey', 'serviceaccount', 'connectionstring',
+] as const;
+
+function canonicalNameTokens(segment: string) {
+  return segment
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function isSensitiveSegment(segment: string) {
+  const lower = segment.toLowerCase();
+  const tokens = canonicalNameTokens(segment);
+  const semanticTokens = [...tokens];
+  while (semanticTokens.length && ['json', 'yaml', 'yml', 'png', 'md', 'txt', 'csv'].includes(semanticTokens.at(-1) ?? '')) semanticTokens.pop();
+  const collapsed = semanticTokens.join('');
+  const keyIndex = tokens.indexOf('key');
+  const hasProfileToken = semanticTokens.some((token) => token === 'profile' || token === 'profiles');
+  const sensitiveProfile = hasProfileToken && (
+    semanticTokens.every((token) => token === 'profile' || token === 'profiles')
+    || semanticTokens.some((token) => sensitiveProfileContexts.has(token))
+  );
+  return /^\.env(?:\.|$)/i.test(segment)
+    || /^\.(?:envrc|git|gitconfig|npmrc|netrc|kube)$/i.test(segment)
+    || /^(?:id_(?:rsa|dsa|ecdsa|ed25519))(?:\.pub)?$/i.test(segment)
+    || /\.(?:pem|pfx|p12|key|jks|keystore|crt|cer)$/i.test(lower)
+    || sensitiveProfile
+    || tokens.some((token) => sensitiveTokens.has(token))
+    || sensitiveNameFamilies.some((family) => collapsed.includes(family))
+    || (keyIndex > 0 && ['api', 'access', 'private', 'client', 'secret', 'ssh'].includes(tokens[keyIndex - 1]))
+    || forbidden.test(segment);
+}
+
+function isSafeTechnicalIdentifier(value: string) {
+  const collapsed = canonicalNameTokens(value).join('');
+  return !sensitiveIdentifier.test(value) && !collapsed.includes('private') && !isSensitiveSegment(value);
+}
+
+export function safeBranchDisplay(value: string) {
+  if (!value) return 'Nicht belegt';
+  const hostPathTokens = new Set(['home', 'srv', 'users', 'volumes', 'workspace', 'documents']);
+  const segments = value.split('/');
+  const safe = value.length <= 120 && /^[A-Za-z0-9](?:[A-Za-z0-9._\/-]{0,118}[A-Za-z0-9])?$/.test(value)
+    && !value.includes('//') && !value.includes('..') && !sensitiveIdentifier.test(value)
+    && segments.every((segment) => isSafeTechnicalIdentifier(segment) && !canonicalNameTokens(segment).some((token) => hostPathTokens.has(token)));
+  return safe ? value : 'Branchname aus Sicherheitsgründen redigiert';
+}
 
 export function validateProvenancePath(value: string) {
-  if (!value || path.isAbsolute(value) || /^[A-Za-z]:|^\\\\|^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
-  const normalized = value.replaceAll('\\', '/');
-  const segments = normalized.split('/');
-  if (segments.some((segment) => !segment || segment === '.' || segment === '..' || forbidden.test(segment))) return false;
-  return safeRoots.some((root) => normalized === root || normalized.startsWith(`${root}/`));
+  if (!value || value.includes('\\') || value.includes('\0') || value.includes('\uFFFD') || /[\r\n\t]/.test(value)) return false;
+  if (path.posix.isAbsolute(value) || /^[A-Za-z]:|^\/\/|^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+  const segments = value.split('/');
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..' || isSensitiveSegment(segment))) return false;
+  return exactSafePaths.includes(value as typeof exactSafePaths[number]) || safeRoots.some((root) => value === root || value.startsWith(`${root}/`));
 }
 
-function safeRel(repo: string, file: string) {
-  const relative = rel(repo, file);
-  if (!validateProvenancePath(relative)) throw new Error('Unsichere Provenienz');
-  return relative;
-}
-
-const evidenceIdFor = (relative: string) => `ev_${createHash('sha256').update(relative).digest('hex').slice(0, 24)}`;
-
-function registeredEvidenceFiles(repo: string) {
-  const root = path.resolve(repo, 'evidence');
-  let realRoot: string;
-  try { realRoot = fs.realpathSync(root); } catch { return [] as Array<{ id: string; file: string }> ; }
-  return fg.sync('evidence/**/*.png', { cwd: repo, onlyFiles: true }).sort().flatMap((relative) => {
-    if (forbidden.test(relative) || !validateProvenancePath(relative)) return [];
-    const candidate = path.resolve(repo, relative);
-    try {
-      const stat = fs.lstatSync(candidate); const real = fs.realpathSync(candidate);
-      if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 15 * 1024 * 1024 || !real.startsWith(`${realRoot}${path.sep}`)) return [];
-      return [{ id: evidenceIdFor(relative.replaceAll('\\', '/')), file: real }];
-    } catch { return []; }
+function parseTree(repo: string, commit: string, limits: ReaderLimits): TreeEntry[] {
+  const output = gitBuffer(repo, ['ls-tree', '-r', '-z', '--full-tree', commit, '--', ...safeRoots, ...exactSafePaths]);
+  const rawEntries = output.subarray(0, Math.max(0, output.length - (output.at(-1) === 0 ? 1 : 0))).toString('utf8');
+  const records = rawEntries ? rawEntries.split('\0') : [];
+  if (records.length > limits.maxFiles) sourceError('Die Quelle ueberschreitet die zulaessige Dateianzahl.');
+  const entries = records.map((record): Omit<TreeEntry, 'size'> => {
+    const match = record.match(/^([0-7]{6}) ([a-z]+) ([a-f0-9]+)\t([\s\S]+)$/);
+    if (!match || match[2] !== 'blob' || !blobSha.test(match[3]) || !['100644', '100755'].includes(match[1])) {
+      return sourceError('Der Git-Baum enthaelt einen nicht zulaessigen Eintragstyp.');
+    }
+    const relative = match[4];
+    if (!validateProvenancePath(relative)) sourceError('Der Git-Baum enthaelt einen nicht zulaessigen Quellpfad.');
+    return { mode: match[1] as TreeEntry['mode'], oid: match[3], path: relative };
   });
+  if (!entries.length) return [];
+  const query = Buffer.from(`${entries.map((entry) => entry.oid).join('\n')}\n`);
+  const sizeOutput = gitBuffer(repo, ['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)'], query, Math.max(1024 * 1024, entries.length * 128)).toString('utf8').trim();
+  const sizeLines = sizeOutput ? sizeOutput.split('\n') : [];
+  if (sizeLines.length !== entries.length) sourceError('Der Git-Baum konnte nicht vollstaendig vermessen werden.');
+  let total = 0;
+  return entries.map((entry, index) => {
+    const match = sizeLines[index].match(/^([a-f0-9]{40}) blob ([0-9]+)$/);
+    const size = match ? Number(match[2]) : Number.NaN;
+    if (!match || match[1] !== entry.oid || !Number.isSafeInteger(size) || size < 0) sourceError('Ein Quellblob ist ungueltig.');
+    total += size;
+    if (!Number.isSafeInteger(total) || total > limits.maxTotalBytes) sourceError('Die Quelle ueberschreitet das zulaessige Gesamtvolumen.');
+    return { ...entry, size };
+  });
+}
+
+function validateContractPath(value: string) {
+  if (!value || value.length > 1_000 || value.includes('\\') || value.includes('\0') || value.includes('\uFFFD') || /[\r\n\t]/.test(value)) return false;
+  if (path.posix.isAbsolute(value) || /^[A-Za-z]:|^\/\/|^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+  const segments = value.split('/');
+  return segments.every((segment) => segment && segment !== '.' && segment !== '..' && !isSensitiveSegment(segment));
+}
+
+function parseExactTree(repo: string, commit: string, requestedPaths: readonly string[], limits: ReaderLimits) {
+  const unique = [...new Set(requestedPaths)];
+  if (!unique.length || unique.length !== requestedPaths.length || unique.length > limits.maxFiles || unique.some((value) => !validateContractPath(value))) {
+    sourceError('Der Projektindex enthält keinen gültigen, eindeutigen Pfadsatz.');
+  }
+  const allowed = new Set(unique);
+  const output = gitBuffer(repo, ['ls-tree', '-r', '-z', '-l', '--full-tree', commit, '--', ...unique], undefined, Math.max(1024 * 1024, unique.length * 256));
+  const records = output.subarray(0, Math.max(0, output.length - (output.at(-1) === 0 ? 1 : 0))).toString('utf8').split('\0').filter(Boolean);
+  const entries: TreeEntry[] = [];
+  let total = 0;
+  for (const record of records) {
+    const match = record.match(/^([0-7]{6}) ([a-z]+) ([a-f0-9]{40})\s+([0-9-]+)\t([\s\S]+)$/);
+    if (!match || match[2] !== 'blob' || match[1] !== '100644' || !blobSha.test(match[3]) || !allowed.has(match[5])) {
+      sourceError('Ein indexierter Quellpfad besitzt keinen zulässigen regulären Git-Blob.');
+    }
+    const size = Number(match[4]);
+    if (!Number.isSafeInteger(size) || size < 0) sourceError('Ein indexierter Quellblob besitzt keine gültige Größe.');
+    total += size;
+    if (!Number.isSafeInteger(total) || total > limits.maxTotalBytes) sourceError('Die indexierten Quellen überschreiten das zulässige Gesamtvolumen.');
+    entries.push({ mode: '100644', oid: match[3], size, path: match[5] });
+  }
+  if (new Set(entries.map((entry) => entry.path)).size !== entries.length) sourceError('Der Projektindex löst einen Quellpfad mehrfach auf.');
+  return entries;
+}
+
+function assertBoundedArrays(value: unknown, limit: number, depth = 0): void {
+  if (depth > 100) sourceError('Die Quelldaten sind zu tief verschachtelt.');
+  if (Array.isArray(value)) {
+    if (value.length > limit) sourceError('Eine Quellliste ueberschreitet die zulaessige Laenge.');
+    value.forEach((item) => assertBoundedArrays(item, limit, depth + 1));
+  } else if (value && typeof value === 'object') {
+    const values = Object.values(value);
+    values.forEach((item) => assertBoundedArrays(item, limit, depth + 1));
+  }
+}
+
+function parseYamlRecord(text: string, limits: ReaderLimits): RecordValue {
+  try {
+    const value = YAML.parse(text, { maxAliasCount: 50 });
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+    assertBoundedArrays(value, limits.maxArrayItems);
+    return value as RecordValue;
+  } catch (error) {
+    if (error instanceof AdapterSourceError) throw error;
+    return sourceError('Ein YAML-Quellblob ist ungueltig.');
+  }
+}
+
+type FrontmatterDocument = { data: RecordValue; content: string };
+
+function parseBoundedFrontmatter(text: string, limits: ReaderLimits): FrontmatterDocument | null {
+  const openingLength = text.startsWith('---\r\n') ? 5 : text.startsWith('---\n') ? 4 : 0;
+  if (!openingLength) return null;
+  const searchEnd = Math.min(text.length, openingLength + limits.maxFrontmatterBytes + 8);
+  const search = text.slice(openingLength, searchEnd);
+  const closing = /^---[ \t]*(?:\r?\n|$)/m.exec(search);
+  if (!closing) sourceError('Der Frontmatter-Block fehlt oder ueberschreitet die zulaessige Groesse.');
+  const yamlText = search.slice(0, closing.index).replace(/\r?\n$/, '');
+  if (Buffer.byteLength(yamlText, 'utf8') > limits.maxFrontmatterBytes) sourceError('Der Frontmatter-Block ueberschreitet die zulaessige Groesse.');
+  const contentStart = openingLength + closing.index + closing[0].length;
+  return { data: parseYamlRecord(yamlText, limits), content: text.slice(contentStart) };
+}
+
+const pngCrcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function pngCrc(value: Buffer) {
+  let crc = 0xffffffff;
+  for (const byte of value) crc = pngCrcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function validatePngStructure(blob: Buffer, limits: ReaderLimits) {
+  if (blob.length < 45 || !blob.subarray(0, pngSignature.length).equals(pngSignature)) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+  let offset = pngSignature.length;
+  let first = true;
+  let hasHeader = false;
+  let hasImageData = false;
+  let hasEnd = false;
+  let hasPalette = false;
+  let imageDataClosed = false;
+  let headerColorType: number | undefined;
+  while (offset < blob.length) {
+    if (blob.length - offset < 12) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+    const length = blob.readUInt32BE(offset);
+    const typeBytes = blob.subarray(offset + 4, offset + 8);
+    const type = typeBytes.toString('ascii');
+    const dataStart = offset + 8;
+    const crcOffset = dataStart + length;
+    const next = crcOffset + 4;
+    if (!/^[A-Za-z]{4}$/.test(type) || type[2] !== type[2].toUpperCase() || next > blob.length || length > limits.maxPngBytes) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+    const expectedCrc = blob.readUInt32BE(crcOffset);
+    if (pngCrc(blob.subarray(offset + 4, crcOffset)) !== expectedCrc) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+    if (first && type !== 'IHDR') sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+    if (type === 'IHDR') {
+      if (!first || hasHeader || length !== 13) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+      const width = blob.readUInt32BE(dataStart);
+      const height = blob.readUInt32BE(dataStart + 4);
+      const bitDepth = blob[dataStart + 8];
+      const colorType = blob[dataStart + 9]; headerColorType = colorType;
+      const validDepth = (colorType === 0 && [1, 2, 4, 8, 16].includes(bitDepth))
+        || (colorType === 2 && [8, 16].includes(bitDepth))
+        || (colorType === 3 && [1, 2, 4, 8].includes(bitDepth))
+        || ([4, 6].includes(colorType) && [8, 16].includes(bitDepth));
+      if (!width || !height || width > limits.maxPngWidth || height > limits.maxPngHeight || width * height > limits.maxPngPixels) sourceError('Ein PNG-Quellblob ueberschreitet die zulaessigen Bildabmessungen.');
+      if (!validDepth || blob[dataStart + 10] !== 0 || blob[dataStart + 11] !== 0 || ![0, 1].includes(blob[dataStart + 12])) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+      hasHeader = true;
+    } else if (type === 'PLTE') {
+      if (!hasHeader || hasPalette || hasImageData || [0, 4].includes(headerColorType ?? -1) || length === 0 || length % 3 !== 0 || length > 768) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+      hasPalette = true;
+    } else if (type === 'IDAT') {
+      if (!hasHeader || hasEnd || imageDataClosed || length === 0) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+      hasImageData = true;
+    } else if (type === 'IEND') {
+      if (!hasHeader || !hasImageData || hasEnd || length !== 0 || next !== blob.length) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+      hasEnd = true;
+    } else if (type[0] === type[0].toUpperCase()) {
+      sourceError('Ein PNG-Quellblob enthaelt einen nicht unterstuetzten kritischen Block.');
+    }
+    if (hasImageData && type !== 'IDAT' && type !== 'IEND') imageDataClosed = true;
+    first = false;
+    offset = next;
+  }
+  if (!hasHeader || !hasImageData || !hasEnd || (headerColorType === 3 && !hasPalette)) sourceError('Ein PNG-Quellblob ist strukturell ungueltig.');
+}
+
+class CommitBlobReader {
+  readonly entries: readonly TreeEntry[];
+  private readonly byPath: Map<string, TreeEntry>;
+  private readonly blobs = new Map<string, Buffer>();
+  private readonly documents = new Map<string, unknown>();
+
+  constructor(readonly repo: string, readonly commit: string, readonly limits: ReaderLimits, entries?: readonly TreeEntry[], private readonly pathValidator = validateProvenancePath) {
+    this.entries = entries ?? parseTree(repo, commit, limits);
+    this.byPath = new Map(this.entries.map((entry) => [entry.path, entry]));
+  }
+
+  has(relative: string) { return this.byPath.has(relative); }
+
+  paths(predicate: (relative: string) => boolean) {
+    return this.entries.map((entry) => entry.path).filter(predicate).sort((a, b) => a.localeCompare(b, 'en'));
+  }
+
+  entry(relative: string) {
+    if (!this.pathValidator(relative)) sourceError('Ein angeforderter Quellpfad ist nicht zulaessig.');
+    const entry = this.byPath.get(relative);
+    if (!entry) sourceError('Ein erforderlicher Quellblob fehlt.');
+    return entry;
+  }
+
+  blob(relative: string) {
+    const entry = this.entry(relative);
+    const cached = this.blobs.get(entry.oid);
+    if (cached) return cached;
+    const blob = gitBuffer(this.repo, ['cat-file', 'blob', entry.oid], undefined, Math.max(1024, entry.size + 1024));
+    if (blob.length !== entry.size) sourceError('Ein Quellblob wurde nicht vollstaendig gelesen.');
+    this.blobs.set(entry.oid, blob);
+    return blob;
+  }
+
+  text(relative: string) {
+    const entry = this.entry(relative);
+    if (entry.size > this.limits.maxTextBytes) sourceError('Ein Textblob ueberschreitet die zulaessige Groesse.');
+    const text = this.blob(relative).toString('utf8');
+    if (text.includes('\uFFFD') || Buffer.byteLength(text, 'utf8') !== entry.size) sourceError('Ein Textblob ist nicht gueltig UTF-8-kodiert.');
+    return text;
+  }
+
+  yaml(relative: string): RecordValue {
+    const cached = this.documents.get(relative);
+    if (cached) return cached as RecordValue;
+    const value = parseYamlRecord(this.text(relative), this.limits);
+    this.documents.set(relative, value);
+    return value;
+  }
+
+  json(relative: string): unknown {
+    const cached = this.documents.get(relative);
+    if (cached) return cached;
+    try {
+      const value = JSON.parse(this.text(relative));
+      assertBoundedArrays(value, this.limits.maxArrayItems);
+      this.documents.set(relative, value);
+      return value;
+    } catch (error) {
+      if (error instanceof AdapterSourceError) throw error;
+      return sourceError('Ein JSON-Quellblob ist ungueltig.');
+    }
+  }
+
+  png(relative: string) {
+    const entry = this.entry(relative);
+    if (entry.size > this.limits.maxPngBytes) sourceError('Ein PNG-Quellblob ueberschreitet die zulaessige Groesse.');
+    const blob = this.blob(relative);
+    validatePngStructure(blob, this.limits);
+    return blob;
+  }
+
+  frontmatter(relative: string) {
+    return parseBoundedFrontmatter(this.text(relative), this.limits);
+  }
+
+  preflight() {
+    for (const entry of this.entries) {
+      if (/\.(?:md|ya?ml|json)$/i.test(entry.path) && entry.size > this.limits.maxTextBytes) sourceError('Ein Textblob ueberschreitet die zulaessige Groesse.');
+      if (/\.ya?ml$/i.test(entry.path)) this.yaml(entry.path);
+      else if (/\.json$/i.test(entry.path)) this.json(entry.path);
+      else if (/\.png$/i.test(entry.path)) this.png(entry.path);
+    }
+  }
+}
+
+const limitedString = z.string().min(1).max(100_000);
+const optionalString = z.string().max(100_000).optional();
+const technicalId = z.string().min(1).max(120).regex(/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,118}[A-Za-z0-9])?$/).refine((value) => !/[._-]{2}/.test(value) && isSafeTechnicalIdentifier(value));
+const optionalWave = z.enum(['W0', 'W1', 'W2', 'W3', 'W4', 'W5']).optional();
+const sourcePhase = z.string().min(1).max(80);
+const sourceDocumentType = z.string().regex(/^[a-z][a-z0-9-]{1,47}$/);
+
+const architectureSchema = z.object({
+  artifactId: technicalId,
+  title: limitedString,
+  lifecycleStatus: optionalString,
+  approval: z.object({ scope: optionalString, exclusions: optionalString, evidenceId: technicalId.optional() }).passthrough().default({}),
+  decisions: z.array(z.object({ id: technicalId, statement: limitedString, status: optionalString, decidedAt: optionalString }).passthrough()).default([]),
+  actualSandboxBaseline: z.object({ evidenceIds: z.array(technicalId).optional(), unknowns: z.array(z.string()).optional() }).passthrough().optional(),
+}).passthrough();
+
+const capabilitiesSchema = z.object({
+  artifactId: technicalId.optional(),
+  domains: z.array(z.object({
+    id: technicalId,
+    name: optionalString,
+    capabilities: z.array(z.object({
+      id: technicalId, name: optionalString, status: optionalString, wave: optionalWave, purpose: optionalString, rationale: optionalString,
+      dependencies: z.array(technicalId).optional(), confluenceRefs: z.array(technicalId).optional(), evidenceRefs: z.array(technicalId).optional(),
+    }).passthrough()).default([]),
+  }).passthrough()).default([]),
+}).passthrough();
+
+const openSpecArtifactIndexSchema = z.object({
+  schemaVersion: z.literal(1),
+  artifacts: z.array(z.object({
+    artifactId: technicalId,
+    title: z.string().min(1).max(4_000),
+    canonicalPath: z.string().min(1).max(1_000).refine(validateProvenancePath),
+    lifecycleStatus: z.string().min(1).max(80),
+    purpose: z.string().min(1).max(4_000),
+  }).strict()).max(10_000),
+}).strict();
+
+const jiraSchema = z.object({
+  issues: z.array(z.object({
+    key: technicalId, type: z.enum(['Epic', 'Story', 'Task', 'Sub-task', 'Bug']), summary: limitedString, status: optionalString, wave: optionalWave,
+    phase: sourcePhase.optional(), phaseId: technicalId.optional(), workstream: limitedString.optional(), startDate: sourceDateSchema.optional(), dueDate: sourceDateSchema.optional(),
+    effort: z.string().min(1).max(80).optional(), estimateHours: z.number().finite().nonnegative().optional(), plannedBillableHours: z.number().finite().nonnegative().optional(), actualHours: z.number().finite().nonnegative().optional(), billable: z.boolean().optional(),
+    billingWeek: sourceBillingWeekSchema.nullable().optional(), billingStatus: sourceBillingStatusSchema.optional(),
+    components: z.array(z.string()).optional(), acceptanceCriteria: z.array(z.string()).optional(), parent: technicalId.nullish(),
+    dependencies: z.array(technicalId).optional(), confluenceRefs: z.array(technicalId).optional(), evidenceRefs: z.array(technicalId).optional(),
+    meetingRefs: z.array(technicalId).optional(), deliverables: z.array(z.object({
+      id: technicalId, type: sourceDocumentType, path: z.string().min(1).max(1_000).refine(validateProvenancePath), status: z.string().min(1).max(80),
+    }).strict()).optional(), historySynthetic: z.boolean().optional(),
+    history: z.array(z.object({ at: sourceDateTimeSchema, from: z.string().min(1).max(80), to: z.string().min(1).max(80), by: technicalId }).passthrough()).optional(),
+  }).passthrough()).default([]),
+}).passthrough();
+
+const confluenceSchema = z.object({
+  id: technicalId, title: optionalString, status: optionalString, wave: optionalWave, parent: technicalId.nullish(),
+  jiraRefs: z.array(technicalId).optional(), referenceIds: z.array(technicalId).optional(), documentType: sourceDocumentType.optional(), meetingDate: sourceDateSchema.optional(),
+}).passthrough();
+
+const evidenceSchema = z.object({
+  verifications: z.array(z.object({
+    id: technicalId, changeRef: technicalId, status: optionalString, type: technicalId, evidence: z.string().max(100_000).nullish(),
+    wave: optionalWave, subjectRefs: z.array(technicalId).optional(),
+  }).passthrough()).default([]),
+}).passthrough();
+
+const openSpecProposalSchema = z.object({
+  id: technicalId,
+  title: limitedString.optional(),
+  status: z.string().min(1).max(80).optional(),
+  wave: z.enum(['W0', 'W1', 'W2', 'W3', 'W4', 'W5']).optional(),
+  problem: limitedString.optional(),
+  references: z.array(technicalId).default([]),
+}).strict();
+
+const projectDataArtifactSchema = z.object({
+  id: technicalId,
+  kindId: technicalId,
+  path: z.string().min(1).max(1_000).refine(validateContractPath),
+  selector: z.string().min(1).max(1_000).optional(),
+  format: z.enum(['yaml', 'json', 'markdown', 'png']),
+  required: z.boolean(),
+}).strict();
+
+const projectDataIndexSchema = z.object({
+  schemaVersion: z.literal(1),
+  contractId: z.literal('UABC-PROJECT-DATA-V1'),
+  projectId: technicalId,
+  projectKey: z.string().regex(/^[A-Z][A-Z0-9]{1,11}$/),
+  routeKey: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/),
+  displayName: z.string().min(1).max(160),
+  governingChange: technicalId,
+  lifecycleStatus: z.string().min(1).max(80),
+  readOnly: z.literal(true),
+  sourceOfTruth: z.literal('openspec'),
+  pathSemantics: z.literal('repository-relative'),
+  missingValuePolicy: z.literal('leer'),
+  consumerRules: z.array(z.string().min(1).max(2_000)).min(1).max(100),
+  artifacts: z.array(projectDataArtifactSchema).min(1).max(1_000),
+}).strict();
+
+type ProjectDataArtifact = z.infer<typeof projectDataArtifactSchema>;
+type ProjectDataIndex = z.infer<typeof projectDataIndexSchema>;
+type IndexedProjectSource = { declaration: ProjectDataArtifact; entry: TreeEntry };
+
+const indexedJiraSchema = z.object({
+  issues: z.array(z.object({
+    key: technicalId,
+    type: z.enum(['Epic', 'Story', 'Task', 'Sub-task', 'Bug']),
+    summary: limitedString,
+    status: z.string().min(1).max(80).nullish(),
+    phase: z.string().min(1).max(80).nullish(),
+    phaseId: technicalId.nullish(),
+    workstream: z.string().min(1).max(160).nullish(),
+    startDate: sourceDateSchema.nullish(),
+    dueDate: sourceDateSchema.nullish(),
+    effort: z.string().min(1).max(80).nullish(),
+    plannedBillableHours: z.number().finite().nonnegative().nullish(),
+    actualHours: z.number().finite().nonnegative().nullish(),
+    billable: z.boolean().nullish(),
+    billingWeek: sourceBillingWeekSchema.nullish(),
+    billingStatus: sourceBillingStatusSchema.nullish(),
+    parent: technicalId.nullish(),
+    dependencies: z.array(technicalId).nullish(),
+    confluenceRefs: z.array(technicalId).nullish(),
+    evidenceRefs: z.array(technicalId).nullish(),
+    transcriptRefs: z.array(technicalId).nullish(),
+    deliverableIds: z.array(technicalId).nullish(),
+    acceptanceCriteria: z.array(z.string().min(1).max(4_000)).nullish(),
+    historySynthetic: z.boolean().nullish(),
+    history: z.array(sourceHistoryEventSchema).nullish(),
+  }).passthrough()).max(10_000),
+}).passthrough();
+
+const indexedVerificationSchema = z.object({
+  verifications: z.array(z.object({
+    id: technicalId,
+    changeRef: technicalId,
+    status: z.string().min(1).max(80).nullish(),
+    type: technicalId,
+    evidence: z.string().max(100_000).nullish(),
+    subjectRefs: z.array(technicalId).nullish(),
+  }).passthrough()).max(10_000),
+}).passthrough();
+
+function schema<T>(value: unknown, validator: z.ZodType<T>): T {
+  const parsed = validator.safeParse(value);
+  if (!parsed.success) sourceError('Ein Quellblob verletzt den festgelegten Datenvertrag.');
+  return parsed.data;
 }
 
 function waveToPhase(wave: string) {
@@ -56,200 +667,691 @@ function waveToPhase(wave: string) {
   if (wave === 'W1') return 'Initiate' as const;
   if (wave === 'W2' || wave === 'W3') return 'Implement' as const;
   if (wave === 'W4') return 'Prepare' as const;
-  return 'Operate' as const;
-}
-
-function collectIds(value: unknown, target: Set<string>) {
-  if (typeof value === 'string') for (const id of value.match(uabcId) ?? []) target.add(id);
-  else if (Array.isArray(value)) value.forEach((item) => collectIds(item, target));
-  else if (value && typeof value === 'object') Object.values(value).forEach((item) => collectIds(item, target));
+  if (wave === 'W5') return 'Operate' as const;
+  return 'Nicht belegt' as const;
 }
 
 function jiraWorkstream(components: unknown) {
   const names = strings(components);
-  const preferred = names.find((name) => name !== 'Projektmanagement');
-  return preferred ?? names[0] ?? 'Projektmanagement';
+  return names.find((name) => name !== 'Projektmanagement') ?? names[0] ?? 'Projektmanagement';
 }
 
-function changeWave(text: string, sourcePath: string) {
-  const explicit = text.match(/(?:Welle|Wave):?\s*`?(W[0-5])/i)?.[1]?.toUpperCase();
-  if (explicit) return explicit;
-  return sourcePath.includes('/archive/') ? 'W0' : 'W1';
-}
+const primaryTitles: Record<string, string> = {
+  'Universaarl enterprise architecture blueprint': 'Universaarl-Unternehmensarchitektur',
+  'Four operational legal entities remain plus non-operational UAC-CONS; UAM is a substantive holding and shared-service company and UAP owns its project contracts resources and risks': 'Vier operative Rechtstraeger und eine nicht operative Beratungsgesellschaft',
+  'Organizational objects exist only for a distinct process or control purpose': 'Organisationsobjekte nur fuer eigene Prozess- oder Kontrollzwecke',
+  'Warehouse complexity differs by location': 'Lagerkomplexitaet je Standort',
+  'COSTCENTER and BUSINESSUNIT are global dimensions': 'COSTCENTER und BUSINESSUNIT als globale Dimensionen',
+  'Standard-first; extensions require a proven gap and separate change': 'Standard zuerst; Erweiterungen nur bei belegter Luecke',
+  'OpenSpec is normative; Jira and Confluence are collaboration views': 'OpenSpec ist massgeblich; Jira und Confluence sind Arbeitsansichten',
+  'Dataverse and Dynamics 365 Sales are outside the core project; later adoption needs a positive business case and separate OpenSpec change while native BC-adjacent sales functions may be assessed': 'Dataverse und Dynamics 365 Sales ausserhalb des Kernprojekts',
+  'UAM-DE is the sole standard master-data synchronization source company for party identity shared dictionaries and commercial item core; production and all legal-entity transactional fields remain local': 'UAM-DE als zentrale Quelle fuer Stammdatensynchronisation',
+};
 
-export async function readArchitecture(repo: string): Promise<ReadResult> {
-  const result = empty();
-  const file = path.join(repo, 'architecture', 'enterprise-blueprint.yaml');
-  if (!fs.existsSync(file)) { result.warnings.push('Architekturquelle fehlt: architecture/enterprise-blueprint.yaml'); return result; }
-  try {
-    const data = parseYaml(file); collectIds(data, result.knownIds);
-    const id = String(data.artifactId ?? '');
-    if (!id.startsWith('UABC-')) throw new Error('artifactId is missing');
-    const approval = data.approval ?? {};
-    result.artifacts.push({
-      id, kind: 'architecture', title: String(data.title ?? id), status: String(data.lifecycleStatus ?? 'unbekannt'), phase: 'Strategize', wave: 'W0',
-      workstream: 'Projektmanagement', rationale: [approval.scope, approval.exclusions ? `Ausnahmen: ${approval.exclusions}` : ''].filter(Boolean).join('\n'),
-      parentId: null, dependencies: [], documents: [], evidence: strings(approval.evidenceId ? [approval.evidenceId] : data.actualSandboxBaseline?.evidenceIds),
-      sourcePath: safeRel(repo, file),
-    });
-    for (const decision of data.decisions ?? []) result.artifacts.push({
-      id: String(decision.id), kind: 'architecture', title: String(decision.statement), status: String(decision.status ?? 'unbekannt'), phase: 'Strategize', wave: 'W0',
-      workstream: 'Projektmanagement', rationale: `Entscheidung dokumentiert ${String(decision.decidedAt ?? '')}`.trim(), parentId: id,
-      dependencies: [], documents: [], evidence: [], sourcePath: safeRel(repo, file),
-    });
-  } catch { result.warnings.push('Architekturquelle konnte nicht gelesen werden: architecture/enterprise-blueprint.yaml'); }
-  return result;
-}
+const maxRedactionInputLength = 32_768;
+const maxPercentDecodePasses = 8;
+const encodedPathEscape = /%(?:25)*(?:2f|5c|3a)/i;
+const absoluteHostPath = /(?<![A-Za-z0-9])(?:[\\/]{1,2})[A-Za-z0-9._~-]+(?:[\\/]+[A-Za-z0-9._~+@%=-]+)*/;
+const sensitivePublicPath = /(?:^|[^a-z0-9])(?:auth(?:entication|orization)?|bearer|credential|key|oauth2?|password|secret|session|tenant|token)(?:[^a-z0-9]|$)/i;
+const allowedPublicHosts = new Set(['learn.microsoft.com', 'github.com', 'openspec.dev']);
+const narrativeSensitiveIdentifier = /(^|[^A-Za-z0-9])(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?=$|[^A-Za-z0-9])/gi;
+const narrativeValue = `(?:"(?:\\\\.|[^"\\\\\\r\\n])*"|'(?:\\\\.|[^'\\\\\\r\\n])*'|(?:Bearer|Basic)\\s+[^\\s,;)\\]}]+|[^\\s,;)\\]}]+)`;
+const narrativeAssignment = new RegExp(`(^|[^A-Za-z0-9])((?:[A-Za-z][A-Za-z0-9._-]{0,63})(?:[ \\t]+[A-Za-z][A-Za-z0-9._-]{0,63}){0,3})(\\s*(?:=|:)\\s*)${narrativeValue}`, 'gi');
+const narrativeCredentialScheme = new RegExp(`(^|[^A-Za-z0-9])(Bearer|Basic)([ \\t]+)("(?:\\\\.|[^"\\\\\\r\\n])*"|'(?:\\\\.|[^'\\\\\\r\\n])*'|[^\\s,;)\\]}]+)`, 'gi');
 
-export async function readCapabilities(repo: string): Promise<ReadResult> {
-  const result = empty();
-  const file = path.join(repo, 'capabilities', 'catalog.yaml');
-  if (!fs.existsSync(file)) { result.warnings.push('Fähigkeitsquelle fehlt: capabilities/catalog.yaml'); return result; }
-  try {
-    const data = parseYaml(file); collectIds(data, result.knownIds);
-    for (const domain of data.domains ?? []) for (const capability of domain.capabilities ?? []) {
-      const wave = String(capability.wave ?? '');
-      result.artifacts.push({
-        id: String(capability.id), kind: 'capability', title: String(capability.name ?? capability.id), status: String(capability.status ?? 'unbekannt'),
-        phase: waveToPhase(wave), wave, workstream: String(domain.name ?? domain.id ?? 'Nicht zugeordnet'),
-        rationale: String(capability.purpose ?? capability.rationale ?? 'Kanonischer Eintrag im Fähigkeitskatalog.'), parentId: String(domain.id ?? '') || null,
-        dependencies: strings(capability.dependencies), documents: strings(capability.confluenceRefs), evidence: strings(capability.evidenceRefs), sourcePath: safeRel(repo, file),
-      });
-    }
-  } catch { result.warnings.push('Fähigkeitsquelle konnte nicht gelesen werden: capabilities/catalog.yaml'); }
-  return result;
-}
-
-export async function readJira(repo: string): Promise<ReadResult> {
-  const result = empty();
-  const files = await fg('atlassian/jira/issues/*.yaml', { cwd: repo, absolute: true, onlyFiles: true });
-  if (!files.length) result.warnings.push('Keine Jira-Vorgangsexporte gefunden.');
-  for (const file of files) try {
-    const data = parseYaml(file); collectIds(data, result.knownIds);
-    const wave = path.basename(file).includes('environment-baseline') ? 'W1' : 'W0';
-    for (const issue of data.issues ?? []) {
-      const kind = issue.type === 'Epic' ? 'epic' : issue.type === 'Story' ? 'story' : 'task';
-      result.artifacts.push({
-        id: String(issue.key), kind, title: String(issue.summary), status: String(issue.status ?? 'unbekannt'), phase: waveToPhase(wave), wave,
-        workstream: jiraWorkstream(issue.components), rationale: strings(issue.acceptanceCriteria).join(' · '), parentId: issue.parent ? String(issue.parent) : null,
-        dependencies: strings(issue.dependencies), documents: strings(issue.confluenceRefs), evidence: strings(issue.evidenceRefs), sourcePath: safeRel(repo, file),
-      });
-    }
-  } catch { result.warnings.push(`Jira-Quelle konnte nicht gelesen werden: ${rel(repo, file)}`); }
-  return result;
-}
-
-export async function readOpenSpec(repo: string): Promise<ReadResult> {
-  const result = empty();
-  const files = await fg(['openspec/changes/*/proposal.md', 'openspec/changes/archive/*/proposal.md'], { cwd: repo, absolute: true, onlyFiles: true });
-  if (!files.length) result.warnings.push('Keine OpenSpec-Änderungsvorschläge gefunden.');
-  for (const file of files) try {
-    const text = fs.readFileSync(file, 'utf8'); for (const id of text.match(uabcId) ?? []) result.knownIds.add(id);
-    const relative = rel(repo, file); const rawDir = path.basename(path.dirname(file)); const id = rawDir.replace(/^\d{4}-\d{2}-\d{2}-/, '');
-    const wave = changeWave(text, relative);
-    result.artifacts.push({
-      id, kind: 'change', title: text.match(/^#\s+(.+)$/m)?.[1] ?? id,
-      status: text.match(/(?:Status|Status):\s*`?([^`\n]+?)(?:`|$)/i)?.[1]?.trim() ?? (relative.includes('/archive/') ? 'archived' : 'active'),
-      phase: waveToPhase(wave), wave, workstream: 'Projektmanagement',
-      rationale: text.match(/## (?:Problem und Zweck|Problem)\s+([\s\S]*?)(?=\n##)/)?.[1]?.trim() ?? 'OpenSpec-Änderungsvorschlag.',
-      parentId: null, dependencies: [], documents: [...new Set(text.match(uabcId) ?? [])], evidence: [], sourcePath: validateProvenancePath(relative) ? relative : (() => { throw new Error('Unsichere Provenienz'); })(),
-    });
-  } catch { result.warnings.push(`OpenSpec-Quelle konnte nicht gelesen werden: ${rel(repo, file)}`); }
-  return result;
-}
-
-export async function readConfluence(repo: string): Promise<ReadResult> {
-  const result = empty();
-  const files = await fg('atlassian/confluence/pages/*.md', { cwd: repo, absolute: true, onlyFiles: true });
-  if (!files.length) result.warnings.push('Keine Confluence-Seitenexporte gefunden.');
-  for (const file of files) try {
-    const parsed = matter(fs.readFileSync(file, 'utf8')); collectIds(parsed.data, result.knownIds); collectIds(parsed.content, result.knownIds);
-    if (!parsed.data.id) throw new Error('frontmatter id is missing');
-    const status = String(parsed.data.status ?? 'documented'); const wave = /W1|In Review/i.test(status) ? 'W1' : 'W0';
-    result.artifacts.push({
-      id: String(parsed.data.id), kind: 'document', title: String(parsed.data.title ?? parsed.data.id), status, phase: waveToPhase(wave), wave,
-      workstream: 'Projektmanagement', rationale: parsed.content.replace(/[#\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 420),
-      parentId: parsed.data.parent ? String(parsed.data.parent) : null, dependencies: strings(parsed.data.jiraRefs), documents: strings(parsed.data.referenceIds),
-      evidence: strings(parsed.data.referenceIds).filter((id) => id.startsWith('UABC-VER-')), sourcePath: safeRel(repo, file),
-    });
-  } catch { result.warnings.push(`Confluence-Quelle konnte nicht gelesen werden: ${rel(repo, file)}`); }
-  return result;
-}
-
-export async function readEvidence(repo: string): Promise<ReadResult & { items: ProjectState['evidenceItems'] }> {
-  const result = { ...empty(), items: [] as ProjectState['evidenceItems'] };
-  const registerFile = path.join(repo, 'evidence', 'verification-register.yaml');
-  if (!fs.existsSync(registerFile)) result.warnings.push('Verification-Register für Nachweise fehlt.');
-  else try {
-    const data = parseYaml(registerFile); collectIds(data, result.knownIds);
-    for (const verification of data.verifications ?? []) {
-      const wave = String(verification.changeRef).includes('playthru-environment') ? 'W1' : 'W0';
-      result.artifacts.push({
-        id: String(verification.id), kind: 'evidence', title: String(verification.type).replaceAll('-', ' '),
-        status: String(verification.status ?? 'unbekannt'), phase: waveToPhase(wave), wave, workstream: 'Projektmanagement', rationale: String(verification.evidence ?? ''),
-        parentId: null, dependencies: strings(verification.subjectRefs), documents: [], evidence: [], sourcePath: safeRel(repo, registerFile),
-      });
-    }
-  } catch { result.warnings.push('Verification-Register konnte nicht gelesen werden: evidence/verification-register.yaml'); }
-
-  result.items = registeredEvidenceFiles(repo).map((entry, index) => ({ id: entry.id, title: `Bildnachweis ${String(index + 1).padStart(2, '0')}` }));
-  return result;
-}
-
-async function collectKnownIds(repo: string) {
-  const ids = new Set<string>();
-  const files = await fg(safeRoots.map((root) => `${root}/**/*.{yaml,yml,md,json}`), { cwd: repo, absolute: true, onlyFiles: true, ignore: ['**/events.jsonl', '**/*trace*', '**/*video*', '**/*auth*', '**/*tenant*', '**/*token*', '**/*secret*'] });
-  for (const file of files) if (!forbidden.test(rel(repo, file))) {
-    const text = fs.readFileSync(file, 'utf8');
-    const declarations = [
-      ...text.matchAll(/^\s*(?:-\s*)?(?:id|artifactId|key):\s*(UABC-[A-Z0-9][A-Z0-9-]*)/gm),
-      ...text.matchAll(/(?:[{,]\s*)(?:id|artifactId|key):\s*(UABC-[A-Z0-9][A-Z0-9-]*)/gm),
-      ...text.matchAll(/^#{2,6}\s+(?:Requirement|Scenario):\s*(UABC-[A-Z0-9][A-Z0-9-]*)/gm),
-    ];
-    declarations.forEach((match) => ids.add(match[1]));
+function decodePathEscapes(value: string) {
+  if (value.length > maxRedactionInputLength) return null;
+  let current = value;
+  for (let pass = 0; pass < maxPercentDecodePasses; pass += 1) {
+    const next = current.replace(/%25/gi, '%').replace(/%2f/gi, '/').replace(/%5c/gi, '\\').replace(/%3a/gi, ':');
+    if (next === current) return current;
+    current = next;
   }
-  return ids;
+  return encodedPathEscape.test(current) ? null : current;
 }
 
-export async function createTwinState(repo: string): Promise<ProjectState> {
-  if (!repo || !path.isAbsolute(repo)) throw new Error('UABC_SOURCE_REPO must be configured as an absolute path');
-  if (!fs.existsSync(repo) || !fs.statSync(repo).isDirectory()) throw new Error('UABC_SOURCE_REPO does not exist or is not a directory');
-  try { if (git(repo, ['rev-parse', '--is-inside-work-tree']) !== 'true') throw new Error(); } catch { throw new Error('UABC_SOURCE_REPO is not a Git worktree'); }
+function decodePublicUrlPath(value: string) {
+  if (value.length > 2_048) return null;
+  let current = value;
+  for (let pass = 0; pass < 4; pass += 1) {
+    let next: string;
+    try { next = decodeURIComponent(current); } catch { return null; }
+    if (next === current) return current;
+    current = next;
+  }
+  try { return decodeURIComponent(current) === current ? current : null; } catch { return null; }
+}
 
-  const [architecture, capabilities, jira, openSpec, confluence, evidence, knownSourceIds] = await Promise.all([
-    readArchitecture(repo), readCapabilities(repo), readJira(repo), readOpenSpec(repo), readConfluence(repo), readEvidence(repo), collectKnownIds(repo),
-  ]);
+function rawHttpsPath(value: string) {
+  const authorityStart = value.indexOf('//') + 2; const pathStart = value.indexOf('/', authorityStart);
+  return pathStart < 0 ? '/' : value.slice(pathStart);
+}
+
+function hasSensitivePublicSegment(value: string) {
+  return value.split(/[\\/]/).filter(Boolean).some((segment) => isSensitiveSegment(segment) || canonicalNameTokens(segment).join('').includes('private'));
+}
+
+function isUnsafePublicPath(value: string) {
+  const decoded = decodePublicUrlPath(value);
+  if (decoded === null) return true;
+  return [value, decoded].some((candidate) => /[?#]/.test(candidate) || sensitiveIdentifier.test(candidate) || sensitivePublicPath.test(candidate) || hasSensitivePublicSegment(candidate));
+}
+
+function isSafePublicHttps(value: string) {
+  try {
+    const authorityMatch = value.match(/^https:\/\/([^/?#]*)(?:[/?#]|$)/i);
+    const rawAuthority = authorityMatch?.[1] ?? '';
+    const rawHost = rawAuthority.toLowerCase();
+    if (!allowedPublicHosts.has(rawHost)) return false;
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash || url.hostname.toLowerCase() !== rawHost || url.host.toLowerCase() !== rawHost) return false;
+    const rawPath = rawHttpsPath(value); const decodedPath = decodePublicUrlPath(url.pathname);
+    if (decodedPath === null || isUnsafePublicPath(rawPath) || isUnsafePublicPath(url.pathname)) return false;
+    const host = url.hostname.toLowerCase();
+    if (host === 'learn.microsoft.com') return /^\/(?:[a-z]{2}-[a-z]{2}\/)?(?:dynamics365\/business-central|power-platform|training)(?:\/|$)/i.test(decodedPath);
+    if (host === 'github.com') return /^\/Fission-AI\/OpenSpec(?:\/|$)/i.test(decodedPath);
+    return host === 'openspec.dev' && (decodedPath === '/' || /^\/docs(?:\/|$)/i.test(decodedPath));
+  } catch { return false; }
+}
+
+function redactHostReferences(value: string) {
+  if (value.length > maxRedactionInputLength) return '[Verweis redigiert]';
+  const preservedHttps: string[] = [];
+  const protectedValue = value.replace(/\bhttps:\/\/[^\s<>"']+/gi, (url) => {
+    if (!isSafePublicHttps(url)) return '[Verweis redigiert]';
+    const marker = `\uE000${preservedHttps.length}\uE001`; preservedHttps.push(url); return marker;
+  });
+  let result = decodePathEscapes(protectedValue);
+  if (result === null) return '[Verweis redigiert]';
+  result = result
+    .replace(narrativeAssignment, (match, prefix: string, key: string, separator: string) => {
+      const keyTokens = canonicalNameTokens(key);
+      const sensitiveKey = isSensitiveSegment(key) || keyTokens.some((token) => token === 'key' || token === 'keys');
+      return sensitiveKey ? `${prefix}${key}${separator}[Wert redigiert]` : match;
+    })
+    .replace(narrativeCredentialScheme, (match, prefix: string, scheme: string, spacing: string, rawValue: string) => {
+      const quoted = rawValue.startsWith('"') || rawValue.startsWith("'");
+      const plainValue = /^(["']).*\1$/.test(rawValue) ? rawValue.slice(1, -1) : rawValue;
+      const basicCredential = quoted || plainValue.length >= 24 || /[^A-Za-z]/.test(plainValue) || /.[A-Z]/.test(plainValue);
+      return scheme.toLowerCase() === 'bearer' || basicCredential ? `${prefix}${scheme}${spacing}[Wert redigiert]` : match;
+    });
+  result = result
+    .replace(/\b[a-z][a-z0-9+.-]{1,31}:[^\s<>"']+/gi, '[Verweis redigiert]')
+    .replace(/[A-Za-z]:(?:[\\/])+[A-Za-z0-9._~+@%=-]+(?:(?:[\\/])+[A-Za-z0-9._~+@%=-]+)*/g, '[lokaler Pfad redigiert]')
+    .replace(new RegExp(absoluteHostPath.source, 'g'), '[lokaler Pfad redigiert]');
+  if (encodedPathEscape.test(result) || absoluteHostPath.test(result)) return '[Verweis redigiert]';
+  result = result
+    .replace(narrativeSensitiveIdentifier, (_match, prefix: string) => `${prefix}[Kennung redigiert]`);
+  return result.replace(/\uE000([0-9]+)\uE001/g, (_marker, index: string) => preservedHttps[Number(index)] ?? '[Verweis redigiert]');
+}
+
+function sanitizeArtifact(artifact: Artifact): Artifact {
+  const sanitizeNullable = (value: string | null) => value === null ? null : redactHostReferences(value);
+  return {
+    ...artifact,
+    title: sanitizeNullable(artifact.title),
+    status: sanitizeNullable(artifact.status),
+    sourceType: sanitizeNullable(artifact.sourceType),
+    sourcePhase: sanitizeNullable(artifact.sourcePhase),
+    workstream: sanitizeNullable(artifact.workstream),
+    rationale: sanitizeNullable(artifact.rationale),
+    history: artifact.history.map((event) => ({ ...event, from: redactHostReferences(event.from), to: redactHostReferences(event.to) })),
+    deliverables: artifact.deliverables.map((deliverable) => ({ ...deliverable, status: redactHostReferences(deliverable.status) })),
+  };
+}
+
+function presentArtifact(artifact: Artifact): Artifact {
+  const translated = artifact.title ? primaryTitles[artifact.title] : undefined;
+  return translated ? { ...artifact, title: translated } : artifact;
+}
+
+function readArchitecture(reader: CommitBlobReader): ReadResult {
+  const result = empty();
+  const relative = 'architecture/enterprise-blueprint.yaml';
+  if (!reader.has(relative)) { result.warnings.push('Architekturquelle fehlt: architecture/enterprise-blueprint.yaml'); return result; }
+  const data = schema(reader.yaml(relative), architectureSchema);
+  result.knownIds.add(data.artifactId); data.decisions.forEach((decision) => result.knownIds.add(decision.id));
+  const approval = data.approval;
+  result.artifacts.push({
+    id: data.artifactId, kind: 'architecture', title: data.title, status: data.lifecycleStatus ?? 'unbekannt', phase: 'Strategize', wave: 'W0',
+    workstream: 'Projektmanagement', rationale: [approval.scope, approval.exclusions ? `Ausnahmen: ${approval.exclusions}` : ''].filter(Boolean).join('\n'),
+    parentId: null, dependencies: [], documents: [], evidence: strings(approval.evidenceId ? [approval.evidenceId] : data.actualSandboxBaseline?.evidenceIds), sourcePath: relative,
+  });
+  for (const decision of data.decisions) result.artifacts.push({
+    id: decision.id, kind: 'architecture', title: decision.statement, status: decision.status ?? 'unbekannt', phase: 'Strategize', wave: 'W0',
+    workstream: 'Projektmanagement', rationale: `Entscheidung dokumentiert ${decision.decidedAt ?? ''}`.trim(), parentId: data.artifactId,
+    dependencies: [], documents: [], evidence: [], sourcePath: relative,
+  });
+  result.actualUnknowns = data.actualSandboxBaseline?.unknowns ?? [];
+  return result;
+}
+
+function readCapabilities(reader: CommitBlobReader): ReadResult {
+  const result = empty();
+  const relative = 'capabilities/catalog.yaml';
+  if (!reader.has(relative)) { result.warnings.push('Faehigkeitsquelle fehlt: capabilities/catalog.yaml'); return result; }
+  const data = schema(reader.yaml(relative), capabilitiesSchema);
+  if (data.artifactId) result.knownIds.add(data.artifactId);
+  for (const domain of data.domains) for (const capability of domain.capabilities) {
+    result.knownIds.add(domain.id); result.knownIds.add(capability.id);
+    const wave = capability.wave ?? '';
+    result.artifacts.push({
+      id: capability.id, kind: 'capability', title: capability.name ?? capability.id, status: capability.status ?? 'unbekannt', phase: waveToPhase(wave), wave,
+      workstream: domain.name ?? domain.id, rationale: capability.purpose ?? capability.rationale ?? 'Kanonischer Eintrag im Faehigkeitskatalog.', parentId: domain.id,
+      dependencies: capability.dependencies ?? [], documents: capability.confluenceRefs ?? [], evidence: capability.evidenceRefs ?? [], sourcePath: relative,
+    });
+  }
+  return result;
+}
+
+function readJira(reader: CommitBlobReader): ReadResult {
+  const result = empty();
+  const files = reader.paths((relative) => /^atlassian\/jira\/issues\/[^/]+\.ya?ml$/i.test(relative));
+  if (!files.length) result.warnings.push('Keine Jira-Vorgangsexporte gefunden.');
+  for (const relative of files) {
+    const data = schema(reader.yaml(relative), jiraSchema);
+    for (const issue of data.issues) {
+      result.knownIds.add(issue.key);
+      const wave = issue.wave ?? '';
+      const kind: Artifact['kind'] = issue.type === 'Epic' ? 'epic' : issue.type === 'Story' ? 'story' : issue.type === 'Bug' ? 'bug' : 'task';
+      result.artifacts.push({
+        id: issue.key, kind, title: issue.summary, status: issue.status ?? 'unbekannt', phase: waveToPhase(wave), wave,
+        sourceType: issue.type, sourcePhase: issue.phase ?? null, phaseId: issue.phaseId ?? null, workstream: issue.workstream ?? jiraWorkstream(issue.components),
+        rationale: (issue.acceptanceCriteria ?? []).join(' · '), parentId: issue.parent ?? null,
+        dependencies: issue.dependencies ?? [], documents: issue.confluenceRefs ?? [], evidence: issue.evidenceRefs ?? [],
+        effort: issue.effort && sourceEffortSchema.safeParse(issue.effort).success ? issue.effort : null, estimateHours: issue.estimateHours ?? issue.plannedBillableHours ?? null, actualHours: issue.actualHours ?? null,
+        billable: issue.billable ?? null, billingWeek: issue.billingWeek ?? null, billingStatus: issue.billingStatus ?? null,
+        startDate: issue.startDate ?? null, dueDate: issue.dueDate ?? null, historySynthetic: issue.historySynthetic ?? null, history: issue.history ?? [],
+        meetings: issue.meetingRefs ?? [], deliverables: issue.deliverables ?? [], sourcePath: relative,
+      });
+    }
+  }
+  return result;
+}
+
+function safeMarkdownValue(value: string, maxLength: number) {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength || /[\u0000-\u001f\u007f<>]/.test(normalized) || /https?:\/\/|\]\(|\\|(?:^|\s)[A-Za-z]:[\/\\]|(?:^|\s)\/(?:[^/\s]|$)/i.test(normalized)) return null;
+  return redactHostReferences(normalized) === normalized ? normalized : null;
+}
+
+function proposalDirectoryIdentity(relative: string) {
+  const match = relative.match(/^openspec\/changes\/(archive\/)?([^/]+)\/proposal\.md$/);
+  if (!match) return null;
+  const leaf = technicalId.safeParse(match[2]);
+  if (!leaf.success) return null;
+  const dated = match[1] ? leaf.data.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] : undefined;
+  const id = technicalId.safeParse(dated ?? leaf.data);
+  return id.success ? { id: id.data, archived: Boolean(match[1]) } : null;
+}
+
+function mainSpecDirectoryIdentity(relative: string) {
+  const match = relative.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
+  if (!match) return null;
+  const id = technicalId.safeParse(match[1]);
+  return id.success ? id.data : null;
+}
+
+function readOpenSpecKnownIds(reader: CommitBlobReader, result: ReadResult) {
+  const artifactIndex = 'openspec/specs/project-governance/artifact-index.yaml';
+  if (reader.has(artifactIndex)) {
+    const data = schema(reader.yaml(artifactIndex), openSpecArtifactIndexSchema);
+    const indexIds = new Set<string>();
+    for (const artifact of data.artifacts) {
+      if (indexIds.has(artifact.artifactId)) sourceError('Der OpenSpec-Artefaktindex verletzt den festgelegten Datenvertrag.');
+      indexIds.add(artifact.artifactId);
+      result.knownIds.add(artifact.artifactId);
+    }
+  }
+
+  const mainSpecIds = new Set<string>();
+  const files = reader.paths((relative) => mainSpecDirectoryIdentity(relative) !== null);
+  for (const relative of files) {
+    const text = reader.text(relative);
+    if (Buffer.byteLength(text, 'utf8') > 512 * 1024) sourceError('Ein OpenSpec-Main-Spec-Blob verletzt den festgelegten Datenvertrag.');
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    if (lines.length > 10_000 || lines.some((line) => line.length > 4_000)) sourceError('Ein OpenSpec-Main-Spec-Blob verletzt den festgelegten Datenvertrag.');
+    for (const line of lines) {
+      if (!/^(?:### Requirement|#### Scenario):/.test(line)) continue;
+      const match = line.match(/^(?:### Requirement|#### Scenario):[ \t]+([^ \t]+)(?:[ \t]+.*)?$/);
+      const parsed = match ? technicalId.safeParse(match[1]) : null;
+      if (!parsed?.success || mainSpecIds.has(parsed.data)) sourceError('Ein OpenSpec-Main-Spec-Blob verletzt den festgelegten Datenvertrag.');
+      mainSpecIds.add(parsed.data);
+      result.knownIds.add(parsed.data);
+    }
+  }
+}
+
+function parseMarkdownOpenSpecProposal(text: string, directoryId: string, archived: boolean) {
+  if (Buffer.byteLength(text, 'utf8') > 256 * 1024) return null;
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  if (lines.length > 2_000 || lines.some((line) => line.length > 1_000)) return null;
+  const firstContent = lines.findIndex((line) => line.trim());
+  const heading = firstContent >= 0 ? lines[firstContent].match(/^#\s+(.+)\s*$/) : null;
+  if (!heading) return null;
+  const rawHeading = safeMarkdownValue(heading[1], 240);
+  if (!rawHeading) return null;
+  const genericHeading = /^(?:Change-Vorschlag|Änderungsvorschlag|Vorschlag)\s*:?\s*$/i.test(rawHeading);
+  const explicitHeading = rawHeading.replace(/^(?:Change-Vorschlag|Änderungsvorschlag|Vorschlag)\s*:\s*/i, '');
+  const title = genericHeading ? `OpenSpec-Aenderung ${directoryId}` : safeMarkdownValue(explicitHeading || rawHeading, 240);
+  if (!title) return null;
+
+  const metadata = new Map<string, string>();
+  const metadataPattern = /^\s*(?:[-*]\s+)?(Change(?:-ID)?|Änderung(?:s-ID)?|Status|Welle|Wave)\s*:\s*(.*?)\s*$/i;
+  const metadataCandidate = /^\s*(?:[-*]\s+)?(?:Change(?:-ID)?|Änderung(?:s-ID)?|Status|Welle|Wave)\b/i;
+  const firstH2 = lines.findIndex((line, index) => index > firstContent && /^##(?:\s|$)/.test(line));
+  const metadataZones: string[][] = [lines.slice(firstContent + 1, firstH2 < 0 ? lines.length : firstH2)];
+  const metadataHeadings = lines.map((line, index) => /^##\s+Metadaten\s*$/i.test(line) ? index : -1).filter((index) => index >= 0);
+  if (metadataHeadings.length > 1) return null;
+  if (metadataHeadings.length === 1) {
+    const start = metadataHeadings[0] + 1;
+    let end = lines.findIndex((line, index) => index >= start && /^#{1,6}(?:\s|$)/.test(line));
+    if (end < 0) end = lines.length;
+    metadataZones.push(lines.slice(start, end));
+  }
+  for (const line of metadataZones.flat()) {
+    const cleaned = line.replace(/\*\*/g, '');
+    const match = cleaned.match(metadataPattern);
+    if (!match) { if (metadataCandidate.test(cleaned)) return null; continue; }
+    const label = match[1].toLowerCase();
+    const key = /^(?:change|änderung)/i.test(label) ? 'id' : /^(?:welle|wave)$/i.test(label) ? 'wave' : 'status';
+    const rawValue = match[2].trim(); const unquoted = rawValue.match(/^`([^`]+)`$/)?.[1] ?? rawValue;
+    const value = safeMarkdownValue(unquoted, 240);
+    if (!value || metadata.has(key)) return null;
+    metadata.set(key, value);
+  }
+  const declaredId = metadata.get('id');
+  if (declaredId && (declaredId !== directoryId || !technicalId.safeParse(declaredId).success)) return null;
+
+  const statusValue = metadata.get('status'); const statusLabels: Readonly<Record<string, string>> = { archiviert: 'archived', archived: 'archived', aktiv: 'active', active: 'active', vorgeschlagen: 'proposed', proposed: 'proposed', geplant: 'planned', planned: 'planned', abgeschlossen: 'completed', completed: 'completed', erledigt: 'done', done: 'done', 'in arbeit': 'in progress', 'in progress': 'in progress' };
+  const statusParts = statusValue?.split(',') ?? [];
+  const statusBase = statusParts[0]?.trim(); const statusQualifier = statusParts[1]?.trim();
+  if (statusValue && (statusParts.length > 2 || !statusBase || (statusParts.length === 2 && !statusQualifier) || (statusQualifier && !safeMarkdownValue(statusQualifier, 180)))) return null;
+  const normalizedStatus = statusBase ? statusLabels[statusBase.toLowerCase()] : undefined;
+  if (statusValue && !normalizedStatus) return null;
+  const status = archived ? 'archived' : normalizedStatus;
+  const rawWave = metadata.get('wave');
+  const waveMatch = rawWave?.match(/^(W[0-5])(?:[ \t]+(.+))?$/);
+  if (rawWave && (!waveMatch || (waveMatch[2] && !safeMarkdownValue(waveMatch[2], 180)))) return null;
+  const waveValue = waveMatch?.[1];
+
+  const sectionIndex = lines.findIndex((line) => /^##\s+(?:Problem|Problem und Zweck|Problemstellung|Zweck|Warum|Ziel)\s*$/i.test(line.trim()));
+  let problem: string | undefined;
+  if (sectionIndex >= 0) {
+    const sectionLines: string[] = [];
+    for (const line of lines.slice(sectionIndex + 1)) { if (/^#{1,6}\s+/.test(line)) break; if (line.trim()) sectionLines.push(line.trim()); }
+    if (sectionLines.length > 40) return null;
+    const section = safeMarkdownValue(sectionLines.join(' ').replace(/\s+/g, ' '), 4_000);
+    if (sectionLines.length && !section) return null;
+    problem = section ?? undefined;
+  }
+  const parsed = openSpecProposalSchema.safeParse({ id: directoryId, title, status, wave: waveValue, problem, references: [] });
+  return parsed.success ? parsed.data : null;
+}
+
+function readOpenSpec(reader: CommitBlobReader): ReadResult {
+  const result = empty();
+  readOpenSpecKnownIds(reader, result);
+  const files = reader.paths((relative) => proposalDirectoryIdentity(relative) !== null);
+  if (!files.length) result.warnings.push('Keine OpenSpec-Aenderungsvorschlaege gefunden.');
+  for (const relative of files) {
+    const identity = proposalDirectoryIdentity(relative);
+    if (!identity) continue;
+    const document = reader.frontmatter(relative);
+    const parsed = document ? openSpecProposalSchema.safeParse(document.data) : null;
+    const proposal = document ? (parsed?.success && parsed.data.id === identity.id ? parsed.data : null) : parseMarkdownOpenSpecProposal(reader.text(relative), identity.id, identity.archived);
+    if (!proposal) { result.warnings.push('Ein OpenSpec-Vorschlag verletzt den begrenzten strukturierten oder Markdown-Vertrag und wurde nicht normalisiert.'); continue; }
+    result.knownIds.add(proposal.id);
+    const wave = proposal.wave ?? '';
+    result.artifacts.push({
+      id: proposal.id, kind: 'change', title: proposal.title ?? 'Nicht belegt', status: identity.archived ? 'archived' : proposal.status ?? 'Nicht belegt', phase: waveToPhase(wave), wave, workstream: 'Nicht belegt',
+      rationale: proposal.problem ?? 'Nicht belegt',
+      parentId: null, dependencies: [], documents: proposal.references, evidence: [], sourcePath: relative,
+    });
+  }
+  return result;
+}
+
+function readConfluence(reader: CommitBlobReader): ReadResult {
+  const result = empty();
+  const files = reader.paths((relative) => /^atlassian\/confluence\/pages\/[^/]+\.md$/i.test(relative));
+  if (!files.length) result.warnings.push('Keine Confluence-Seitenexporte gefunden.');
+  for (const relative of files) {
+    const document = reader.frontmatter(relative);
+    if (!document) sourceError('Ein Confluence-Quellblob besitzt keinen gueltigen Frontmatter-Vertrag.');
+    const data = schema(document.data, confluenceSchema); result.knownIds.add(data.id);
+    const wave = data.wave ?? '';
+    result.artifacts.push({
+      id: data.id, kind: 'document', title: data.title ?? data.id, status: data.status ?? 'documented', phase: waveToPhase(wave), wave,
+      workstream: 'Projektmanagement', rationale: document.content.replace(/[#\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 420),
+      parentId: data.parent ?? null, dependencies: data.jiraRefs ?? [], documents: data.referenceIds ?? [],
+      evidence: (data.referenceIds ?? []).filter((id) => id.startsWith('UABC-VER-')), documentType: data.documentType ?? null, meetingDate: data.meetingDate ?? null, sourcePath: relative,
+    });
+  }
+  return result;
+}
+
+function evidenceIdFor(projectId: string, reader: CommitBlobReader, entry: TreeEntry) {
+  return `ev_${hash(`${projectId}\0${reader.commit}\0${entry.oid}\0${entry.path}`).slice(0, 24)}`;
+}
+
+function isEvidencePng(entry: TreeEntry) {
+  return entry.path.startsWith('evidence/') && entry.path.toLowerCase().endsWith('.png');
+}
+
+function readEvidence(projectId: string, reader: CommitBlobReader): EvidenceResult {
+  const result: EvidenceResult = { ...empty(), items: [] };
+  const relative = 'evidence/verification-register.yaml';
+  if (!reader.has(relative)) result.warnings.push('Verification-Register fuer Nachweise fehlt.');
+  else {
+    const data = schema(reader.yaml(relative), evidenceSchema);
+    for (const verification of data.verifications) {
+      result.knownIds.add(verification.id);
+      const wave = verification.wave ?? '';
+      result.artifacts.push({
+        id: verification.id, kind: 'evidence', title: displayVerificationType(verification.type), status: verification.status ?? 'unbekannt', phase: waveToPhase(wave), wave,
+        workstream: 'Projektmanagement', rationale: verification.evidence ?? '', parentId: null, dependencies: verification.subjectRefs ?? [], documents: [], evidence: [], sourcePath: relative,
+      });
+    }
+  }
+  const pngs = reader.entries.filter(isEvidencePng).sort((a, b) => a.path.localeCompare(b.path, 'en'));
+  result.items = pngs.map((entry, index) => ({ id: evidenceIdFor(projectId, reader, entry), title: `Bildnachweis ${String(index + 1).padStart(2, '0')}` }));
+  return result;
+}
+
+function assertSafeLocalGitConfig(repo: string) {
+  const names = gitBuffer(repo, ['config', '--local', '--no-includes', '--name-only', '--null', '--list']).toString('utf8').split('\0').filter(Boolean).map((name) => name.toLowerCase()).sort();
+  if (names.some((name) => /^(?:include|includeif)\./.test(name)
+    || name === 'extensions.worktreeconfig' || name === 'core.worktree'
+    || /^filter\..*\.(?:clean|smudge|process|required)$/.test(name)
+    || /^core\.(?:attributesfile|excludesfile|sshcommand|gitproxy)$/.test(name)
+    || /^credential\./.test(name) || /^url\..*\.insteadof$/.test(name)
+    || /^http\..*(?:extraheader|proxy|sslcert|sslkey)$/.test(name) || /^remote\..*\.proxy$/.test(name))) {
+    sourceError('Die lokale Git-Konfiguration enthaelt nicht zulaessige ausfuehrbare oder externe Einbindungen.');
+  }
+  return hash(names.join('\0'));
+}
+
+function sameFilesystemPath(left: string, right: string) {
+  const normalize = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
+  return normalize(path.normalize(left)) === normalize(path.normalize(right));
+}
+
+function isWithin(parent: string, child: string) {
+  const relative = path.relative(parent, child);
+  return !relative || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function captureRepositoryIdentity(repo: string) {
+  const configFingerprint = assertSafeLocalGitConfig(repo);
+  if (gitText(repo, ['rev-parse', '--is-inside-work-tree']) !== 'true') sourceError('Die konfigurierte Projektquelle ist kein Git-Arbeitsbaum.');
+  let root: string; let topLevel: string; let gitDirectory: string; let commonDirectory: string; let headPath: string;
+  try {
+    root = fs.realpathSync(repo);
+    topLevel = fs.realpathSync(gitText(repo, ['rev-parse', '--show-toplevel']));
+    gitDirectory = fs.realpathSync(gitText(repo, ['rev-parse', '--absolute-git-dir']));
+    const commonName = gitText(repo, ['rev-parse', '--git-common-dir']);
+    commonDirectory = fs.realpathSync(path.isAbsolute(commonName) ? commonName : path.resolve(repo, commonName));
+    const headName = gitText(repo, ['rev-parse', '--git-path', 'HEAD']);
+    headPath = fs.realpathSync(path.isAbsolute(headName) ? headName : path.resolve(repo, headName));
+  } catch { return sourceError('Die Git-Quellidentitaet konnte nicht eindeutig bestimmt werden.'); }
+  if (!sameFilesystemPath(root, topLevel) || !isWithin(commonDirectory, gitDirectory) || !isWithin(gitDirectory, headPath)) sourceError('Die konfigurierte Projektquelle stimmt nicht exakt mit der Git-Arbeitsbaumwurzel ueberein.');
+  return hash([root, topLevel, gitDirectory, commonDirectory, headPath, configFingerprint].join('\0'));
+}
+
+function prepareRepo(repo: string) {
+  if (!repo || !path.isAbsolute(repo)) sourceError('Die Projektquelle muss als absoluter Pfad konfiguriert sein.');
+  try {
+    const rootStat = fs.lstatSync(repo);
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error();
+    captureRepositoryIdentity(repo);
+  } catch (error) {
+    if (error instanceof AdapterSourceError) throw error;
+    return sourceError('Die konfigurierte Projektquelle ist nicht verfuegbar.');
+  }
+}
+
+function assertProjectDataFormat(declaration: ProjectDataArtifact) {
+  const extension = path.posix.extname(declaration.path).toLowerCase();
+  const valid = declaration.format === 'yaml' ? ['.yaml', '.yml'].includes(extension)
+    : declaration.format === 'markdown' ? extension === '.md'
+      : declaration.format === 'json' ? extension === '.json'
+        : extension === '.png';
+  if (!valid || declaration.path === 'exports/project-data/v1/index.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
+}
+
+function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
+  if (contract.path !== 'exports/project-data/v1/index.yaml') sourceError('Der konfigurierte Projektvertrag verwendet keinen unterstützten Index.', 'QUELLKONFIGURATION_UNGUELTIG');
+  const indexEntries = parseExactTree(repo, commit, [contract.path], limits);
+  if (indexEntries.length !== 1) sourceError('Der erforderliche Projektindex fehlt.');
+  const indexReader = new CommitBlobReader(repo, commit, limits, indexEntries, validateContractPath);
+  const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.path));
+  if (!parsedIndex.success) sourceError('Der Projektindex verletzt den festgelegten project-data/v1-Vertrag.');
+  const index = parsedIndex.data;
+  if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
+  const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
+  if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Projektindex enthält doppelte Artefakt-IDs oder Pfade.');
+  index.artifacts.forEach(assertProjectDataFormat);
+  const sourceEntries = parseExactTree(repo, commit, paths, limits);
+  const byPath = new Map(sourceEntries.map((entry) => [entry.path, entry]));
+  const sources: IndexedProjectSource[] = [];
+  for (const declaration of index.artifacts) {
+    const entry = byPath.get(declaration.path);
+    if (!entry) {
+      if (declaration.required) sourceError('Ein erforderlicher indexierter Quellblob fehlt.');
+      continue;
+    }
+    sources.push({ declaration, entry });
+  }
+  const reader = new CommitBlobReader(repo, commit, limits, [indexEntries[0], ...sources.map((source) => source.entry)], validateContractPath);
+  reader.preflight();
+  return { index, reader, sources };
+}
+
+function selectedYaml(reader: CommitBlobReader, source: IndexedProjectSource) {
+  const value = reader.yaml(source.declaration.path);
+  const selector = source.declaration.selector;
+  if (!selector) return value;
+  const equals = selector.match(/^([A-Za-z][A-Za-z0-9]*)\[([A-Za-z][A-Za-z0-9]*)=([A-Za-z0-9._-]+)\]$/);
+  const membership = selector.match(/^([A-Za-z][A-Za-z0-9]*)\[([A-Za-z][A-Za-z0-9]*) in ([A-Za-z0-9._,-]+)\]$/);
+  const match = equals ?? membership;
+  if (!match) sourceError('Ein Projektindex-Selektor ist nicht unterstützt.');
+  const collection = value[match[1]];
+  if (!Array.isArray(collection)) sourceError('Ein Projektindex-Selektor verweist nicht auf eine Quellliste.');
+  const expected = new Set((membership ? match[3].split(',') : [match[3]]));
+  if (!expected.size || [...expected].some((item) => !technicalId.safeParse(item).success)) sourceError('Ein Projektindex-Selektor enthält einen ungültigen Vergleichswert.');
+  const selected = collection.filter((item) => item && typeof item === 'object' && expected.has(String((item as RecordValue)[match[2]] ?? '')));
+  return { ...value, [match[1]]: selected };
+}
+
+function indexedMarkdown(reader: CommitBlobReader, source: IndexedProjectSource) {
+  const text = reader.text(source.declaration.path);
+  const document = parseBoundedFrontmatter(text, reader.limits);
+  const content = document?.content ?? text;
+  const heading = content.replace(/\r\n?/g, '\n').split('\n').map((line) => line.match(/^#\s+(.+)\s*$/)?.[1]?.trim()).find(Boolean) ?? null;
+  return { data: document?.data ?? {}, heading };
+}
+
+function nullableTechnicalStrings(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => technicalId.safeParse(item).success) : [];
+}
+
+function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
+  const artifacts: Artifact[] = [];
+  const add = (value: z.input<typeof artifactSchema>) => artifacts.push(sanitizeArtifact(artifactSchema.parse(value)));
+  for (const source of sources) {
+    const { declaration } = source;
+    if (declaration.kindId === 'jira-issues') {
+      const data = schema(selectedYaml(reader, source), indexedJiraSchema);
+      for (const issue of data.issues) {
+        const kind: Artifact['kind'] = issue.type === 'Epic' ? 'epic' : issue.type === 'Story' ? 'story' : issue.type === 'Bug' ? 'bug' : 'task';
+        const effort = issue.effort && sourceEffortSchema.safeParse(issue.effort).success ? issue.effort : null;
+        add({ id: issue.key, kind, title: issue.summary, status: issue.status ?? null, phase: null, wave: null, workstream: issue.workstream ?? null,
+          rationale: issue.acceptanceCriteria?.join(' · ') ?? null, parentId: issue.parent ?? null, dependencies: issue.dependencies ?? [], documents: [...(issue.confluenceRefs ?? []), ...(issue.deliverableIds ?? [])],
+          evidence: issue.evidenceRefs ?? [], sourceType: issue.type, sourcePhase: issue.phase ?? null, phaseId: issue.phaseId ?? null, effort,
+          estimateHours: issue.plannedBillableHours ?? null, actualHours: issue.actualHours ?? null, billable: issue.billable ?? null, billingWeek: issue.billingWeek ?? null,
+          billingStatus: issue.billingStatus ?? null, startDate: issue.startDate ?? null, dueDate: issue.dueDate ?? null, historySynthetic: issue.historySynthetic ?? null,
+          history: issue.history ?? [], meetings: issue.transcriptRefs ?? [], deliverables: [], sourcePath: declaration.path });
+      }
+      continue;
+    }
+    if (declaration.kindId === 'verification-register') {
+      const data = schema(selectedYaml(reader, source), indexedVerificationSchema);
+      for (const verification of data.verifications) add({ id: verification.id, kind: 'evidence', title: displayVerificationType(verification.type), status: verification.status ?? null,
+        phase: null, wave: null, workstream: null, rationale: verification.evidence ?? null, dependencies: verification.subjectRefs ?? [], sourceType: verification.type, sourcePath: declaration.path });
+      continue;
+    }
+    if (declaration.kindId === 'confluence-page' || declaration.kindId === 'meeting-transcript') {
+      const document = indexedMarkdown(reader, source); const data = document.data;
+      const id = technicalId.safeParse(data.id).success ? data.id as string : declaration.id;
+      const title = typeof data.title === 'string' && data.title.trim() ? data.title : document.heading;
+      const status = typeof data.status === 'string' && data.status.trim() ? data.status : null;
+      const meetingDate = declaration.kindId === 'meeting-transcript' && sourceDateSchema.safeParse(data.date).success ? data.date as string : null;
+      add({ id, kind: 'document', title: title ?? null, status, phase: null, wave: null, workstream: null, rationale: null,
+        parentId: technicalId.safeParse(data.parent).success ? data.parent as string : null, dependencies: nullableTechnicalStrings(data.jiraRefs), documents: nullableTechnicalStrings(data.referenceIds),
+        evidence: [], sourceType: declaration.kindId, documentType: declaration.kindId, meetingDate, sourcePath: declaration.path });
+      continue;
+    }
+    if (declaration.format === 'markdown') {
+      const document = indexedMarkdown(reader, source);
+      add({ id: declaration.id, kind: 'document', title: document.heading, status: null, phase: null, wave: null, workstream: null, rationale: null,
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
+    if (declaration.kindId === 'project-plan') {
+      const data = selectedYaml(reader, source); const phases = Array.isArray(data.phases) ? data.phases : [];
+      for (const raw of phases) if (raw && typeof raw === 'object') { const item = raw as RecordValue; if (technicalId.safeParse(item.id).success) add({ id: item.id as string, kind: 'document',
+        title: typeof item.name === 'string' ? item.name : null, status: null, phase: null, wave: null, workstream: null, rationale: null, phaseId: item.id as string,
+        sourcePhase: typeof item.name === 'string' ? item.name : null, estimateHours: typeof item.plannedBillableHours === 'number' ? item.plannedBillableHours : null,
+        startDate: sourceDateSchema.safeParse(item.startDate).success ? item.startDate as string : null, dueDate: sourceDateSchema.safeParse(item.endDate).success ? item.endDate as string : null,
+        sourceType: declaration.kindId, documentType: declaration.kindId, dependencies: nullableTechnicalStrings(item.dependencies), sourcePath: declaration.path }); }
+      continue;
+    }
+    const data = selectedYaml(reader, source);
+    const families: Array<[string, string, string, string?]> = [
+      ['deliverables', 'id', 'title', 'status'], ['decisions', 'id', 'statement', 'status'], ['templates', 'id', 'purpose', 'approvalStatus'],
+      ['sessions', 'id', 'title', 'status'], ['scenarios', 'id', 'title'], ['sources', 'id', 'title'], ['worklogs', 'worklogId', 'summary', 'approvalStatus'], ['invoices', 'invoiceId', 'summary', 'status'],
+    ];
+    const family = families.find(([key]) => Array.isArray(data[key]));
+    if (!family) continue;
+    for (const raw of data[family[0]] as unknown[]) if (raw && typeof raw === 'object') {
+      const item = raw as RecordValue; const id = item[family[1]]; if (!technicalId.safeParse(id).success) continue;
+      add({ id: id as string, kind: 'document', title: typeof item[family[2]] === 'string' ? item[family[2]] as string : null,
+        status: family[3] && typeof item[family[3]] === 'string' ? item[family[3]] as string : null, phase: null, wave: null, workstream: null, rationale: null,
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+    }
+  }
+  const duplicateIds = artifacts.map((item) => item.id).filter((id, position, all) => all.indexOf(id) !== position);
+  if (duplicateIds.length) sourceError('Die indexierten Quellen erzeugen doppelte normalisierte Artefakt-IDs.');
+  return artifacts;
+}
+
+async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {
+  const { index, reader, sources } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
+  const artifacts = indexedArtifacts(index, reader, sources);
+  const imageSources = sources.filter((source) => source.declaration.format === 'png');
+  const evidenceItems = imageSources.map((source) => ({ id: evidenceIdFor(projectId, reader, source.entry), title: source.declaration.id }));
+  const warnings = before.dirty ? ['Die Arbeitskopie enthält nicht commitgebundene Änderungen; alle dargestellten Fachdaten stammen unverändert aus dem ausgewiesenen Commit.'] : [];
+  options.testHookAfterRead?.();
+  const after = captureFingerprint(repo);
+  if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich während des Lesens verändert; die Momentaufnahme ist ungültig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
+  return projectStateSchema.parse({ source: { projectId, branch: safeBranchDisplay(before.branch), commit: before.commit, dirty: before.dirty,
+    headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint, readAt: new Date().toISOString() },
+    artifacts, evidenceItems, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
+    gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
+      changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
+      capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });
+}
+
+export async function createTwinState(projectId: string, repo: string, options: AdapterReadOptions = {}): Promise<ProjectState> {
+  assertProjectId(projectId);
+  prepareRepo(repo);
+  const limits = tightenLimits(options.limits);
+  const before = captureFingerprint(repo);
+  if (options.projectDataContract) return createProjectDataState(projectId, repo, options.projectDataContract, options, before, limits);
+  const reader = new CommitBlobReader(repo, before.commit, limits);
+  reader.preflight();
+
+  const architecture = readArchitecture(reader);
+  const capabilities = readCapabilities(reader);
+  const jira = readJira(reader);
+  const openSpec = readOpenSpec(reader);
+  const confluence = readConfluence(reader);
+  const evidence = readEvidence(projectId, reader);
   const results = [architecture, capabilities, jira, openSpec, confluence, evidence];
-  const artifacts = results.flatMap((item) => item.artifacts);
+  const artifacts = results.flatMap((item) => item.artifacts).map((artifact) => artifactSchema.parse(artifact)).map(presentArtifact).map(sanitizeArtifact);
+  const knownSourceIds = new Set(results.flatMap((item) => [...item.knownIds]));
   const warnings = results.flatMap((item) => item.warnings);
-  const referenced = artifacts.flatMap((artifact) => [...artifact.dependencies, ...artifact.documents, ...artifact.evidence]).filter((id) => id.startsWith('UABC-'));
+  if (before.dirty) warnings.unshift('Die Arbeitskopie enthaelt nicht commitgebundene Aenderungen; alle dargestellten Fachdaten stammen unveraendert aus dem ausgewiesenen Commit.');
+  const referenced = artifacts.flatMap((artifact) => [...(artifact.parentId ? [artifact.parentId] : []), ...artifact.dependencies, ...artifact.documents, ...artifact.evidence, ...artifact.meetings, ...artifact.deliverables.map((deliverable) => deliverable.id)]);
   const unresolved = [...new Set(referenced.filter((id) => !knownSourceIds.has(id)))];
-  if (unresolved.length) warnings.push(`Nicht aufgelöste Quellreferenzen: ${unresolved.join(', ')}`);
+  if (unresolved.length) warnings.push(`Nicht aufgeloeste Quellreferenzen: ${unresolved.join(', ')}`);
   const duplicateIds = [...new Set(artifacts.map((item) => item.id).filter((id, index, all) => all.indexOf(id) !== index))];
   if (duplicateIds.length) warnings.push(`Doppelte normalisierte Artefakt-IDs: ${duplicateIds.join(', ')}`);
-
-  const actualUnknowns = (() => { try { return strings(parseYaml(path.join(repo, 'architecture', 'enterprise-blueprint.yaml')).actualSandboxBaseline?.unknowns); } catch { return []; } })();
   const gaps = [
-    ...actualUnknowns.map((gap) => `Architektur-Baseline unbekannt: ${gap}.`),
-    'Projektkalender und Meilensteintermine sind im freigegebenen Quellenvertrag nicht normalisiert.',
-    'Meetings und Entscheidungsverläufe außerhalb belegter Jira-Übergänge sind nicht normalisiert.',
-    'Arbeitsprotokolle, Verrechnungssätze, Rechnungen und T&M-Daten liegen bewusst außerhalb des MVP-Quellenvertrags.',
+    ...(architecture.actualUnknowns ?? []).map((gap) => `Architektur-Baseline unbekannt: ${redactHostReferences(gap)}.`),
+    'Projektkalender und Meilensteine ausserhalb expliziter Jira-Tickettermine sind nicht normalisiert.',
+    ...(!artifacts.some((artifact) => artifact.meetings.length || artifact.documentType === 'meeting-transcript') ? ['Keine strukturierten Besprechungstranskripte sind in der Quelle belegt.'] : []),
+    ...(!artifacts.some((artifact) => artifact.billable !== null) ? ['Keine strukturierten Abrechnungskennzeichen sind in der Quelle belegt.'] : []),
+    'Verrechnungssaetze, Rechnungsbetraege und Rechnungsdokumente werden ohne eigenen Quellenvertrag nicht erzeugt.',
   ];
-  const workstreams = [...new Set(artifacts.map((item) => item.workstream))].sort((a, b) => a.localeCompare(b, 'de'));
-  const state = {
-    source: { branch: git(repo, ['branch', '--show-current']) || '(abgelöst)', commit: git(repo, ['rev-parse', 'HEAD']), dirty: git(repo, ['status', '--porcelain']).length > 0, readAt: new Date().toISOString() },
-    artifacts, evidenceItems: evidence.items, workstreams, gaps, warnings,
-    stats: {
-      jira: jira.artifacts.length, changes: openSpec.artifacts.length, documents: confluence.artifacts.length,
-      capabilities: capabilities.artifacts.length, evidence: evidence.artifacts.length,
+  const workstreams = [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de'));
+
+  options.testHookAfterRead?.();
+  const after = captureFingerprint(repo);
+  if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich waehrend des Lesens veraendert; die Momentaufnahme ist ungueltig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
+
+  return projectStateSchema.parse({
+    source: {
+      projectId,
+      branch: safeBranchDisplay(before.branch),
+      commit: before.commit,
+      dirty: before.dirty,
+      headFingerprint: before.headFingerprint,
+      indexFingerprint: before.indexFingerprint,
+      statusFingerprint: before.statusFingerprint,
+      readAt: new Date().toISOString(),
     },
-  };
-  return projectStateSchema.parse(state);
+    artifacts,
+    evidenceItems: evidence.items,
+    workstreams,
+    gaps,
+    warnings,
+    stats: {
+      jira: jira.artifacts.length,
+      changes: openSpec.artifacts.length,
+      documents: confluence.artifacts.length,
+      capabilities: capabilities.artifacts.length,
+      evidence: evidence.artifacts.length,
+    },
+  });
 }
 
-export function resolveEvidenceId(repo: string, evidenceId: string) {
+export function resolveEvidenceId(projectId: string, repo: string, evidenceId: string, projectDataContract?: ProjectSourceContract): EvidenceBlob | null {
   if (!/^ev_[a-f0-9]{24}$/.test(evidenceId)) return null;
-  return registeredEvidenceFiles(repo).find((entry) => entry.id === evidenceId)?.file ?? null;
+  try {
+    assertProjectId(projectId);
+    prepareRepo(repo);
+    const before = captureFingerprint(repo);
+    if (projectDataContract) {
+      const { reader, sources } = readProjectDataSources(repo, before.commit, projectId, projectDataContract, defaultLimits);
+      const match = sources.filter((source) => source.declaration.format === 'png').find((source) => evidenceIdFor(projectId, reader, source.entry) === evidenceId);
+      if (!match) return null;
+      const bytes = reader.png(match.entry.path);
+      const after = captureFingerprint(repo);
+      return sameFingerprint(before, after) ? { contentType: 'image/png', bytes: Buffer.from(bytes) } : null;
+    }
+    const reader = new CommitBlobReader(repo, before.commit, defaultLimits);
+    reader.preflight();
+    const match = reader.entries.filter(isEvidencePng).find((entry) => evidenceIdFor(projectId, reader, entry) === evidenceId);
+    if (!match) return null;
+    const bytes = reader.png(match.path);
+    const after = captureFingerprint(repo);
+    if (!sameFingerprint(before, after)) return null;
+    return { contentType: 'image/png', bytes: Buffer.from(bytes) };
+  } catch {
+    return null;
+  }
 }
 
-export const adapterPolicy = { safeRoots, forbidden };
+export const adapterPolicy = { safeRoots, forbidden, defaultLimits };

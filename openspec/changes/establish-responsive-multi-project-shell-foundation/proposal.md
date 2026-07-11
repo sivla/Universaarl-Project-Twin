@@ -1,19 +1,19 @@
-# Responsive Mehrprojekt-App-Shell etablieren
+# Anpassungsfähige Mehrprojekt-Anwendungshülle etablieren
 
 ## Problem und Zweck
 
-Der MVP besitzt nicht projektgebundene Datenrouten und eine auf ein einzelnes Projekt zugeschnittene Oberfläche. Diese Änderung etabliert das sichere, responsive Fundament für reale Projekte, ohne fachliche Planungs- oder Wiedergabefunktionen vorzutäuschen.
+Der MVP besitzt nicht projektgebundene Datenrouten und eine auf ein einzelnes Projekt zugeschnittene Oberfläche. Diese Änderung schafft das sichere und anpassungsfähige Fundament für reale Projekte, ohne fachliche Planungs- oder Wiedergabefunktionen vorzutäuschen.
 
 ## Umfang
 
-- Serverseitige validierte Registry mit produktiv exakt Universaarl.
-- Projektgebundene schreibgeschützte APIs, opake Nachweis-IDs und sichere Provenienz.
+- Serverseitiges validiertes Projektverzeichnis mit produktiv exakt Universaarl.
+- Projektgebundene schreibgeschützte Programmierschnittstellen, opake Nachweis-IDs und sichere Provenienz.
 - Kanonische Projekt-Routen, globaler Projektkontext und Projektwechsler.
-- Deutsche responsive Shell mit aktueller Momentaufnahme, Quellenansicht, Nicht-unterstützt-Zuständen sowie System-/Hell-/Dunkel-Modus.
+- Deutsche anpassungsfähige Anwendungshülle mit aktueller Momentaufnahme, Quellenansicht, Nicht-unterstützt-Zuständen sowie System-, Hell- und Dunkeldarstellung.
 
 ## Nicht-Ziele
 
-Keine Jira-Arbeitsansichten, Baseline-Chronologie, historische Wiedergabe, Tagebuch-, Gantt-, Kalender-, Portfolio- oder Abrechnungsfunktion. Keine neue fachliche Manifestbeziehung, keine Schreib-API und kein Zurückschreiben. Der quarantänisierte Arbeitsstand wird nicht übernommen.
+Keine Jira-Arbeitsansichten, Ausgangsstand-Chronologie, historische Wiedergabe, Tagebuch-, Gantt-, Kalender-, Portfolio- oder Abrechnungsfunktion. Keine neue fachliche Manifestbeziehung, keine schreibende Programmierschnittstelle und kein Zurückschreiben. Der quarantänisierte Arbeitsstand wird nicht übernommen.
 
 ## Status
 
