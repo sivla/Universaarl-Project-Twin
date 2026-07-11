@@ -120,7 +120,7 @@ function assertRelativeFile(relative) {
 function candidateFiles(root) {
   const tracked = gitList(root, ['ls-files', '-z']);
   const untracked = gitList(root, ['ls-files', '--others', '--exclude-standard', '-z']);
-  return [...new Set([...tracked, ...untracked].map(assertRelativeFile))].sort((left, right) => left.localeCompare(right, 'de'));
+  return [...new Set([...tracked, ...untracked].map(assertRelativeFile))].filter((file) => fs.existsSync(path.resolve(root, ...file.split('/')))).sort((left, right) => left.localeCompare(right, 'de'));
 }
 
 function trackedModes(root) {

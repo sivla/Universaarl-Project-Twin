@@ -4,7 +4,9 @@ export type BlueprintSourceBinding = Readonly<{
   localRelativePath: '..\\Universaarl Projekt BC Basic';
   remoteUrl: 'https://github.com/sivla/FiBu.git';
   branch: 'codex/universaarl-projekt';
-  contractPath: 'exports/project-data/v1/index.yaml';
+  manifestPath: 'exports/project-data/v1/snapshot-manifest.json';
+  schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json';
+  indexPath: 'exports/project-data/v1/index.yaml';
   expectedProjectId: 'UABC-BC-BASIC-001';
   producerProjectId: 'blueprint';
 }>;
@@ -19,7 +21,9 @@ export const blueprintSourceBinding: BlueprintSourceBinding = Object.freeze({
   localRelativePath: '..\\Universaarl Projekt BC Basic',
   remoteUrl: 'https://github.com/sivla/FiBu.git',
   branch: 'codex/universaarl-projekt',
-  contractPath: 'exports/project-data/v1/index.yaml',
+  manifestPath: 'exports/project-data/v1/snapshot-manifest.json',
+  schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json',
+  indexPath: 'exports/project-data/v1/index.yaml',
   expectedProjectId: 'UABC-BC-BASIC-001',
   producerProjectId: 'blueprint',
 });

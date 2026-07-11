@@ -6,16 +6,18 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { artifactSchema, displayVerificationType, type Artifact, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, type ProjectState } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
-const exactSafePaths = ['governance/reference-lifecycle.yaml', 'exports/project-data/v1/index.yaml'] as const;
+const exactSafePaths = ['governance/reference-lifecycle.yaml', 'governance/schemas/project-snapshot-manifest.schema.json', 'exports/project-data/v1/index.yaml', 'exports/project-data/v1/snapshot-manifest.json'] as const;
 const fullSha = /^[a-f0-9]{40}$/;
 const blobSha = /^[a-f0-9]{40}$/;
 const projectIdPattern = /^[a-z][a-z0-9-]{1,47}$/;
 const pngSignature = Buffer.from('89504e470d0a1a0a', 'hex');
 const gitNullDevice = process.platform === 'win32' ? 'NUL' : os.devNull;
+const snapshotSchemaId = 'urn:universaarl:schema:project-snapshot-manifest:v1';
 const forbidden = /(^|[\/._-])(auth|authentication|authorization|storage-?state|trace|traces|video|videos|credential|credentials|cookie|cookies|session|sessions|tenant|token|tokens|secret|secrets|password|passwords|passwd|oauth2?|bearer|jwt|ssh|keystore|connection-?string|service-?account)([\/._-]|$)/i;
 const sensitiveIdentifier = /(?:^|[^0-9a-f])(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?=$|[^0-9a-f])/i;
 
@@ -602,13 +604,15 @@ const projectDataArtifactSchema = z.object({
   kindId: technicalId,
   path: z.string().min(1).max(1_000).refine(validateContractPath),
   selector: z.string().min(1).max(1_000).optional(),
-  format: z.enum(['yaml', 'json', 'markdown', 'csv', 'png']),
+  format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png']),
   required: z.boolean(),
 }).strict();
 
 const projectDataIndexSchema = z.object({
   schemaVersion: z.literal(1),
   contractId: z.literal('UABC-PROJECT-DATA-V1'),
+  contractRole: z.literal('repository-relative-data-allowlist'),
+  snapshotManifestIncluded: z.literal(false),
   projectId: technicalId,
   projectKey: z.string().regex(/^[A-Z][A-Z0-9]{1,11}$/),
   routeKey: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/),
@@ -622,6 +626,31 @@ const projectDataIndexSchema = z.object({
   consumerRules: z.array(z.string().min(1).max(2_000)).min(1).max(100),
   artifacts: z.array(projectDataArtifactSchema).min(1).max(1_000),
 }).strict();
+
+const snapshotManifestSchema = z.object({
+  schemaVersion: z.literal(1),
+  producerId: z.literal('blueprint'),
+  projectId: z.literal('UABC-BC-BASIC-001'),
+  contractId: z.literal('UABC-PROJECT-DATA-V1'),
+  producerCommitSha: z.string().regex(fullSha),
+  schemaPath: z.literal('governance/schemas/project-snapshot-manifest.schema.json'),
+  indexPath: z.literal('exports/project-data/v1/index.yaml'),
+  consumer: z.object({ consumerId: z.literal('project-twin'), repositoryUrl: z.literal('https://github.com/sivla/FiBu.git'), branch: z.literal('codex/universaarl-projekt-twin'), access: z.literal('nur-lesend') }).strict(),
+  spectraReleaseBinding: z.object({
+    bindingStatus: z.literal('BOUND'), productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'),
+    releaseVersion: z.string().regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
+    releaseTag: z.string().regex(/^spectra-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
+    tagCommit: z.string().regex(fullSha), manifestPath: z.string().min(1).max(1_000).refine(validateContractPath), manifestSourceCommit: z.string().regex(fullSha), consumerMode: z.literal('INSTALLABLE_BLUEPRINT'), installableBlueprint: z.literal(true), digestAlgorithm: z.literal('SHA-256'), payloadBundleDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
+  consumerBindingDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  payloadDigestFormat: z.literal('uabc-snapshot-records-v1'),
+  index: z.object({ path: z.literal('exports/project-data/v1/index.yaml'), gitMode: z.literal('100644'), sizeBytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  payloads: z.array(z.object({ id: technicalId, path: z.string().min(1).max(1_000).refine(validateContractPath), selector: z.string().min(1).max(1_000).nullable(), gitMode: z.literal('100644'), sizeBytes: z.number().int().nonnegative(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(1_000),
+  payloadBundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  validationStatus: z.literal('validated'),
+}).strict();
+
+type SnapshotManifest = z.infer<typeof snapshotManifestSchema>;
 
 type ProjectDataArtifact = z.infer<typeof projectDataArtifactSchema>;
 type ProjectDataIndex = z.infer<typeof projectDataIndexSchema>;
@@ -1128,18 +1157,62 @@ function assertProjectDataFormat(declaration: ProjectDataArtifact) {
     || (['customer-data-template', 'synthetic-data-example'].includes(declaration.kindId) && declaration.selector === undefined);
   const valid = declaration.format === 'yaml' ? ['.yaml', '.yml'].includes(extension)
     : declaration.format === 'markdown' ? extension === '.md'
-      : declaration.format === 'json' ? extension === '.json'
+      : ['json', 'json-schema'].includes(declaration.format) ? extension === '.json'
         : declaration.format === 'csv' ? extension === '.csv'
           : extension === '.png';
-  if (!valid || !csvContractValid || declaration.path === 'exports/project-data/v1/index.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
+  if (!valid || !csvContractValid || declaration.path === 'exports/project-data/v1/index.yaml' || declaration.path === 'governance/consumer-bindings.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
+}
+
+function snapshotParent(repo: string, snapshotCommit: string) {
+  const parents = gitText(repo, ['rev-list', '--parents', '-n', '1', snapshotCommit]).split(/\s+/).filter(Boolean);
+  if (parents.length !== 2 || parents[0] !== snapshotCommit || !fullSha.test(parents[1])) sourceError('Der Snapshot-Commit besitzt keinen eindeutigen direkten Produzenten-Commit.');
+  return parents[1];
+}
+
+function assertSnapshotDelta(repo: string, producerCommit: string, snapshotCommit: string, manifestPath: string) {
+  const changed = gitText(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', producerCommit, snapshotCommit]).split('\n').filter(Boolean);
+  if (!changed.length || changed.some((relative) => relative !== manifestPath)) sourceError('Zwischen Produzenten- und Snapshot-Commit wurden nicht zulässige Dateien geändert.');
+}
+
+function payloadDigest(reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
+  const digest = createHash('sha256');
+  const entries = [reader.entry('exports/project-data/v1/index.yaml'), ...sources.map((source) => source.entry)];
+  if (new Set(entries.map((entry) => entry.path)).size !== entries.length) sourceError('Der Snapshot-Digest enthält einen Pfad mehrfach.');
+  for (const entry of [...entries].sort((left, right) => Buffer.from(left.path, 'utf8').compare(Buffer.from(right.path, 'utf8')))) {
+    const blobDigest = hash(reader.blob(entry.path));
+    digest.update(Buffer.from(entry.path, 'utf8')).update('\0').update(entry.mode).update('\0').update(String(entry.size)).update('\0').update(blobDigest).update('\n');
+  }
+  return `sha256:${digest.digest('hex')}`;
 }
 
 function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
-  if (contract.path !== 'exports/project-data/v1/index.yaml') sourceError('Der konfigurierte Projektvertrag verwendet keinen unterstützten Index.', 'QUELLKONFIGURATION_UNGUELTIG');
-  const indexEntries = parseExactTree(repo, commit, [contract.path], limits);
+  if (contract.manifestPath !== 'exports/project-data/v1/snapshot-manifest.json' || contract.schemaPath !== 'governance/schemas/project-snapshot-manifest.schema.json' || contract.indexPath !== 'exports/project-data/v1/index.yaml' || contract.expectedProducerId !== 'blueprint') sourceError('Der konfigurierte Projektvertrag ist nicht vollständig.', 'QUELLKONFIGURATION_UNGUELTIG');
+  const manifestEntries = parseExactTree(repo, commit, [contract.manifestPath], limits);
+  if (manifestEntries.length !== 1) sourceError('Das erforderliche Snapshotmanifest fehlt.');
+  const manifestReader = new CommitBlobReader(repo, commit, limits, manifestEntries, validateContractPath);
+  const parsedManifest = snapshotManifestSchema.safeParse(manifestReader.json(contract.manifestPath));
+  if (!parsedManifest.success) sourceError('Das Snapshotmanifest verletzt den festgelegten Vertrag.');
+  const manifest = parsedManifest.data;
+  const producerCommit = snapshotParent(repo, commit);
+  if (manifest.producerId !== contract.expectedProducerId || manifest.projectId !== contract.expectedProjectId || manifest.producerCommitSha !== producerCommit || manifest.schemaPath !== contract.schemaPath || manifest.indexPath !== contract.indexPath || manifest.index.path !== contract.indexPath) sourceError('Das Snapshotmanifest stimmt nicht mit der commitgebundenen Produzentenbindung überein.');
+  assertSnapshotDelta(repo, producerCommit, commit, contract.manifestPath);
+  const schemaEntries = parseExactTree(repo, commit, [contract.schemaPath], limits);
+  const producerSchemaEntries = parseExactTree(repo, producerCommit, [contract.schemaPath], limits);
+  if (schemaEntries.length !== 1 || producerSchemaEntries.length !== 1 || schemaEntries[0].oid !== producerSchemaEntries[0].oid) sourceError('Das Snapshot-Schema wurde zwischen Produzenten- und Snapshot-Commit verändert.');
+  const schemaReader = new CommitBlobReader(repo, commit, limits, schemaEntries, validateContractPath);
+  const schemaDocument = schemaReader.json(contract.schemaPath);
+  if (!schemaDocument || typeof schemaDocument !== 'object' || Array.isArray(schemaDocument)) sourceError('Das Snapshot-Schema ist kein gültiges JSON-Objekt.');
+  const canonicalSchema = schemaDocument as RecordValue;
+  const requiredSchemaFields = ['schemaVersion', 'producerId', 'projectId', 'contractId', 'producerCommitSha', 'schemaPath', 'indexPath', 'consumer', 'spectraReleaseBinding', 'consumerBindingDigest', 'payloadDigestFormat', 'index', 'payloads', 'payloadBundleDigest', 'validationStatus'];
+  const required = canonicalSchema.required;
+  if (canonicalSchema.$id !== snapshotSchemaId || canonicalSchema.$schema !== 'https://json-schema.org/draft/2020-12/schema' || canonicalSchema.type !== 'object' || canonicalSchema.additionalProperties !== false || !Array.isArray(required) || !required.every((field): field is string => typeof field === 'string') || requiredSchemaFields.some((field) => !required.includes(field)) || !canonicalSchema.properties || typeof canonicalSchema.properties !== 'object' || requiredSchemaFields.some((field) => !Object.prototype.hasOwnProperty.call(canonicalSchema.properties, field))) sourceError('Das Snapshot-Schema besitzt nicht die kanonische strikte Feldform.');
+  let validateManifest: ((value: unknown) => boolean) | undefined;
+  try { validateManifest = new Ajv2020({ strict: true, allErrors: false }).compile(canonicalSchema); } catch { sourceError('Das Snapshot-Schema konnte nicht sicher kompiliert werden.'); }
+  if (!validateManifest(manifest)) sourceError('Das Snapshotmanifest erfüllt das versionierte JSON-Schema nicht.');
+  const indexEntries = parseExactTree(repo, commit, [contract.indexPath], limits);
   if (indexEntries.length !== 1) sourceError('Der erforderliche Projektindex fehlt.');
   const indexReader = new CommitBlobReader(repo, commit, limits, indexEntries, validateContractPath);
-  const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.path));
+  const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.indexPath));
   if (!parsedIndex.success) sourceError('Der Projektindex verletzt den festgelegten project-data/v1-Vertrag.');
   const index = parsedIndex.data;
   if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
@@ -1152,14 +1225,27 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
   for (const declaration of index.artifacts) {
     const entry = byPath.get(declaration.path);
     if (!entry) {
-      if (declaration.required) sourceError('Ein erforderlicher indexierter Quellblob fehlt.');
-      continue;
+      sourceError('Ein indexierter Quellblob fehlt.');
     }
     sources.push({ declaration, entry });
   }
   const reader = new CommitBlobReader(repo, commit, limits, [indexEntries[0], ...sources.map((source) => source.entry)], validateContractPath);
   reader.preflight();
-  return { index, reader, sources };
+  if (manifest.index.gitMode !== indexEntries[0].mode || manifest.index.sizeBytes !== indexEntries[0].size || manifest.index.sha256 !== hash(reader.blob(contract.indexPath))) sourceError('Die Indexmetadaten stimmen nicht mit dem Git-Blob überein.');
+  const declaredPayloads = new Map(manifest.payloads.map((payload) => [payload.path, payload]));
+  if (declaredPayloads.size !== manifest.payloads.length || declaredPayloads.size !== sources.length) sourceError('Das Snapshotmanifest enthält keine eindeutige vollständige Payloadliste.');
+  for (const source of sources) {
+    const payload = declaredPayloads.get(source.declaration.path);
+    if (!payload || payload.id !== source.declaration.id || payload.selector !== (source.declaration.selector ?? null) || payload.gitMode !== source.entry.mode || payload.sizeBytes !== source.entry.size || payload.sha256 !== hash(reader.blob(source.declaration.path))) sourceError('Die Snapshot-Payloadmetadaten stimmen nicht mit dem Index oder Git-Blob überein.');
+  }
+  const producerIndexEntries = parseExactTree(repo, producerCommit, [contract.indexPath], limits);
+  if (producerIndexEntries.length !== 1 || producerIndexEntries[0].oid !== indexEntries[0].oid) sourceError('Der Projektindex wurde zwischen Produzenten- und Snapshot-Commit verändert.');
+  const producerEntries = parseExactTree(repo, producerCommit, sources.map((source) => source.declaration.path), limits);
+  const producerByPath = new Map(producerEntries.map((entry) => [entry.path, entry]));
+  if (producerEntries.length !== sources.length || sources.some((source) => producerByPath.get(source.declaration.path)?.oid !== source.entry.oid)) sourceError('Die positivgelisteten Snapshot-Payloadblobs wurden verändert.');
+  if (manifest.spectraReleaseBinding.releaseTag !== `spectra-v${manifest.spectraReleaseBinding.releaseVersion}`) sourceError('Der Spectra-Release-Tag stimmt nicht mit der Releaseversion überein.');
+  if (payloadDigest(reader, sources) !== manifest.payloadBundleDigest) sourceError('Der Snapshot-Payload-Digest stimmt nicht mit dem Manifest überein.');
+  return { index, reader, sources, manifest };
 }
 
 function selectedYaml(reader: CommitBlobReader, source: IndexedProjectSource) {
@@ -1238,6 +1324,7 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
         sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
       continue;
     }
+    if (declaration.format === 'png') continue;
     if (declaration.kindId === 'project-plan') {
       const data = selectedYaml(reader, source); const phases = Array.isArray(data.phases) ? data.phases : [];
       for (const raw of phases) if (raw && typeof raw === 'object') { const item = raw as RecordValue; if (technicalId.safeParse(item.id).success) add({ id: item.id as string, kind: 'document',
@@ -1268,7 +1355,7 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
 }
 
 async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {
-  const { index, reader, sources } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
+  const { index, reader, sources, manifest } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
   const artifacts = indexedArtifacts(index, reader, sources);
   const imageSources = sources.filter((source) => source.declaration.format === 'png');
   const evidenceItems = imageSources.map((source) => ({ id: evidenceIdFor(projectId, reader, source.entry), title: source.declaration.id }));
@@ -1278,7 +1365,9 @@ async function createProjectDataState(projectId: string, repo: string, contract:
   assertSnapshotBinding(repo, after, options.sourceBinding);
   if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich während des Lesens verändert; die Momentaufnahme ist ungültig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
   return projectStateSchema.parse({ source: { projectId, branch: safeBranchDisplay(before.branch), commit: before.commit, dirty: before.dirty,
-    headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint, readAt: new Date().toISOString() },
+    headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
+    snapshot: { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
+      spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
     artifacts, evidenceItems, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
@@ -1365,7 +1454,8 @@ export function resolveEvidenceId(projectId: string, repo: string, evidenceId: s
       const bytes = reader.png(match.entry.path);
       const after = captureFingerprint(repo);
       assertSnapshotBinding(repo, after, options.sourceBinding);
-      return sameFingerprint(before, after) ? { contentType: 'image/png', bytes: Buffer.from(bytes) } : null;
+      if (!evidenceReadStable(options.projectDataContract !== undefined, sameFingerprint(before, after))) return null;
+      return { contentType: 'image/png', bytes: Buffer.from(bytes) };
     }
     const reader = new CommitBlobReader(repo, before.commit, defaultLimits);
     reader.preflight();
@@ -1374,11 +1464,17 @@ export function resolveEvidenceId(projectId: string, repo: string, evidenceId: s
     const bytes = reader.png(match.path);
     const after = captureFingerprint(repo);
     assertSnapshotBinding(repo, after, options.sourceBinding);
-    if (!sameFingerprint(before, after)) return null;
+    if (!evidenceReadStable(false, sameFingerprint(before, after))) return null;
     return { contentType: 'image/png', bytes: Buffer.from(bytes) };
-  } catch {
+  } catch (error) {
+    if (options.projectDataContract && error instanceof AdapterSourceError) throw error;
     return null;
   }
+}
+
+export function evidenceReadStable(contractMode: boolean, stable: boolean) {
+  if (!stable && contractMode) sourceError('Die Quellreferenzen haben sich während des Lesens verändert; die Momentaufnahme ist ungültig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
+  return stable;
 }
 
 export const adapterPolicy = { safeRoots, forbidden, defaultLimits };

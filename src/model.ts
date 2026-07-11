@@ -49,6 +49,7 @@ export const projectStateSchema = z.object({
   source: z.object({
     projectId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), branch: z.string().min(1).max(120), commit: z.string().regex(/^[a-f0-9]{40}$/), dirty: z.boolean(),
     headFingerprint: z.string().regex(/^[a-f0-9]{64}$/), indexFingerprint: z.string().regex(/^[a-f0-9]{64}$/), statusFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    snapshot: z.object({ schemaVersion: z.literal(1), producerId: z.literal('blueprint'), producerCommitSha: z.string().regex(/^[a-f0-9]{40}$/), indexPath: sourceRelativePathSchema, payloadBundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), validationStatus: z.literal('validated'), spectraReleaseBinding: z.object({ productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'), releaseVersion: z.string().min(1), releaseTag: z.string().regex(/^spectra-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/), tagCommit: z.string().regex(/^[a-f0-9]{40}$/), manifestPath: sourceRelativePathSchema, manifestSourceCommit: z.string().regex(/^[a-f0-9]{40}$/), consumerMode: z.literal('INSTALLABLE_BLUEPRINT'), installableBlueprint: z.literal(true) }).strict() }).nullable().default(null),
     readAt: z.string().datetime(),
   }),
   artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
@@ -140,6 +141,7 @@ export const uiErrorMessages = {
   PROJEKTSTAND_NICHT_VERFUEGBAR: 'Der commitgebundene Projektstand ist derzeit nicht verfügbar.',
   PROJEKTKONTEXT_UNGUELTIG: 'Der Projektstand konnte dem ausgewählten Projekt nicht sicher zugeordnet werden.',
   QUELLE_NICHT_VERFUEGBAR: 'Die konfigurierte Projektquelle ist derzeit nicht verfügbar.',
+  SNAPSHOT_VERTRAG_BLOCKIERT: 'Der validierte Spectra-Snapshot ist noch nicht verfügbar. Die Projektansicht bleibt gesperrt, bis Manifest, Quellcommit, Digest und Produktbindung vollständig bestätigt sind.',
   PROJEKT_NICHT_GEFUNDEN: 'Das ausgewählte Projekt ist nicht verfügbar.',
 } as const;
 

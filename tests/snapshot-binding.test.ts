@@ -3,14 +3,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { blueprintSourceBinding, snapshotSourceBinding } from '../src/projects/blueprint-source';
-import { productionRegistry, type ProjectSourceBinding } from '../src/projects/registry';
-import { AdapterSourceError, createTwinState, resolveEvidenceId } from '../src/server/adapter';
+import { createProjectRegistry, productionRegistry, type ProjectSourceBinding } from '../src/projects/registry';
+import { AdapterSourceError, createTwinState, resolveEvidenceId, evidenceReadStable } from '../src/server/adapter';
 import { dispatchProjectApi } from '../src/server/api';
 
 const environment = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+
+it('trennt Race-Entscheidung zwischen Contract- und Legacy-Modus', () => {
+  expect(() => evidenceReadStable(true, false)).toThrowError(AdapterSourceError);
+  expect(evidenceReadStable(false, false)).toBe(false);
+  expect(evidenceReadStable(true, true)).toBe(true);
+});
 
 function git(root: string, args: string[]) {
   return execFileSync('git', ['-C', root, '--no-optional-locks', ...args], { encoding: 'utf8', env: environment }).trim();
@@ -99,15 +105,19 @@ describe('Negativprüfungen der Snapshot-Bindung', () => {
 });
 
 describe('Gemeinsame Bindung für Zustand und Nachweise', () => {
-  it('liefert Zustand und Nachweis nur unter derselben gültigen Produktionsbindung', async () => {
+  it('führt bei fehlendem Snapshotvertrag niemals den generischen Tree-Leser aus', async () => {
+    const reader = vi.fn();
+    const registry = createProjectRegistry([{ id: 'universaarl', key: 'UABC', name: 'Universaarl', sourceRoot: 'C:\\quelle' }]);
+    await expect(dispatchProjectApi('GET', '/api/projects/universaarl/state', registry, reader)).resolves.toEqual({ status: 503, body: { code: 'SNAPSHOT_VERTRAG_BLOCKIERT' } });
+    expect(reader).not.toHaveBeenCalled();
+  });
+
+  it('blockiert generische Quellen ohne kanonisches Snapshotmanifest auch für Zustand und Nachweis', async () => {
     const root = fixture();
     const sourceBinding = binding(root);
     const registry = productionRegistry(root, sourceBinding.expectedCommit);
-    const stateResult = await dispatchProjectApi('GET', '/api/projects/universaarl/state', registry);
-    expect(stateResult.status).toBe(200);
-    const state = stateResult.body as Awaited<ReturnType<typeof createTwinState>>;
-    const evidenceId = state.evidenceItems[0].id;
-    expect((await dispatchProjectApi('GET', `/api/projects/universaarl/evidence/${evidenceId}`, registry)).binary?.bytes).toEqual(png);
-    expect(resolveEvidenceId('universaarl', root, evidenceId, { sourceBinding: { ...sourceBinding, expectedCommit: '0'.repeat(40) } })).toBeNull();
+    expect(registry).toHaveLength(2);
+    expect(await dispatchProjectApi('GET', '/api/projects/universaarl/state', registry)).toEqual({ status: 503, body: { code: 'SNAPSHOT_VERTRAG_BLOCKIERT' } });
+    expect(await dispatchProjectApi('GET', '/api/projects/universaarl/evidence/ev_000000000000000000000000', registry)).toEqual({ status: 503, body: { code: 'SNAPSHOT_VERTRAG_BLOCKIERT' } });
   });
 });

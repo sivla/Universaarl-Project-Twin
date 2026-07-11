@@ -1,8 +1,8 @@
 # Änderungsvorschlag: MVP des schreibgeschützten Projektzwillings
 
 - Änderung: `establish-read-only-project-twin-mvp`
-- Status: `implemented-awaiting-approval`
-- Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, Prüfungen
+- Status: `active`
+- Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, commitgebundener Snapshotvertrag, Prüfungen
 
 ## Problem
 Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängende Projektwelt erkunden. Der Projektzwilling muss ihn darstellen, ohne fachliche Wahrheit zu kopieren oder Änderungen zurückzuschreiben.

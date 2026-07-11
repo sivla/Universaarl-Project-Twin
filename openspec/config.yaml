@@ -1,4 +1,4 @@
 schema: project-twin-change
-activeChange: establish-responsive-multi-project-shell-foundation
+activeChange: establish-read-only-project-twin-mvp
 authority: software-delivery-only
 sourceContract: stable-UABC-identifiers-read-only

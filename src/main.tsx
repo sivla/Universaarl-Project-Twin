@@ -153,7 +153,7 @@ function App() {
     <Sidebar context={context} active={route.area} navigate={navigate} />
     <main id="main" tabIndex={-1}>
       <div className="page-heading"><p>{context.projectKey} / {context.projectName}</p><h1>{labels[route.area]}</h1></div>
-      {visibleError ? <Status title="Quelle nicht verfügbar" text={uiErrorMessage(visibleError)} embedded />
+      {visibleError ? <Status title={visibleError === 'SNAPSHOT_VERTRAG_BLOCKIERT' ? 'Spectra-Snapshotvertrag blockiert' : 'Quelle nicht verfügbar'} text={uiErrorMessage(visibleError)} embedded />
           : !visibleState ? <Status title="Projektstand wird geladen" text="Die commitgebundene Quellen-Momentaufnahme wird gelesen." busy embedded />
             : <ProjectArea area={route.area} state={visibleState} context={context} open={(artifact) => setSelected({ viewKey, artifact })} />}
     </main>

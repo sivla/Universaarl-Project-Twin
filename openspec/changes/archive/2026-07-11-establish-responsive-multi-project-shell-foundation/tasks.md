@@ -13,5 +13,4 @@
 - [x] Den exakten lokalen Stand im projektübergreifenden Vertragstest gegen den festgelegten Blueprint-Commit prüfen.
 - [x] Quarantänegrenze, finale leere `REVIEW.md` und zentrale Veröffentlichungsschranke prüfen.
 
-- [x] Commitgebundene Snapshot-Quellenbindung mit erwarteter SHA, Git-Blob-Lesen sowie Remote-, Branch-, Sauberkeits- und Stabilitätsprüfung implementieren und negativ prüfen.
 - [x] Lesende Gantt-Projektion der belegten Projektphasen einschließlich zugehöriger Tickets implementieren, deterministisch prüfen und im echten Browser nachweisen.
