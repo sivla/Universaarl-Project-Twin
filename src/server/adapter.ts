@@ -623,6 +623,8 @@ const projectDataIndexSchema = z.object({
   readOnly: z.literal(true),
   sourceOfTruth: z.literal('openspec'),
   pathSemantics: z.literal('repository-relative'),
+  allowedBranch: z.literal('codex/universaarl-projekt').optional(),
+  validationStatus: z.literal('branch-commit-validierung-erforderlich').optional(),
   missingValuePolicy: z.literal('leer'),
   consumerRules: z.array(z.string().min(1).max(2_000)).min(1).max(100),
   artifacts: z.array(projectDataArtifactSchema).min(1).max(1_000),
@@ -1188,6 +1190,7 @@ function payloadDigest(reader: CommitBlobReader, sources: readonly IndexedProjec
 
 function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
   const branchCommitContract = process.env.UABC_BRANCH_COMMIT_CONTRACT === '1';
+  if (branchCommitContract) return readBranchProjectDataSources(repo, commit, projectId, contract, limits);
   if (contract.manifestPath !== 'exports/project-data/v1/snapshot-manifest.json' || contract.schemaPath !== 'governance/schemas/project-snapshot-manifest.schema.json' || contract.indexPath !== 'exports/project-data/v1/index.yaml' || contract.expectedProducerId !== 'blueprint') sourceError('Der konfigurierte Projektvertrag ist nicht vollständig.', 'QUELLKONFIGURATION_UNGUELTIG');
   const manifestEntries = parseExactTree(repo, commit, [contract.manifestPath], limits);
   if (manifestEntries.length !== 1) sourceError('Das erforderliche Snapshotmanifest fehlt.');
@@ -1251,6 +1254,27 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
     if (manifest.spectraReleaseBinding.releaseTag !== `spectra-v${manifest.spectraReleaseBinding.releaseVersion}`) sourceError('Der Spectra-Release-Tag stimmt nicht mit der Releaseversion überein.');
     if (payloadDigest(reader, sources) !== manifest.payloadBundleDigest) sourceError('Der Snapshot-Payload-Digest stimmt nicht mit dem Manifest überein.');
   }
+  return { index, reader, sources, manifest };
+}
+
+function readBranchProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
+  const indexEntries = parseExactTree(repo, commit, [contract.indexPath], limits);
+  if (indexEntries.length !== 1) sourceError('Der erforderliche Projektindex fehlt.');
+  const indexReader = new CommitBlobReader(repo, commit, limits, indexEntries, validateContractPath);
+  const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.indexPath));
+  if (!parsedIndex.success) sourceError('Der Projektindex verletzt den Branch-Commit-Vertrag.');
+  const index = parsedIndex.data;
+  if (index.allowedBranch !== 'codex/universaarl-projekt' || index.validationStatus !== 'branch-commit-validierung-erforderlich') sourceError('Der Projektindex ist nicht für den gebundenen Branch validiert.');
+  if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
+  const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
+  if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Projektindex enthält doppelte Artefakt-IDs oder Pfade.');
+  index.artifacts.forEach(assertProjectDataFormat);
+  const entries = parseExactTree(repo, commit, paths, limits);
+  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+  const sources = index.artifacts.map((declaration) => { const entry = byPath.get(declaration.path); if (!entry) sourceError('Ein indexierter Quellblob fehlt.'); return { declaration, entry }; });
+  const reader = new CommitBlobReader(repo, commit, limits, [indexEntries[0], ...sources.map((source) => source.entry)], validateContractPath); reader.preflight();
+  const digest = payloadDigest(reader, sources);
+  const manifest = { schemaVersion: 1, producerId: 'blueprint', projectId: 'UABC-BC-BASIC-001', producerCommitSha: commit, indexPath: contract.indexPath, payloadBundleDigest: digest, validationStatus: 'validated', spectraReleaseBinding: { productId: 'spectra', technicalRepositoryName: 'BCProjectOS', repositoryUrl: 'https://github.com/sivla/BCProjectOS.git', releaseVersion: '0.0.0', releaseTag: 'spectra-v0.0.0', tagCommit: commit, manifestPath: contract.manifestPath, manifestSourceCommit: commit, consumerMode: 'INSTALLABLE_BLUEPRINT', installableBlueprint: true } } as const;
   return { index, reader, sources, manifest };
 }
 
