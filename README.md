@@ -2,7 +2,13 @@
 
 Schreibgeschützte Anwendungshülle des Projektzwillings mit serverseitigem Projektverzeichnis. Produktiv sind die bestehende Blueprint-Sicht `universaarl` (`UABC`) und das Projekt `bc-basic` (`BCB`) registriert. Beide Einträge sind an dasselbe Blueprint-Repository gebunden; `bc-basic` löst Fachdaten ausschließlich über den technischen Vertrag `exports/project-data/v1/index.yaml` auf. Die Benutzeroberfläche erhält weder den absoluten Quellenpfad noch Dateipfade von Nachweisen.
 
+Die versionierte Quellenbindung verwendet standardmäßig den Geschwisterordner **Universaarl Projekt BC Basic**. Das erwartete Remote, der Branch, der Vertragspfad und die fachliche Projekt-ID bleiben durch den Twin fest gebunden. Die Umgebungsvariable UABC_SOURCE_REPO darf ausschließlich den lokalen absoluten Pfad überschreiben.
+
 ## Verträge
+
+## Commitgebundene Quellenbindung
+
+`UABC_EXPECTED_COMMIT` ist zwingend und enthält die vollständige, validierte 40-stellige Commit-SHA der Kundeninstanz. Der Twin liest alle unterstützten fachlichen Dateien als Git-Blobs aus genau diesem Commit. Remote, Branch, ein sauberer Checkout und eine während des Lesens unveränderte Quelle werden zusätzlich geprüft; ein Geschwisterordner, Pfad, Remote oder Branch allein ist keine Freigabe. Fehlende oder abweichende Bindungen führen zu einem sicheren Fehlerzustand. Absolute lokale Pfade werden weder an UI, DOM oder A11y ausgeliefert noch als dauerhafter Vertrag gespeichert.
 
 - Kanonische Oberflächenrouten: `/projekte/:projektId/:bereich`
 - Schreibgeschützte Programmierschnittstellen: `GET /api/projects`, `GET /api/projects/:projectId/state`, `GET /api/projects/:projectId/evidence/:evidenceId`
@@ -18,7 +24,7 @@ Die dargestellte Quelle ist eine durch die betreibende Person ausgewählte, comm
 
 ## Lokal starten
 
-1. `.env.example` nach `.env.local` kopieren und `UABC_SOURCE_REPO` auf eine durch die betreibende Person ausgewählte, commitgebundene und schreibgeschützte Blueprint-Momentaufnahme setzen.
+1. Den kanonischen Blueprint im Geschwisterordner **Universaarl Projekt BC Basic** bereitstellen. Nur für einen abweichenden lokalen Checkout die Beispieldatei `.env.example` nach `.env.local` kopieren und UABC_SOURCE_REPO auf dessen absoluten Pfad setzen.
 2. `npm ci`
 3. `npm --silent run test:german`
 4. `npm run check`

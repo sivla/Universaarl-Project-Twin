@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import { artifactSchema, displayVerificationType, type Artifact, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, type ProjectState } from '../model';
-import type { ProjectSourceContract } from '../projects/registry';
+import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
 const exactSafePaths = ['governance/reference-lifecycle.yaml', 'exports/project-data/v1/index.yaml'] as const;
@@ -53,6 +53,7 @@ export type AdapterReadOptions = {
   limits?: Partial<ReaderLimits>;
   /** Technische, serverseitige Bindung an einen expliziten schreibgeschuetzten Projektvertrag. */
   projectDataContract?: ProjectSourceContract;
+  sourceBinding?: ProjectSourceBinding;
 };
 
 export type EvidenceBlob = { contentType: 'image/png'; bytes: Buffer };
@@ -185,6 +186,15 @@ function sameFingerprint(before: SourceFingerprint, after: SourceFingerprint) {
     && before.indexFingerprint === after.indexFingerprint
     && before.statusFingerprint === after.statusFingerprint
     && before.repositoryFingerprint === after.repositoryFingerprint;
+}
+
+function assertSnapshotBinding(repo: string, fingerprint: SourceFingerprint, binding: ProjectSourceBinding | undefined) {
+  if (!binding) return;
+  if (!fullSha.test(binding.expectedCommit)) sourceError('Die erwartete vollstaendige Commit-SHA fehlt oder ist ungueltig.', 'QUELLKONFIGURATION_UNGUELTIG');
+  if (fingerprint.commit !== binding.expectedCommit) sourceError('Der aktuelle Quellen-Commit stimmt nicht mit der erwarteten Momentaufnahme ueberein.');
+  if (fingerprint.branch !== binding.expectedBranch) sourceError('Der aktuelle Quellen-Branch stimmt nicht mit der erwarteten Bindung ueberein.');
+  if (gitText(repo, ['remote', 'get-url', 'origin']) !== binding.expectedRemote) sourceError('Das Quellen-Remote stimmt nicht mit der erwarteten Bindung ueberein.');
+  if (fingerprint.dirty) sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
 }
 
 const sensitiveTokens = new Set([
@@ -1264,6 +1274,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
   const warnings = before.dirty ? ['Die Arbeitskopie enthält nicht commitgebundene Änderungen; alle dargestellten Fachdaten stammen unverändert aus dem ausgewiesenen Commit.'] : [];
   options.testHookAfterRead?.();
   const after = captureFingerprint(repo);
+  assertSnapshotBinding(repo, after, options.sourceBinding);
   if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich während des Lesens verändert; die Momentaufnahme ist ungültig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
   return projectStateSchema.parse({ source: { projectId, branch: safeBranchDisplay(before.branch), commit: before.commit, dirty: before.dirty,
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint, readAt: new Date().toISOString() },
@@ -1278,6 +1289,7 @@ export async function createTwinState(projectId: string, repo: string, options: 
   prepareRepo(repo);
   const limits = tightenLimits(options.limits);
   const before = captureFingerprint(repo);
+  assertSnapshotBinding(repo, before, options.sourceBinding);
   if (options.projectDataContract) return createProjectDataState(projectId, repo, options.projectDataContract, options, before, limits);
   const reader = new CommitBlobReader(repo, before.commit, limits);
   reader.preflight();
@@ -1292,7 +1304,7 @@ export async function createTwinState(projectId: string, repo: string, options: 
   const artifacts = results.flatMap((item) => item.artifacts).map((artifact) => artifactSchema.parse(artifact)).map(presentArtifact).map(sanitizeArtifact);
   const knownSourceIds = new Set(results.flatMap((item) => [...item.knownIds]));
   const warnings = results.flatMap((item) => item.warnings);
-  if (before.dirty) warnings.unshift('Die Arbeitskopie enthaelt nicht commitgebundene Aenderungen; alle dargestellten Fachdaten stammen unveraendert aus dem ausgewiesenen Commit.');
+  if (before.dirty && !options.sourceBinding) warnings.unshift('Die Arbeitskopie enthaelt nicht commitgebundene Aenderungen; alle dargestellten Fachdaten stammen unveraendert aus dem ausgewiesenen Commit.');
   const referenced = artifacts.flatMap((artifact) => [...(artifact.parentId ? [artifact.parentId] : []), ...artifact.dependencies, ...artifact.documents, ...artifact.evidence, ...artifact.meetings, ...artifact.deliverables.map((deliverable) => deliverable.id)]);
   const unresolved = [...new Set(referenced.filter((id) => !knownSourceIds.has(id)))];
   if (unresolved.length) warnings.push(`Nicht aufgeloeste Quellreferenzen: ${unresolved.join(', ')}`);
@@ -1309,6 +1321,7 @@ export async function createTwinState(projectId: string, repo: string, options: 
 
   options.testHookAfterRead?.();
   const after = captureFingerprint(repo);
+  assertSnapshotBinding(repo, after, options.sourceBinding);
   if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich waehrend des Lesens veraendert; die Momentaufnahme ist ungueltig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
 
   return projectStateSchema.parse({
@@ -1337,18 +1350,20 @@ export async function createTwinState(projectId: string, repo: string, options: 
   });
 }
 
-export function resolveEvidenceId(projectId: string, repo: string, evidenceId: string, projectDataContract?: ProjectSourceContract): EvidenceBlob | null {
+export function resolveEvidenceId(projectId: string, repo: string, evidenceId: string, options: Pick<AdapterReadOptions, 'projectDataContract' | 'sourceBinding'> = {}): EvidenceBlob | null {
   if (!/^ev_[a-f0-9]{24}$/.test(evidenceId)) return null;
   try {
     assertProjectId(projectId);
     prepareRepo(repo);
     const before = captureFingerprint(repo);
-    if (projectDataContract) {
-      const { reader, sources } = readProjectDataSources(repo, before.commit, projectId, projectDataContract, defaultLimits);
+    assertSnapshotBinding(repo, before, options.sourceBinding);
+    if (options.projectDataContract) {
+      const { reader, sources } = readProjectDataSources(repo, before.commit, projectId, options.projectDataContract, defaultLimits);
       const match = sources.filter((source) => source.declaration.format === 'png').find((source) => evidenceIdFor(projectId, reader, source.entry) === evidenceId);
       if (!match) return null;
       const bytes = reader.png(match.entry.path);
       const after = captureFingerprint(repo);
+      assertSnapshotBinding(repo, after, options.sourceBinding);
       return sameFingerprint(before, after) ? { contentType: 'image/png', bytes: Buffer.from(bytes) } : null;
     }
     const reader = new CommitBlobReader(repo, before.commit, defaultLimits);
@@ -1357,6 +1372,7 @@ export function resolveEvidenceId(projectId: string, repo: string, evidenceId: s
     if (!match) return null;
     const bytes = reader.png(match.path);
     const after = captureFingerprint(repo);
+    assertSnapshotBinding(repo, after, options.sourceBinding);
     if (!sameFingerprint(before, after)) return null;
     return { contentType: 'image/png', bytes: Buffer.from(bytes) };
   } catch {

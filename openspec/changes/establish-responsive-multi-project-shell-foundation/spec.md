@@ -18,6 +18,12 @@ Nachweise MÜSSEN in der Benutzeroberfläche ausschließlich über opake projekt
 
 Akzeptanz: Zustand, DOM und Fehler enthalten keine Quellenwurzel- oder Nachweisdateipfade. Unbekannte Nachweis-IDs und Ausbrüche über symbolische Verknüpfungen werden abgelehnt. Prüfungsschranken bleiben Nachweise.
 
+## Commitgebundene Snapshot-Quellenbindung
+
+Der Twin MUSS für jeden produktiven Lesezugriff eine vollständige 40-stellige erwartete Commit-SHA verlangen und alle unterstützten fachlichen Dateien ausschließlich als Git-Blobs aus genau diesem Commit lesen. Fehlende oder ungültige SHA, ein anderer `HEAD`, falsches Remote, falscher Branch, ein unsauberer Checkout oder eine während des Lesens veränderte Quellenidentität MÜSSEN den Lesezugriff sicher mit einem deutschen Fehlerzustand ablehnen. `GIT_OPTIONAL_LOCKS=0` MUSS für Git-Lesezugriffe gesetzt sein. Ein Pfad, Geschwisterordner, Remote oder Branch allein DARF niemals eine Freigabe bewirken.
+
+Akzeptanz: Deterministische Negativprüfungen belegen fehlende oder ungültige SHA, unvollständige Konfiguration, Remote-/Branch-Abweichung, abweichenden `HEAD`, schmutzigen Checkout, gleiche Porcelain-Ausgabe bei veränderten Inhalten sowie HEAD-, Index- und Inhaltsänderungen während des Lesens. Der Lesezugriff verändert weder Arbeitskopie noch Index oder Git-Referenzen; absolute Pfade erscheinen nicht in UI, DOM, A11y oder dauerhaften Verträgen.
+
 ## Navigation und Momentaufnahme-Semantik
 
 Die Anwendungshülle MUSS die sieben kanonischen Routen unter `/projekte/:projektId/:bereich` unterstützen. „Aktueller Stand“ MUSS als Momentaufnahme von `SourceSnapshot` erklärt werden und DARF keine Chronologie oder Wiedergabesemantik zeigen.

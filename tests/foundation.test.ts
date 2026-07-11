@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createProjectRegistry, findProject, productionRegistry, publicProjects } from '../src/projects/registry';
+import { blueprintSourceBinding, resolveBlueprintSourceRoot } from '../src/projects/blueprint-source';
+import { createProjectRegistry, findProject, productionRegistry as createProductionRegistry, publicProjects } from '../src/projects/registry';
 import { areas, parseRoute, projectUrl } from '../src/navigation/routes';
 import { AdapterSourceError, createTwinState as createBoundTwinState, resolveEvidenceId as resolveBoundEvidenceId, safeBranchDisplay, validateProvenancePath, type AdapterReadOptions } from '../src/server/adapter';
 import { apiErrorCodes, dispatchProjectApi } from '../src/server/api';
@@ -10,6 +11,12 @@ import { artifactSchema, boundedList, createProjectRequestGate, displayStatus, d
 const gitEnvironment = { ...process.env, GIT_OPTIONAL_LOCKS: '0' };
 const createTwinState = (repo: string, options?: AdapterReadOptions) => createBoundTwinState('universaarl', repo, options);
 const resolveEvidenceId = (repo: string, evidenceId: string) => resolveBoundEvidenceId('universaarl', repo, evidenceId);
+const testRegistry = (sourceRoot: string) => createProjectRegistry([
+  { id: 'universaarl', key: 'UABC', name: 'Universaarl', sourceRoot },
+  { id: 'bc-basic', key: 'BCB', name: 'Business Central Basic', sourceRoot, sourceContract: { path: blueprintSourceBinding.contractPath, expectedProjectId: blueprintSourceBinding.expectedProjectId } },
+]);
+// Bestehende Parser- und API-Fixtures prüfen bewusst keine Produktionsbindung.
+const productionRegistry = testRegistry;
 const validPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const pngCrcTable = (() => { const table = new Uint32Array(256); for (let index = 0; index < 256; index += 1) { let value = index; for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1); table[index] = value >>> 0; } return table; })();
 function pngCrc(value: Buffer) { let crc = 0xffffffff; for (const byte of value) crc = pngCrcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8); return (crc ^ 0xffffffff) >>> 0; }
@@ -96,8 +103,28 @@ artifacts:
 }
 
 describe('Projektregistry', () => {
-  it('enthält produktiv genau die zwei konfigurierten Projekte', () => { const registry = productionRegistry('C:\\snapshot'); expect(publicProjects(registry)).toEqual([{ id: 'universaarl', key: 'UABC', name: 'Universaarl' }, { id: 'bc-basic', key: 'BCB', name: 'Business Central Basic' }]); expect(JSON.stringify(publicProjects(registry))).not.toContain('snapshot'); });
-  it('weist doppelte und ungültige Einträge zurück', () => { expect(() => createProjectRegistry([{ id: 'universaarl', key: 'UABC', name: 'A', sourceRoot: 'C:\\a' }, { id: 'universaarl', key: 'UAB2', name: 'B', sourceRoot: 'C:\\b' }])).toThrow(); expect(findProject(productionRegistry('C:\\x'), '__proto__')).toBeUndefined(); expect(findProject(productionRegistry('C:\\x'), '../universaarl')).toBeUndefined(); });
+  it('enthält produktiv genau die zwei konfigurierten Projekte', () => { const registry = createProductionRegistry('C:\\snapshot', '0'.repeat(40)); expect(publicProjects(registry)).toEqual([{ id: 'universaarl', key: 'UABC', name: 'Universaarl' }, { id: 'bc-basic', key: 'BCB', name: 'Business Central Basic' }]); expect(JSON.stringify(publicProjects(registry))).not.toContain('snapshot'); });
+  it('weist doppelte und ungültige Einträge zurück', () => { expect(() => createProjectRegistry([{ id: 'universaarl', key: 'UABC', name: 'A', sourceRoot: 'C:\\a' }, { id: 'universaarl', key: 'UAB2', name: 'B', sourceRoot: 'C:\\b' }])).toThrow(); expect(findProject(testRegistry('C:\\x'), '__proto__')).toBeUndefined(); expect(findProject(testRegistry('C:\\x'), '../universaarl')).toBeUndefined(); });
+});
+
+describe('dauerhafte Blueprint-Quellenbindung', () => {
+  it('bindet lokalen Geschwisterpfad, Remote, Branch und Datenvertrag an genau eine typisierte Quelle', () => {
+    expect(blueprintSourceBinding).toEqual({
+      localRelativePath: '..\\Universaarl Projekt BC Basic', remoteUrl: 'https://github.com/sivla/FiBu.git', branch: 'codex/universaarl-projekt',
+      contractPath: 'exports/project-data/v1/index.yaml', expectedProjectId: 'UABC-BC-BASIC-001', producerProjectId: 'blueprint',
+    });
+    expect(Object.isFrozen(blueprintSourceBinding)).toBe(true);
+    expect(createProductionRegistry(path.resolve('quelle'), '0'.repeat(40)).find((entry) => entry.id === 'bc-basic')?.sourceContract).toEqual({ path: blueprintSourceBinding.contractPath, expectedProjectId: blueprintSourceBinding.expectedProjectId });
+  });
+
+  it('verwendet standardmaessig den Geschwisterordner und akzeptiert nur einen absoluten lokalen Override', () => {
+    const projectRoot = path.resolve('arbeitsbereich', 'Universaarl-Project-Twin');
+    expect(resolveBlueprintSourceRoot(projectRoot)).toBe(path.resolve(projectRoot, '..', 'Universaarl Projekt BC Basic'));
+    expect(resolveBlueprintSourceRoot(projectRoot, '  ')).toBe(path.resolve(projectRoot, '..', 'Universaarl Projekt BC Basic'));
+    const override = path.resolve('andere-quelle');
+    expect(resolveBlueprintSourceRoot(projectRoot, override)).toBe(path.normalize(override));
+    expect(() => resolveBlueprintSourceRoot(projectRoot, 'relative-quelle')).toThrow(/absoluter Pfad/);
+  });
 });
 
 describe('Kontrast-Tokens', () => {

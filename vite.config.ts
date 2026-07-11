@@ -1,17 +1,18 @@
-import path from 'node:path';
 import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { resolveBlueprintSourceRoot } from './src/projects/blueprint-source';
 import { productionRegistry } from './src/projects/registry';
 import { dispatchProjectApi } from './src/server/api';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const registry = productionRegistry(env.UABC_SOURCE_REPO || path.resolve('.uabc-source-not-configured'));
   return {
     plugins: [react(), {
       name: 'uabc-project-scoped-read-only-api',
       configureServer(server) {
+        if (mode === 'test') return;
+        const registry = productionRegistry(resolveBlueprintSourceRoot(process.cwd(), env.UABC_SOURCE_REPO), env.UABC_EXPECTED_COMMIT);
         server.middlewares.use(async (req, res, next) => {
           try {
             const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;

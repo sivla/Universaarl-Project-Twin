@@ -21,11 +21,11 @@ export async function dispatchProjectApi(method: string, pathname: string, regis
     const project = findProject(registry, projectId);
     if (!project) return safeError('PROJEKT_NICHT_GEFUNDEN', 404);
     if (match[2] === 'state') {
-      try { return { status: 200, body: await readState(project.id, project.sourceRoot, project.sourceContract ? { projectDataContract: project.sourceContract } : undefined) }; }
+      try { return { status: 200, body: await readState(project.id, project.sourceRoot, { ...(project.sourceBinding ? { sourceBinding: project.sourceBinding } : {}), ...(project.sourceContract ? { projectDataContract: project.sourceContract } : {}) }) }; }
       catch { return safeError('QUELLE_NICHT_VERFUEGBAR', 503); }
     }
     if (!/^ev_[a-f0-9]{24}$/.test(evidenceId)) return safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
-    const binary = resolveEvidenceId(project.id, project.sourceRoot, evidenceId, project.sourceContract ?? undefined);
+    const binary = resolveEvidenceId(project.id, project.sourceRoot, evidenceId, { ...(project.sourceBinding ? { sourceBinding: project.sourceBinding } : {}), ...(project.sourceContract ? { projectDataContract: project.sourceContract } : {}) });
     return binary ? { status: 200, body: null, binary } : safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
   } catch {
     return safeError('API_NICHT_VERFUEGBAR', 500);

@@ -11,6 +11,8 @@ Der MVP besitzt nicht projektgebundene Datenrouten und eine auf ein einzelnes Pr
 - Kanonische Projekt-Routen, globaler Projektkontext und Projektwechsler.
 - Deutsche anpassungsfähige Anwendungshülle mit aktueller Momentaufnahme, Quellenansicht, Nicht-unterstützt-Zuständen sowie System-, Hell- und Dunkeldarstellung.
 
+Zusätzlich wird ein fail-closed Snapshot-Quellenvertrag etabliert: Eine vollständige erwartete Commit-SHA bindet alle unterstützten fachlichen Dateien an feste Git-Blobs. Remote, Branch, sauberer Checkout und unveränderte Quelle während des Lesens sind zusätzliche Prüfungen; ein Pfad allein ist niemals eine Freigabe.
+
 ## Nicht-Ziele
 
 Keine Jira-Arbeitsansichten, Ausgangsstand-Chronologie, historische Wiedergabe, Tagebuch-, Gantt-, Kalender-, Portfolio- oder Abrechnungsfunktion. Keine neue fachliche Manifestbeziehung, keine schreibende Programmierschnittstelle und kein Zurückschreiben. Der quarantänisierte Arbeitsstand wird nicht übernommen.
