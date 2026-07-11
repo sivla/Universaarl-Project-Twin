@@ -3,9 +3,11 @@ import { createRoot } from 'react-dom/client';
 import { areas, parseRoute, projectUrl, type Area } from './navigation/routes';
 import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, type Artifact, type ProjectContext, type ProjectState, type UiErrorCode } from './model';
 import type { PublicProject } from './projects/registry';
+import { buildGanttProjection } from './planning/gantt';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
+import './theme/gantt.css';
 
 const labels: Record<Area, string> = {
   'aktueller-stand': 'Aktueller Stand',
@@ -245,8 +247,12 @@ function ProjectHistory({ state, open }: { state: ProjectState; open: (artifact:
 
 function Planning({ state, open }: { state: ProjectState; open: (artifact: Artifact) => void }) {
   const tickets = boundedList(state.artifacts.filter((artifact) => isWorkArtifact(artifact) && (artifact.startDate !== null || artifact.dueDate !== null || artifact.phaseId !== null || artifact.sourcePhase !== null)), renderLimits.artifacts);
-  if (!tickets.total) return <SourceEmpty title="Keine Zeitplanung belegt" text="Der normalisierte Quellenvertrag enthält keine Tickettermine oder Phasenzuordnungen." />;
-  return <section className="area-view"><header><div><p>QUELLZEITPLAN</p><h2>Phasen und Tickettermine</h2></div><span>{tickets.total} geplante Vorgänge</span></header><div className="source-table-wrap"><table className="source-table"><thead><tr><th>Vorgang</th><th>Phase</th><th>Beginn</th><th>Fällig</th><th>Planaufwand</th></tr></thead><tbody>{tickets.items.map((artifact) => <tr key={artifact.id}><td><button className="text-action" onClick={() => open(artifact)}><code>{artifact.id}</code><span>{sourceText(artifact.title)}</span></button></td><td><code>{sourcePhaseLabel(artifact)}</code></td><td>{sourceDateLabel(artifact.startDate)}</td><td>{sourceDateLabel(artifact.dueDate)}</td><td>{sourceEffortLabel(artifact)}</td></tr>)}</tbody></table></div>{tickets.limited && <p className="honest-note">Angezeigt werden die ersten {tickets.visible} von {tickets.total} belegten Planungszeilen.</p>}</section>;
+  const gantt = buildGanttProjection(state.artifacts);
+  if (!tickets.total && !gantt) return <SourceEmpty title="Keine Zeitplanung belegt" text="Der normalisierte Quellenvertrag enthält keine Tickettermine oder Phasenzuordnungen." />;
+  return <section className="area-view"><header><div><p>QUELLZEITPLAN</p><h2>Projektplan nach Phasen</h2></div><span>{gantt?.rows.length ?? 0} Phasen · {tickets.total} geplante Vorgänge</span></header>
+    <p className="honest-note">Die Zeitachse stellt ausschließlich belegte Datumswerte des ausgewiesenen Commits dar. Sie ist keine Kundenzusage und erzeugt keine Termine.</p>
+    {gantt && <div className="gantt" aria-label={`Gantt-Diagramm vom ${sourceDateLabel(gantt.startDate)} bis ${sourceDateLabel(gantt.endDate)}`}><div className="gantt-axis"><span>{sourceDateLabel(gantt.startDate)}</span><strong>{gantt.totalDays} Kalendertage</strong><span>{sourceDateLabel(gantt.endDate)}</span></div><div className="gantt-rows">{gantt.rows.map((row) => <article key={row.artifact.id} className="gantt-row"><button className="gantt-label" onClick={() => open(row.artifact)}><code>{row.artifact.id}</code><span>{sourceText(row.artifact.title)}</span><small>{sourceDateLabel(row.startDate)} – {sourceDateLabel(row.endDate)} · {sourceEffortLabel(row.artifact)}</small></button><div className="gantt-track" aria-hidden="true"><span style={{ marginInlineStart: `${row.offsetPercent}%`, width: `${row.widthPercent}%` }} /></div></article>)}</div></div>}
+    {tickets.total > 0 && <><h3 className="planning-table-title">Zugeordnete Vorgänge</h3><div className="source-table-wrap"><table className="source-table"><thead><tr><th>Vorgang</th><th>Phase</th><th>Beginn</th><th>Fällig</th><th>Planaufwand</th></tr></thead><tbody>{tickets.items.map((artifact) => <tr key={artifact.id}><td><button className="text-action" onClick={() => open(artifact)}><code>{artifact.id}</code><span>{sourceText(artifact.title)}</span></button></td><td><code>{sourcePhaseLabel(artifact)}</code></td><td>{sourceDateLabel(artifact.startDate)}</td><td>{sourceDateLabel(artifact.dueDate)}</td><td>{sourceEffortLabel(artifact)}</td></tr>)}</tbody></table></div></>}{tickets.limited && <p className="honest-note">Angezeigt werden die ersten {tickets.visible} von {tickets.total} belegten Planungszeilen.</p>}</section>;
 }
 
 function Delivery({ state, open }: { state: ProjectState; open: (artifact: Artifact) => void }) {
