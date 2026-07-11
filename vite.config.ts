@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => {
       name: 'uabc-project-scoped-read-only-api',
       configureServer(server) {
         if (mode === 'test') return;
-        const registry = productionRegistry(resolveBlueprintSourceRoot(process.cwd(), env.UABC_SOURCE_REPO), env.UABC_EXPECTED_COMMIT);
+        const sourceRepo = process.env.UABC_SOURCE_REPO ?? env.UABC_SOURCE_REPO;
+        const expectedCommit = process.env.UABC_EXPECTED_COMMIT ?? env.UABC_EXPECTED_COMMIT;
+        const registry = productionRegistry(resolveBlueprintSourceRoot(process.cwd(), sourceRepo), expectedCommit);
         server.middlewares.use(async (req, res, next) => {
           try {
             const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;

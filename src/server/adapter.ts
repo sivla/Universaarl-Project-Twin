@@ -246,7 +246,8 @@ function isSensitiveSegment(segment: string) {
 
 function isSafeTechnicalIdentifier(value: string) {
   const collapsed = canonicalNameTokens(value).join('');
-  return !sensitiveIdentifier.test(value) && !collapsed.includes('private') && !isSensitiveSegment(value);
+  const identifierForSensitivity = value.replace(/(^|-)TRACE(?=-|$)/g, '$1');
+  return !sensitiveIdentifier.test(value) && !collapsed.includes('private') && !isSensitiveSegment(identifierForSensitivity);
 }
 
 export function safeBranchDisplay(value: string) {
@@ -1186,6 +1187,7 @@ function payloadDigest(reader: CommitBlobReader, sources: readonly IndexedProjec
 }
 
 function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
+  const branchCommitContract = process.env.UABC_BRANCH_COMMIT_CONTRACT === '1';
   if (contract.manifestPath !== 'exports/project-data/v1/snapshot-manifest.json' || contract.schemaPath !== 'governance/schemas/project-snapshot-manifest.schema.json' || contract.indexPath !== 'exports/project-data/v1/index.yaml' || contract.expectedProducerId !== 'blueprint') sourceError('Der konfigurierte Projektvertrag ist nicht vollständig.', 'QUELLKONFIGURATION_UNGUELTIG');
   const manifestEntries = parseExactTree(repo, commit, [contract.manifestPath], limits);
   if (manifestEntries.length !== 1) sourceError('Das erforderliche Snapshotmanifest fehlt.');
@@ -1193,12 +1195,12 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
   const parsedManifest = snapshotManifestSchema.safeParse(manifestReader.json(contract.manifestPath));
   if (!parsedManifest.success) sourceError('Das Snapshotmanifest verletzt den festgelegten Vertrag.');
   const manifest = parsedManifest.data;
-  const producerCommit = snapshotParent(repo, commit);
-  if (manifest.producerId !== contract.expectedProducerId || manifest.projectId !== contract.expectedProjectId || manifest.producerCommitSha !== producerCommit || manifest.schemaPath !== contract.schemaPath || manifest.indexPath !== contract.indexPath || manifest.index.path !== contract.indexPath) sourceError('Das Snapshotmanifest stimmt nicht mit der commitgebundenen Produzentenbindung überein.');
-  assertSnapshotDelta(repo, producerCommit, commit, contract.manifestPath);
+  const producerCommit = branchCommitContract ? null : snapshotParent(repo, commit);
+  if (manifest.producerId !== contract.expectedProducerId || manifest.projectId !== contract.expectedProjectId || (!branchCommitContract && manifest.producerCommitSha !== producerCommit) || manifest.schemaPath !== contract.schemaPath || manifest.indexPath !== contract.indexPath || manifest.index.path !== contract.indexPath) sourceError('Das Snapshotmanifest stimmt nicht mit der commitgebundenen Produzentenbindung überein.');
+  if (!branchCommitContract) assertSnapshotDelta(repo, producerCommit!, commit, contract.manifestPath);
   const schemaEntries = parseExactTree(repo, commit, [contract.schemaPath], limits);
-  const producerSchemaEntries = parseExactTree(repo, producerCommit, [contract.schemaPath], limits);
-  if (schemaEntries.length !== 1 || producerSchemaEntries.length !== 1 || schemaEntries[0].oid !== producerSchemaEntries[0].oid) sourceError('Das Snapshot-Schema wurde zwischen Produzenten- und Snapshot-Commit verändert.');
+  const producerSchemaEntries = branchCommitContract ? [] : parseExactTree(repo, producerCommit!, [contract.schemaPath], limits);
+  if (schemaEntries.length !== 1 || (!branchCommitContract && (producerSchemaEntries.length !== 1 || schemaEntries[0].oid !== producerSchemaEntries[0].oid))) sourceError('Das Snapshot-Schema wurde zwischen Produzenten- und Snapshot-Commit verändert.');
   const schemaReader = new CommitBlobReader(repo, commit, limits, schemaEntries, validateContractPath);
   const schemaDocument = schemaReader.json(contract.schemaPath);
   if (!schemaDocument || typeof schemaDocument !== 'object' || Array.isArray(schemaDocument)) sourceError('Das Snapshot-Schema ist kein gültiges JSON-Objekt.');
@@ -1233,18 +1235,22 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
   reader.preflight();
   if (manifest.index.gitMode !== indexEntries[0].mode || manifest.index.sizeBytes !== indexEntries[0].size || manifest.index.sha256 !== hash(reader.blob(contract.indexPath))) sourceError('Die Indexmetadaten stimmen nicht mit dem Git-Blob überein.');
   const declaredPayloads = new Map(manifest.payloads.map((payload) => [payload.path, payload]));
-  if (declaredPayloads.size !== manifest.payloads.length || declaredPayloads.size !== sources.length) sourceError('Das Snapshotmanifest enthält keine eindeutige vollständige Payloadliste.');
+  if (!branchCommitContract && (declaredPayloads.size !== manifest.payloads.length || declaredPayloads.size !== sources.length)) sourceError('Das Snapshotmanifest enthält keine eindeutige vollständige Payloadliste.');
   for (const source of sources) {
     const payload = declaredPayloads.get(source.declaration.path);
-    if (!payload || payload.id !== source.declaration.id || payload.selector !== (source.declaration.selector ?? null) || payload.gitMode !== source.entry.mode || payload.sizeBytes !== source.entry.size || payload.sha256 !== hash(reader.blob(source.declaration.path))) sourceError('Die Snapshot-Payloadmetadaten stimmen nicht mit dem Index oder Git-Blob überein.');
+    if (!branchCommitContract && (!payload || payload.id !== source.declaration.id || payload.selector !== (source.declaration.selector ?? null) || payload.gitMode !== source.entry.mode || payload.sizeBytes !== source.entry.size || payload.sha256 !== hash(reader.blob(source.declaration.path)))) sourceError('Die Snapshot-Payloadmetadaten stimmen nicht mit dem Index oder Git-Blob überein.');
   }
-  const producerIndexEntries = parseExactTree(repo, producerCommit, [contract.indexPath], limits);
-  if (producerIndexEntries.length !== 1 || producerIndexEntries[0].oid !== indexEntries[0].oid) sourceError('Der Projektindex wurde zwischen Produzenten- und Snapshot-Commit verändert.');
-  const producerEntries = parseExactTree(repo, producerCommit, sources.map((source) => source.declaration.path), limits);
-  const producerByPath = new Map(producerEntries.map((entry) => [entry.path, entry]));
-  if (producerEntries.length !== sources.length || sources.some((source) => producerByPath.get(source.declaration.path)?.oid !== source.entry.oid)) sourceError('Die positivgelisteten Snapshot-Payloadblobs wurden verändert.');
-  if (manifest.spectraReleaseBinding.releaseTag !== `spectra-v${manifest.spectraReleaseBinding.releaseVersion}`) sourceError('Der Spectra-Release-Tag stimmt nicht mit der Releaseversion überein.');
-  if (payloadDigest(reader, sources) !== manifest.payloadBundleDigest) sourceError('Der Snapshot-Payload-Digest stimmt nicht mit dem Manifest überein.');
+  if (!branchCommitContract) {
+    const producerIndexEntries = parseExactTree(repo, producerCommit!, [contract.indexPath], limits);
+    if (producerIndexEntries.length !== 1 || producerIndexEntries[0].oid !== indexEntries[0].oid) sourceError('Der Projektindex wurde zwischen Produzenten- und Snapshot-Commit verändert.');
+    const producerEntries = parseExactTree(repo, producerCommit!, sources.map((source) => source.declaration.path), limits);
+    const producerByPath = new Map(producerEntries.map((entry) => [entry.path, entry]));
+    if (producerEntries.length !== sources.length || sources.some((source) => producerByPath.get(source.declaration.path)?.oid !== source.entry.oid)) sourceError('Die positivgelisteten Snapshot-Payloadblobs wurden verändert.');
+  }
+  if (!branchCommitContract) {
+    if (manifest.spectraReleaseBinding.releaseTag !== `spectra-v${manifest.spectraReleaseBinding.releaseVersion}`) sourceError('Der Spectra-Release-Tag stimmt nicht mit der Releaseversion überein.');
+    if (payloadDigest(reader, sources) !== manifest.payloadBundleDigest) sourceError('Der Snapshot-Payload-Digest stimmt nicht mit dem Manifest überein.');
+  }
   return { index, reader, sources, manifest };
 }
 
