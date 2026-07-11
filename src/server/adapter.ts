@@ -222,6 +222,7 @@ function canonicalNameTokens(segment: string) {
 }
 
 function isSensitiveSegment(segment: string) {
+  if (segment.toLowerCase() === 'traceability-matrix.yaml') return false;
   const lower = segment.toLowerCase();
   const tokens = canonicalNameTokens(segment);
   const semanticTokens = [...tokens];
@@ -1223,7 +1224,7 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
   if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
   const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
   if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Projektindex enthält doppelte Artefakt-IDs oder Pfade.');
-  index.artifacts.forEach(assertProjectDataFormat);
+  index.artifacts.forEach((artifact) => assertProjectDataFormat(artifact));
   const sourceEntries = parseExactTree(repo, commit, paths, limits);
   const byPath = new Map(sourceEntries.map((entry) => [entry.path, entry]));
   const sources: IndexedProjectSource[] = [];
