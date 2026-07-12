@@ -1616,6 +1616,12 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
       ['deliverables', 'id', 'title', 'status'], ['decisions', 'id', 'statement', 'status'], ['templates', 'id', 'purpose', 'approvalStatus'],
       ['sessions', 'id', 'title', 'status'], ['scenarios', 'id', 'title'], ['sources', 'id', 'title'], ['worklogs', 'worklogId', 'summary', 'approvalStatus'], ['invoices', 'invoiceId', 'summary', 'status'],
     ];
+    if (declaration.kindId === 'data-readiness-check' && Array.isArray(data.templatePairs)) {
+      const activity = data.templatePairs.flatMap((raw) => raw && typeof raw === 'object' && typeof (raw as RecordValue).source === 'string' ? [(raw as RecordValue).source as string] : []);
+      add({ id: declaration.id, kind: 'document', title: declaration.kindId, status: storyText(data.status), phase: null, wave: null, workstream: 'Datenvorbereitung', rationale: `${activity.length} positivgelistete Datenlieferungen sind beschrieben.`, activity,
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     const family = families.find(([key]) => Array.isArray(data[key]));
     if (!family) {
       add({ id: declaration.id, kind: 'document', title: storyText(data.title) ?? storyText(data.displayName) ?? declaration.kindId,

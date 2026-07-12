@@ -14,5 +14,6 @@
 - [x] Manifestfreien Branch-Blockierzustand verständlich diagnostizieren und unterstützte Spectra-Dokumenttypen widerspruchsfrei deutsch benennen
 - [x] Automatische einmalige Auflösung der aktuellen erlaubten Branchspitze ohne manuelle Commitfreigabe nachweisen
 - [x] Spectra 0.10, 110 Releasepayloads und den 102-Artefakt-Projektindex commitgebunden validieren und fachlich priorisiert darstellen
+- [x] Commitgebundenes Startklar-Paket in den bestehenden fünf Leitfragen fachlich auffindbar darstellen und auf Desktop sowie Mobil nachweisen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
