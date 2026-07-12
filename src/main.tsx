@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { areas, parseRoute, projectUrl, type Area } from './navigation/routes';
-import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type ProjectContext, type ProjectState, type UiErrorCode } from './model';
+import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type ProjectContext, type ProjectDocument, type ProjectState, type UiErrorCode } from './model';
 import type { PublicProject } from './projects/registry';
 import { buildGanttProjection } from './planning/gantt';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
 import './theme/gantt.css';
+import './theme/documentation.css';
 
 const labels: Record<Area, string> = {
   'aktueller-stand': 'Aktueller Stand',
@@ -16,6 +17,7 @@ const labels: Record<Area, string> = {
   planung: 'Planung',
   lieferung: 'Lieferung',
   abrechnung: 'Abrechnung',
+  projektdokumentation: 'Projektdokumentation',
   quellen: 'Quellen',
 };
 
@@ -211,6 +213,7 @@ function ProjectArea({ area, state, context, open }: { area: Area; state: Projec
   if (area === 'planung') return <Planning state={state} open={open} />;
   if (area === 'lieferung') return <Delivery state={state} open={open} />;
   if (area === 'abrechnung') return <Billing state={state} open={open} />;
+  if (area === 'projektdokumentation') return <Documentation state={state} />;
   return <Sources state={state} context={context} />;
 }
 
@@ -362,6 +365,52 @@ function Current({ state, context, open }: { state: ProjectState; context: Proje
     <section className="gaps"><header><div><p>BEKANNTE DATENLÜCKEN</p><h2>Fehlendes bleibt sichtbar</h2></div><span>{gaps.limited ? `${gaps.visible} von ${gaps.total} Datenlücken` : `${gaps.total} Datenlücken`}</span></header>{gaps.limited && <p className="honest-note">Angezeigt werden die ersten {gaps.visible} von {gaps.total} bekannten Datenlücken.</p>}<ul>{gaps.items.map((gap, index) => <li key={`${index}-${gap}`}>{gap}</li>)}</ul></section>
     <details className="technical-proof"><summary>Technische Prüfung, Herkunft und Artefaktverzeichnis</summary><dl><dt>Projekt</dt><dd>{context.projectName} · {context.projectKey}</dd><dt>Branch</dt><dd><code>{state.source.branch}</code></dd><dt>Gepinnter Commit</dt><dd><code>{state.source.commit}</code></dd><dt>Eingelesen</dt><dd>{new Date(state.source.readAt).toLocaleString('de-DE')}</dd><dt>Quellenstatus</dt><dd>{state.source.dirty ? 'Nicht commitgebundene Änderungen erkannt' : 'Commitgebundene Git-Blobs geprüft'}</dd></dl><p>Index, Allowlist, Referenzen und Digests werden vor der Anzeige fail-closed geprüft.</p><SpectraPanel artifacts={spectra09} open={open} /><DocumentCards title="Spectra-Bindung und Konformität" artifacts={spectraEvidence} open={open} emptyText="Im gebundenen Commit ist keine positivgelistete Spectra-Bindungs- oder Konformitäts-Evidence vorhanden." /><section className="records"><header><div><p>BELEGTE ARTEFAKTE</p><h2>Technisches Artefaktverzeichnis</h2></div><span>{artifacts.limited ? `${artifacts.visible} von ${artifacts.total} Datensätzen` : `${artifacts.total} Datensätze`}</span></header>{artifacts.limited && <p className="honest-note">Angezeigt werden die ersten {renderLimits.artifacts} belegten Datensätze.</p>}<div className="record-list">{artifacts.items.map((artifact) => <button key={`${artifact.kind}-${artifact.id}`} onClick={() => open(artifact)}><code>{artifact.id}</code><span>{sourceText(artifact.title)}</span><small>{displayStatus(artifact.status)} · {sourceText(artifact.workstream)}</small></button>)}</div></section></details>
   </>;
+}
+
+function documentationHeadingId(text: string, index: number) {
+  const normalized = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `abschnitt-${normalized || index + 1}-${index + 1}`;
+}
+
+function documentationHeadings(content: string) {
+  return content.split(/\r?\n/).flatMap((line, index) => { const match = line.match(/^(#{1,3})\s+(.+)$/); return match ? [{ level: match[1].length, text: match[2].trim(), id: documentationHeadingId(match[2].trim(), index) }] : []; });
+}
+
+function InlineDocumentText({ text }: { text: string }) {
+  return <>{text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => part.startsWith('`') ? <code key={index}>{part.slice(1, -1)}</code> : part.startsWith('**') ? <strong key={index}>{part.slice(2, -2)}</strong> : <React.Fragment key={index}>{part}</React.Fragment>)}</>;
+}
+
+function SafeMarkdown({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/); const nodes: React.ReactNode[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]; if (!line.trim()) continue;
+    if (line.startsWith('```')) { const code: string[] = []; index += 1; while (index < lines.length && !lines[index].startsWith('```')) { code.push(lines[index]); index += 1; } nodes.push(<pre key={`code-${index}`}><code>{code.join('\n')}</code></pre>); continue; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/); if (heading) { const id = documentationHeadingId(heading[2].trim(), index); const value = <InlineDocumentText text={heading[2].trim()} />; nodes.push(heading[1].length === 1 ? <h2 id={id} key={id}>{value}</h2> : heading[1].length === 2 ? <h3 id={id} key={id}>{value}</h3> : <h4 id={id} key={id}>{value}</h4>); continue; }
+    if (/^\|.*\|\s*$/.test(line)) { const cells = line.split('|').slice(1, -1).map((cell) => cell.trim()); if (cells.every((cell) => /^:?-+:?$/.test(cell))) continue; nodes.push(<div className="documentation-table-line" key={`table-${index}`}>{cells.map((cell, cellIndex) => <span key={cellIndex}><InlineDocumentText text={cell} /></span>)}</div>); continue; }
+    const list = line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/); if (list) { nodes.push(<p className="documentation-list-line" key={`list-${index}`}><span aria-hidden="true">•</span><InlineDocumentText text={list[1]} /></p>); continue; }
+    nodes.push(<p key={`paragraph-${index}`}><InlineDocumentText text={line.replace(/^>\s?/, '')} /></p>);
+  }
+  return <div className="documentation-markdown">{nodes}</div>;
+}
+
+function Documentation({ state }: { state: ProjectState }) {
+  const [query, setQuery] = useState(''); const [type, setType] = useState('alle'); const [status, setStatus] = useState('alle'); const [phase, setPhase] = useState('alle'); const [process, setProcess] = useState('alle');
+  const [selectedId, setSelectedId] = useState(state.documents[0]?.id ?? ''); const byId = new Map(state.documents.map((document) => [document.id, document]));
+  const values = (field: 'documentType' | 'status' | 'phase' | 'process') => [...new Set(state.documents.map((document) => document[field] ?? 'Nicht belegt'))].sort((left, right) => left.localeCompare(right, 'de'));
+  const filtered = state.documents.filter((document) => { const search = `${document.id} ${document.title} ${document.content} ${document.references.join(' ')}`.toLocaleLowerCase('de'); return (!query.trim() || search.includes(query.trim().toLocaleLowerCase('de'))) && (type === 'alle' || document.documentType === type) && (status === 'alle' || (document.status ?? 'Nicht belegt') === status) && (phase === 'alle' || (document.phase ?? 'Nicht belegt') === phase) && (process === 'alle' || (document.process ?? 'Nicht belegt') === process); });
+  useEffect(() => { if (!filtered.some((document) => document.id === selectedId)) setSelectedId(filtered[0]?.id ?? ''); }, [filtered, selectedId]);
+  if (!state.documents.length) return <SourceEmpty title="Keine Projektdokumentation belegt" text="Der gebundene Projektindex enthält keine unterstützten Markdown-Dokumente." />;
+  const selected = byId.get(selectedId) ?? filtered[0];
+  const depth = (document: ProjectDocument) => { let current = document; let value = 0; const seen = new Set<string>(); while (current.parentId && byId.has(current.parentId) && !seen.has(current.parentId)) { seen.add(current.parentId); current = byId.get(current.parentId)!; value += 1; } return value; };
+  const breadcrumb: ProjectDocument[] = []; if (selected) { let current: ProjectDocument | undefined = selected; const seen = new Set<string>(); while (current && !seen.has(current.id)) { breadcrumb.unshift(current); seen.add(current.id); current = current.parentId ? byId.get(current.parentId) : undefined; } }
+  const headings = selected ? documentationHeadings(selected.content) : [];
+  return <section className="documentation-view"><header><div><p>COMMITGEBUNDENE PROJEKTDOKUMENTATION</p><h2>Freigegebene Dokumente direkt lesen</h2></div><span>{state.documents.length} positivgelistete Markdown-Dokumente · keine lokale Kopie</span></header>
+    <div className="documentation-filters"><label>Dokumente durchsuchen<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Titel, Inhalt oder ID" /></label><label>Dokumenttyp<select value={type} onChange={(event) => setType(event.target.value)}><option value="alle">Alle Typen</option>{values('documentType').map((value) => <option key={value} value={value}>{displayDocumentType(value)}</option>)}</select></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="alle">Alle Status</option>{values('status').map((value) => <option key={value} value={value}>{displayStatus(value === 'Nicht belegt' ? null : value)}</option>)}</select></label><label>Phase<select value={phase} onChange={(event) => setPhase(event.target.value)}><option value="alle">Alle Phasen</option>{values('phase').map((value) => <option key={value}>{value}</option>)}</select></label><label>Prozess<select value={process} onChange={(event) => setProcess(event.target.value)}><option value="alle">Alle Prozesse</option>{values('process').map((value) => <option key={value}>{value}</option>)}</select></label></div>
+    {!filtered.length ? <SourceEmpty title="Keine passenden Dokumente" text="Für die gewählten Such- und Filterwerte ist im gebundenen Commit kein Dokument belegt." /> : <div className="documentation-layout"><nav className="documentation-tree" aria-label="Dokumentnavigation"><p>{filtered.length} von {state.documents.length} Dokumenten</p>{filtered.map((document) => <button key={document.id} aria-current={selected?.id === document.id ? 'page' : undefined} onClick={() => setSelectedId(document.id)} style={{ paddingInlineStart: `${14 + depth(document) * 14}px` }}><strong>{document.title}</strong><small>{displayDocumentType(document.documentType)} · {displayStatus(document.status)}</small></button>)}</nav>{selected && <article className="documentation-page"><nav className="documentation-breadcrumb" aria-label="Brotkrümelnavigation">{breadcrumb.map((document, index) => <React.Fragment key={document.id}>{index > 0 && <span aria-hidden="true">›</span>}<button onClick={() => setSelectedId(document.id)}>{document.title}</button></React.Fragment>)}</nav><header><div><p>{displayDocumentType(selected.documentType)}</p><h2>{selected.title}</h2><span>{displayStatus(selected.status)} · Aktualisiert: {selected.updatedAt ? sourceDateLabel(selected.updatedAt) : 'Nicht belegt'}</span></div><button disabled={!selected.externalUrl} title={selected.externalLinkReason}>In Confluence öffnen</button></header>{headings.length > 1 && <nav className="documentation-toc" aria-label="Inhaltsverzeichnis"><strong>Auf dieser Seite</strong>{headings.slice(1).map((heading) => <a key={heading.id} href={`#${heading.id}`}>{heading.text}</a>)}</nav>}<SafeMarkdown content={selected.content} />
+      <section className="documentation-references"><h3>Querverweise</h3>{selected.references.length ? <div>{selected.references.map((reference) => byId.has(reference) ? <button key={reference} onClick={() => setSelectedId(reference)}>{reference} · Dokument öffnen</button> : <span key={reference}><code>{reference}</code> · Fachreferenz</span>)}</div> : <p className="honest-note">Keine strukturierten Querverweise belegt.</p>}</section>
+      <details className="documentation-provenance"><summary>Provenienz und Validierungsstand</summary><dl><dt>Commit</dt><dd><code>{state.source.commit}</code></dd><dt>Quelldatei</dt><dd><code>{selected.sourcePath}</code></dd><dt>Validierung</dt><dd>Index, Allowlist und Git-Blob commitgebunden geprüft</dd><dt>Phase</dt><dd>{selected.phase ?? 'Nicht belegt'}</dd><dt>Prozess</dt><dd>{selected.process ?? 'Nicht belegt'}</dd></dl></details></article>}</div>}
+    <p className="honest-note">Eine kanonische Confluence-URL, unveränderliche Page-ID und erlaubte HTTPS-Origin sind im gebundenen Projektindex nicht belegt. Der externe Link bleibt deshalb sicher deaktiviert.</p>
+  </section>;
 }
 
 function Sources({ state, context }: { state: ProjectState; context: ProjectContext }) {

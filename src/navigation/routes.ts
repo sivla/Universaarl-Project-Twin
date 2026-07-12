@@ -1,4 +1,4 @@
-export const areas = ['aktueller-stand', 'projektverlauf', 'arbeit', 'planung', 'lieferung', 'abrechnung', 'quellen'] as const;
+export const areas = ['aktueller-stand', 'projektverlauf', 'arbeit', 'planung', 'lieferung', 'abrechnung', 'projektdokumentation', 'quellen'] as const;
 export type Area = typeof areas[number];
 export type RouteState = { kind: 'root' } | { kind: 'project'; projectId: string; area: Area } | { kind: 'project-not-found'; projectId: string } | { kind: 'area-not-found'; projectId: string };
 

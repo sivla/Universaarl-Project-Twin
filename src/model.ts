@@ -57,6 +57,12 @@ export const storyTimelineSchema = z.object({ id: sourceTechnicalIdSchema, time:
 export const storyHypercareSchema = z.object({ day: z.number().int().positive(), dailyPage: z.string().min(1), ticket: z.string().min(1), comment: z.string().min(1), priority: z.string().min(1), diagnosis: z.string().min(1), fix: z.string().min(1), retest: z.string().min(1), status: z.string().min(1), decision: z.string().min(1), evidence: z.array(z.string()).default([]) }).strict();
 const storyRelationEndpointSchema = z.string().min(1).max(1_000).refine((value) => !value.includes('\\') && !value.startsWith('/') && !value.includes('..') && !/[\u0000-\u001f]/.test(value));
 export const storyRelationSchema = z.object({ from: storyRelationEndpointSchema, to: storyRelationEndpointSchema, kind: z.string().min(1), label: z.string().min(1).nullable() }).strict();
+export const projectDocumentSchema = z.object({
+  id: sourceTechnicalIdSchema, title: z.string().min(1).max(500), documentType: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/), status: z.string().min(1).max(120).nullable(),
+  parentId: sourceTechnicalIdSchema.nullable(), owners: z.array(sourceTechnicalIdSchema).max(50), references: z.array(sourceTechnicalIdSchema).max(200),
+  phase: z.string().min(1).max(120).nullable(), process: z.string().min(1).max(120).nullable(), updatedAt: sourceDateSchema.nullable(), sourcePath: sourceRelativePathSchema,
+  content: z.string().min(1).max(200_000), externalUrl: z.string().url().nullable(), externalLinkReason: z.string().min(1).max(240),
+}).strict();
 export const storyProjectionSchema = z.object({ storyId: sourceTechnicalIdSchema, status: z.string().min(1), offer: z.object({ id: sourceTechnicalIdSchema, currentVersion: z.number().int().positive(), versions: z.array(storyOfferVersionSchema), plannedHours: z.number().nonnegative().nullable(), plannedCost: z.number().nonnegative().nullable(), actualHours: z.number().nonnegative().nullable(), actualCost: z.number().nonnegative().nullable() }).nullable(), pages: z.array(storyPageSchema), tickets: z.array(storyTicketSchema), timeline: z.array(storyTimelineSchema), hypercare: z.array(storyHypercareSchema), relations: z.array(storyRelationSchema), controls: z.object({ openP1: z.number().int().nonnegative(), openP2: z.number().int().nonnegative(), worklogHours: z.number().nonnegative(), worklogCost: z.number().nonnegative(), realBcExecution: z.boolean() }).nullable() }).strict();
 
 export const projectStateSchema = z.object({
@@ -66,12 +72,13 @@ export const projectStateSchema = z.object({
     snapshot: z.object({ schemaVersion: z.literal(1), producerId: z.literal('blueprint'), producerCommitSha: z.string().regex(/^[a-f0-9]{40}$/), indexPath: sourceRelativePathSchema, payloadBundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), validationStatus: z.literal('validated'), spectraReleaseBinding: z.object({ productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'), releaseVersion: z.string().min(1), releaseTag: z.string().regex(/^spectra-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/), tagCommit: z.string().regex(/^[a-f0-9]{40}$/), manifestPath: sourceRelativePathSchema, manifestSourceCommit: z.string().regex(/^[a-f0-9]{40}$/), consumerMode: z.literal('INSTALLABLE_BLUEPRINT'), installableBlueprint: z.literal(true) }).strict() }).nullable().default(null),
     readAt: z.string().datetime(),
   }),
-  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), story: storyProjectionSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
+  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
   stats: z.object({ jira: z.number().int().nonnegative(), changes: z.number().int().nonnegative(), documents: z.number().int().nonnegative(), capabilities: z.number().int().nonnegative(), evidence: z.number().int().nonnegative() }),
 });
 
 export type Artifact = z.infer<typeof artifactSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
+export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
 
 export type ProjectContext = { projectId: string; projectKey: string; projectName: string };
 export type SourceSnapshot = ProjectState['source'];
@@ -81,6 +88,8 @@ const germanStatusLabels: Readonly<Record<string, string>> = {
   approved: 'Freigegeben', planned: 'Geplant', deferred: 'Zurückgestellt', passed: 'Bestanden', active: 'Aktiv', proposed: 'Vorgeschlagen',
   done: 'Erledigt', completed: 'Abgeschlossen', ready: 'Bereit', archived: 'Archiviert', documented: 'Dokumentiert', unknown: 'Unbekannt', unbekannt: 'Unbekannt',
   backlog: 'Arbeitsvorrat', blocked: 'Blockiert', created: 'Angelegt', tested: 'Getestet', closed: 'Geschlossen', 'in progress': 'In Arbeit', 'in-progress': 'In Arbeit', 'in review': 'In Prüfung', 'nicht belegt': 'Nicht belegt',
+  'v1 kundenbereit': 'V1 kundenbereit', 'synthetisch abgenommen': 'Synthetisch abgenommen', 'kundenbereites standardmuster': 'Kundenbereites Standardmuster',
+  'synthetisch abgeschlossen': 'Synthetisch abgeschlossen', 'w0 complete': 'W0 abgeschlossen', 'w0 passed': 'W0 bestanden', 'simulated-complete': 'Synthetisch abgeschlossen', entwurf: 'Entwurf', abgeschlossen: 'Abgeschlossen',
 };
 
 export function displayStatus(value: string | null) {
@@ -118,6 +127,19 @@ export function displayPhase(value: typeof normalizedPhases[number] | null) {
 }
 
 const germanDocumentTypes: Readonly<Record<string, string>> = {
+  'confluence-page': 'Confluence-Seite',
+  'openspec-change': 'Änderungsvorschlag',
+  requirements: 'Anforderungen',
+  'solution-design': 'Lösungsentwurf',
+  'delivery-plan': 'Lieferplan',
+  'delivery-tasks': 'Lieferaufgaben',
+  'verification-plan': 'Prüfplan',
+  'synthetic-demo-guide': 'Demo- und Abnahmeleitfaden',
+  'project-story-readable-offer': 'Lesbares Angebot',
+  'project-story-readable-pages': 'Lesbare Projektseiten',
+  'project-story-readable-hypercare': 'Lesbarer Hypercare-Status',
+  'project-story-readable-chronicle': 'Projektchronik',
+  'project-story-readable-handover': 'Handover-Dokument',
   'meeting-transcript': 'Besprechungstranskript',
   'project-documentation': 'Projektdokumentation',
   'customer-handbook': 'Kundenhandbuch',

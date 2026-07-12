@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { artifactSchema, displayVerificationType, type Artifact, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectState } from '../model';
+import { artifactSchema, displayVerificationType, type Artifact, projectDocumentSchema, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectState } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
@@ -1315,6 +1315,48 @@ function indexedMarkdown(reader: CommitBlobReader, source: IndexedProjectSource)
   return { data: document?.data ?? {}, heading, content };
 }
 
+export function validateDocumentationMarkdown(input: string, sourcePath: string, allowedPaths: ReadonlySet<string>) {
+  const content = input.replace(/<!--[\s\S]*?-->/g, '').trim();
+  if (!content) sourceError('Ein Dokument besitzt keinen lesbaren Inhalt.');
+  if (/<\s*\/?\s*(?:script|iframe|object|embed|form|style|link|meta|img|svg|math|video|audio|source|base)\b/i.test(content) || /\bon[a-z]+\s*=|(?:javascript|vbscript|data)\s*:/i.test(content)) sourceError('Ein Dokument enthaelt nicht zulaessigen aktiven Inhalt.');
+  const targets: string[] = [];
+  for (const match of content.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+    const target = match[1].trim();
+    if (!target || target.startsWith('#')) continue;
+    if (/^https:\/\//i.test(target) || /^[a-z][a-z0-9+.-]*:|^\/\//i.test(target) || target.includes('%')) sourceError('Ein Dokument enthaelt einen nicht freigegebenen Link.');
+    const relative = target.split('#', 1)[0];
+    const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), relative));
+    if (!validateContractPath(resolved) || !allowedPaths.has(resolved)) sourceError('Ein Dokument verweist auf ein nicht positivgelistetes Dokumentziel.');
+    targets.push(resolved);
+  }
+  return { content, targets };
+}
+
+export function redactDocumentationHostPaths(value: string) {
+  return value.replace(/(?:[A-Za-z]:\\|\/(?:home|Users)\/)[^\s`"'<>]+/g, '[lokaler Pfad redigiert]');
+}
+
+function indexedDocuments(reader: CommitBlobReader, sources: readonly IndexedProjectSource[]): ProjectDocument[] {
+  const markdown = sources.filter((source) => source.declaration.format === 'markdown');
+  const allowedPaths = new Set(markdown.map((source) => source.declaration.path));
+  const documents = markdown.map((source) => {
+    const parsed = indexedMarkdown(reader, source); const data = parsed.data;
+    if (['externalUrl', 'webUrl', 'url', 'spaceKey', 'pageId'].some((field) => data[field] !== undefined)) sourceError('Der Dokumentvertrag enthaelt eine externe Quellbindung ohne erlaubte Origin.');
+    const idValue = data.id ?? data.documentId ?? source.declaration.id;
+    if (!technicalId.safeParse(idValue).success) sourceError('Ein Dokument besitzt keine sichere stabile Kennung.');
+    const parentId = data.parent === null || data.parent === undefined ? null : technicalId.safeParse(data.parent).success ? data.parent as string : sourceError('Ein Dokument besitzt eine ungueltige Elternreferenz.');
+    const list = (value: unknown) => Array.isArray(value) && value.every((item) => technicalId.safeParse(item).success) ? value as string[] : value === undefined ? [] : sourceError('Ein Dokument besitzt eine ungueltige strukturierte Referenz.');
+    const body = validateDocumentationMarkdown(parsed.content, source.declaration.path, allowedPaths);
+    return projectDocumentSchema.parse({ id: idValue, title: storyText(data.title) ?? parsed.heading ?? source.declaration.id, documentType: source.declaration.kindId,
+      status: storyText(data.status), parentId, owners: list(data.owners), references: [...list(data.jiraRefs ?? data.ticketRefs), ...list(data.referenceIds)],
+      phase: storyText(data.phase), process: storyText(data.process), updatedAt: storyDate(data.lastReviewed ?? data.date), sourcePath: source.declaration.path,
+      content: redactDocumentationHostPaths(body.content), externalUrl: null, externalLinkReason: 'Keine kanonische Confluence-URL im Projektindex belegt.' });
+  });
+  const ids = documents.map((document) => document.id); if (new Set(ids).size !== ids.length) sourceError('Der Dokumentindex erzeugt doppelte Dokumentkennungen.');
+  const knownIds = new Set(ids); for (const document of documents) if (document.parentId && !knownIds.has(document.parentId)) sourceError('Eine Dokumenthierarchie verweist auf ein fehlendes Elternziel.');
+  return documents;
+}
+
 function storyDate(value: unknown) {
   const date = typeof value === 'string' ? value.slice(0, 10) : '';
   return sourceDateSchema.safeParse(date).success ? date : null;
@@ -1694,6 +1736,7 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
 async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {
   const { index, reader, sources, manifest } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
   const artifacts = indexedArtifacts(index, reader, sources);
+  const documents = indexedDocuments(reader, sources);
   const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
   const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
   const imageSources = sources.filter((source) => source.declaration.format === 'png');
@@ -1707,7 +1750,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
     snapshot: process.env.UABC_BRANCH_COMMIT_CONTRACT === '1' ? null : { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
       spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
-    artifacts, evidenceItems, story, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
+    artifacts, evidenceItems, documents, story, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
       capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });

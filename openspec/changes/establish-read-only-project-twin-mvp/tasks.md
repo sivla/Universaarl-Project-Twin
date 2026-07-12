@@ -17,5 +17,7 @@
 - [x] Commitgebundenes Startklar-Paket in den bestehenden fünf Leitfragen fachlich auffindbar darstellen und auf Desktop sowie Mobil nachweisen
 - [x] Operatorroutinen, Kompetenzpfad, Eskalation, Smoke-Test und Supportdiagnose in den fünf Leitfragen sichtbar und browserbelegt darstellen
 - [x] V1-Abnahme von Angebot bis Betrieb fail-closed auswerten und Vorlagen-Backlog von offenen Kundenhandlungen trennen
+- [x] Alle positivgelisteten Markdown-Dokumente commitgebunden normalisieren und gefährliche Inhalte, unsichere Links sowie defekte Dokumentreferenzen negativ prüfen
+- [x] Nachrangige Projektdokumentation mit Suche, Filtern, Hierarchie, Inhalt, Querverweisen und Provenienz auf Desktop und Mobil browserbelegt bereitstellen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
