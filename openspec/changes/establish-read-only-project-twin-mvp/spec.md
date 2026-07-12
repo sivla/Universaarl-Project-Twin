@@ -84,6 +84,12 @@ Die erlaubten Tickettypen sind ausschließlich `phase`, `epic`, `story` und `tas
 
 Akzeptanz: Fixturetests beweisen Phase, Epic, Story und Aufgabe sowie Zyklen, doppelte IDs oder Reihenfolgen, unbekannte Referenzen, ungültige Initialzustände, Iconschlüssel und unzulässige Abrechnung auf Elternvorgängen. Der Browser zeigt Board und hierarchische Liste, Auf- und Einklappen, Filter, Ticketdetail, Timelinekennzeichen und einen echten 503-Fall.
 
+### Ticketfokussierte Darstellung trennt Aufwand und Geld
+
+Die Ticketübersicht und das Ticketdetail MÜSSEN belegte Schätz-, Ist- und Reststunden anzeigen können, DÜRFEN jedoch keine EUR-Beträge oder Ticketkosten darstellen. Typ, Status, Priorität, Verantwortung, Beschreibung, Akzeptanzkriterien, Abhängigkeiten, Historie, Kommentare, Worklogs sowie Dokument- und Evidence-Verweise werden ausschließlich aus dem validierten Quellenvertrag gezeigt. Die separate Planungs- und Abrechnungsansicht sowie ihre validierten Finanzdaten bleiben unverändert erhalten.
+
+Akzeptanz: Ein echter Browsernachweis zeigt Board, Liste und Ticketdetail ohne EUR-Ausgabe. Ein fokussierter Regressionstest belegt zugleich, dass die Abrechnungsansicht weiterhin EUR-Beträge aus den validierten Finanzdaten ausgibt.
+
 ## Dokumentartgerechtes sicheres Markdown
 
 Der Renderer MUSS sichere Markdownüberschriften, interne Links, semantische Tabellen, verschachtelte Listen, Checklisten und Codeblöcke ohne HTML-Injektion darstellen. Die producerdefinierte Dokumentart darf ausschließlich die visuelle Gewichtung vorhandener Struktur beeinflussen; der Twin DARF keine Lernziele, Prozessschritte, Kontrollen, Prüfergebnisse oder Arbeitsanweisungen ergänzen. Unsichere Links und aktive Inhalte blockieren weiterhin fail-closed.

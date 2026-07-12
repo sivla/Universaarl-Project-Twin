@@ -25,5 +25,6 @@
 - [x] Laufenden Producerbranch ohne feste Runtime-SHA einmalig auflösen, Kandidaten atomar validieren und den letzten gültigen Stand bei ungültiger Aktualisierung sichtbar halten
 - [x] Finalen Drei-Space-Delivery-Commit mit 121 Artefakten, 43 Dokumenten, 28 Confluence-Seiten, 6/8/8 Hauptseiten, sechs Unterseiten und Jira commitgebunden integrieren und real browserbelegen
 - [x] Idempotenten lokalen Starter mit Health-, Status-, eigentumsgebundenem Stop- und Neustartnachweis für Port 4173 bereitstellen
+- [x] Ticketübersicht und Ticketdetail ohne Geldbeträge sowie mit vollständigen belegten Jira-Feldern browsergestützt nachweisen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
