@@ -67,6 +67,31 @@ describe('Produktionskonfiguration der Snapshot-Quelle', () => {
 });
 
 describe('Negativprüfungen der Snapshot-Bindung', () => {
+  it('liest im Branchmodus ausschließlich den gepinnten Commit und niemals den Dirty-Arbeitsbaum', async () => {
+    const root = fixture();
+    const previousMode = process.env.UABC_BRANCH_COMMIT_CONTRACT;
+    process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
+    try {
+      write(root, 'architecture/enterprise-blueprint.yaml', 'artifactId: UABC-ARCH-001\ntitle: Nicht commitgebundene Änderung\n');
+      const state = await createTwinState('universaarl', root, { sourceBinding: binding(root) });
+      expect(state.source.dirty).toBe(false);
+      expect(state.artifacts.find((artifact) => artifact.id === 'UABC-ARCH-001')?.title).toBe('Architektur');
+    } finally {
+      if (previousMode === undefined) delete process.env.UABC_BRANCH_COMMIT_CONTRACT; else process.env.UABC_BRANCH_COMMIT_CONTRACT = previousMode;
+    }
+  });
+
+  it('blockiert eine Bewegung des Producerbranchs während des gepinnten Lesens', async () => {
+    const root = fixture();
+    const previousMode = process.env.UABC_BRANCH_COMMIT_CONTRACT;
+    process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
+    try {
+      await expectBoundRejection(root, binding(root), () => { git(root, ['commit', '--allow-empty', '-q', '-m', 'Branch bewegt']); });
+    } finally {
+      if (previousMode === undefined) delete process.env.UABC_BRANCH_COMMIT_CONTRACT; else process.env.UABC_BRANCH_COMMIT_CONTRACT = previousMode;
+    }
+  });
+
   it('lehnt falsches Remote, falschen Branch und abweichendes HEAD ab', async () => {
     const remote = fixture();
     await expectBoundRejection(remote, { ...binding(remote), expectedRemote: 'https://example.invalid/fremd.git' } as ProjectSourceBinding);

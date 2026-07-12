@@ -140,7 +140,7 @@ export type SourceSnapshot = ProjectState['source'];
 export type ProjectTimeContext = { readonly unsupported: true };
 
 const germanStatusLabels: Readonly<Record<string, string>> = {
-  approved: 'Freigegeben', validated: 'Validiert', planned: 'Geplant', deferred: 'Zurückgestellt', passed: 'Bestanden', active: 'Aktiv', proposed: 'Vorgeschlagen',
+  approved: 'Freigegeben', validated: 'Validiert', published: 'Veröffentlicht', planned: 'Geplant', deferred: 'Zurückgestellt', passed: 'Bestanden', active: 'Aktiv', proposed: 'Vorgeschlagen',
   done: 'Erledigt', completed: 'Abgeschlossen', ready: 'Bereit', archived: 'Archiviert', documented: 'Dokumentiert', unknown: 'Unbekannt', unbekannt: 'Unbekannt',
   backlog: 'Arbeitsvorrat', blocked: 'Blockiert', created: 'Angelegt', tested: 'Getestet', closed: 'Geschlossen', 'in progress': 'In Arbeit', 'in-progress': 'In Arbeit', 'in review': 'In Prüfung', 'nicht belegt': 'Nicht belegt',
   'v1 kundenbereit': 'V1 kundenbereit', 'synthetisch abgenommen': 'Synthetisch abgenommen', 'kundenbereites standardmuster': 'Kundenbereites Standardmuster',

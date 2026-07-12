@@ -20,11 +20,14 @@ export type SnapshotSourceBinding = Readonly<{
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: '7b988e1cb8dee9b7f227481478ad97449e774100',
-  tree: 'd9d41714e81effdcc7e1b829bd0b2a32166b8a81',
+  commit: '4557d93c4b89697c13c7345b39c167f09f441d03',
+  tree: '97d29bedf15b6976cd7061ba8f28af430b2d761c',
   bootstrapBranch: 'codex/universaarl-projekt',
-  artifactCount: 111,
-  documentCount: 34,
+  integrationBranch: 'codex/bc-basic-three-space-v1',
+  artifactCount: 121,
+  documentCount: 43,
+  confluenceDocumentCount: 28,
+  navigationNodeCount: 31,
   documentCatalogPath: 'exports/project-data/v1/document-catalog.json',
   documentCatalogSchemaPath: 'governance/schemas/project-document-catalog.schema.json',
 } as const);
@@ -32,7 +35,7 @@ export const officialBcBasicSnapshotAnchor = Object.freeze({
 export const blueprintSourceBinding: BlueprintSourceBinding = Object.freeze({
   localRelativePath: '..\\Universaarl Projekt BC Basic',
   remoteUrl: 'https://github.com/sivla/FiBu.git',
-  branch: 'main',
+  branch: 'codex/universaarl-projekt',
   manifestPath: 'exports/project-data/v1/snapshot-manifest.json',
   schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json',
   indexPath: 'exports/project-data/v1/index.yaml',

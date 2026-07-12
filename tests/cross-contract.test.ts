@@ -36,24 +36,25 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
   it('bindet den offiziell validierten Branch-Commit samt Katalog positiv und falsche Anker fail-closed', async () => {
     expect(path.isAbsolute(sourceRepo!)).toBe(true);
     expect(expectedCommit).toBe(officialBcBasicSnapshotAnchor.commit);
-    expect(git(['rev-parse', `refs/heads/${officialBcBasicSnapshotAnchor.bootstrapBranch}^{commit}`])).toBe(expectedCommit);
+    expect(git(['rev-parse', `refs/heads/${officialBcBasicSnapshotAnchor.integrationBranch}^{commit}`])).toBe(expectedCommit);
     expect(git(['rev-parse', `${expectedCommit}^{tree}`])).toBe(officialBcBasicSnapshotAnchor.tree);
     expect(git(['remote', 'get-url', 'origin'])).toBe(blueprintSourceBinding.remoteUrl);
     const statusBefore = git(['status', '--porcelain=v1', '--untracked-files=all']);
     const index = YAML.parse(git(['show', `${expectedCommit}:${blueprintSourceBinding.indexPath}`]));
     expect(index.artifacts).toHaveLength(officialBcBasicSnapshotAnchor.artifactCount);
     expect(index.documentCatalog.documentCount).toBe(officialBcBasicSnapshotAnchor.documentCount);
+    expect(index.deliveryBranch).toBe(officialBcBasicSnapshotAnchor.integrationBranch);
     const previousMode = process.env.UABC_BRANCH_COMMIT_CONTRACT; process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
     try {
-      const sourceBinding = snapshotSourceBinding(expectedCommit, officialBcBasicSnapshotAnchor.tree, officialBcBasicSnapshotAnchor.bootstrapBranch);
+      const sourceBinding = snapshotSourceBinding(expectedCommit, officialBcBasicSnapshotAnchor.tree, officialBcBasicSnapshotAnchor.bootstrapBranch, false);
       const state = await createTwinState('bc-basic', sourceRepo!, { sourceBinding, projectDataContract: contract });
-      expect(state.source.commit).toBe(expectedCommit); expect(state.documents).toHaveLength(34); expect(state.documents.filter((document) => document.documentType === 'confluence-page')).toHaveLength(19);
-      expect(state.presentation?.spaces).toHaveLength(3); expect(state.presentation?.spaces.flatMap((space) => space.nodes)).toHaveLength(22); expect(state.presentation?.jira.tickets).toHaveLength(50); expect(state.presentation?.jira.ticketTypes.map((type) => type.type)).toEqual(['phase', 'epic', 'story', 'task']); expect(state.presentation?.jira.tickets.slice(0, 3).map((ticket) => ticket.ticketId)).toEqual(['UABC-1', 'UABC-2', 'UABC-3']); expect(state.presentation?.jira.views).toHaveLength(2);
+      expect(state.source.commit).toBe(expectedCommit); expect(state.documents).toHaveLength(officialBcBasicSnapshotAnchor.documentCount); expect(state.documents.filter((document) => document.documentType === 'confluence-page')).toHaveLength(officialBcBasicSnapshotAnchor.confluenceDocumentCount);
+      expect(state.presentation?.spaces).toHaveLength(3); expect(state.presentation?.spaces.flatMap((space) => space.nodes)).toHaveLength(officialBcBasicSnapshotAnchor.navigationNodeCount); expect(state.presentation?.spaces.map((space) => space.nodes.filter((node) => node.kind === 'page' && node.parentId?.startsWith('UABC-NAV-NODE-')).length)).toEqual([12, 8, 8]); expect(state.presentation?.jira.tickets).toHaveLength(50); expect(state.presentation?.jira.ticketTypes.map((type) => type.type)).toEqual(['phase', 'epic', 'story', 'task']); expect(state.presentation?.jira.tickets.slice(0, 3).map((ticket) => ticket.ticketId)).toEqual(['UABC-1', 'UABC-2', 'UABC-3']); expect(state.presentation?.jira.views).toHaveLength(2);
       expect(state.artifacts.find((artifact) => artifact.id === 'UABC-1')).toMatchObject({ kind: 'phase', phaseId: 'UABC-1', sourcePhase: 'P1', estimateHours: 22, actualHours: 22, billable: false });
       expect(state.artifacts.find((artifact) => artifact.id === 'UABC-50')).toMatchObject({ kind: 'task', phaseId: 'UABC-3', sourcePhase: 'P3', estimateHours: 11, actualHours: 11, billable: true });
-      const api = await dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, officialBcBasicSnapshotAnchor.tree, officialBcBasicSnapshotAnchor.bootstrapBranch));
+      const api = await dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, officialBcBasicSnapshotAnchor.tree, officialBcBasicSnapshotAnchor.bootstrapBranch, false));
       expect(api).toMatchObject({ status: 200, body: { source: { commit: expectedCommit }, documents: expect.any(Array), presentation: { spaces: expect.any(Array), jira: { tickets: expect.any(Array) } } } });
-      await expect(dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, '0'.repeat(40), officialBcBasicSnapshotAnchor.bootstrapBranch))).resolves.toEqual({ status: 503, body: { code: 'SNAPSHOT_VERTRAG_BLOCKIERT' } });
+      await expect(dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, '0'.repeat(40), officialBcBasicSnapshotAnchor.bootstrapBranch, false))).resolves.toEqual({ status: 503, body: { code: 'SNAPSHOT_VERTRAG_BLOCKIERT' } });
     } finally { if (previousMode === undefined) delete process.env.UABC_BRANCH_COMMIT_CONTRACT; else process.env.UABC_BRANCH_COMMIT_CONTRACT = previousMode; }
     expect(git(['status', '--porcelain=v1', '--untracked-files=all'])).toBe(statusBefore);
   }, 120_000);

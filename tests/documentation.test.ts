@@ -3,8 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AdapterSourceError, redactDocumentationHostPaths, validateDocumentationMarkdown, validateProjectDocumentCatalogContract } from '../src/server/adapter';
 import { areas, parseRoute } from '../src/navigation/routes';
+import { displayStatus } from '../src/model';
 
 describe('commitgebundene Projektdokumentation', () => {
+  it('zeigt den producerdefinierten Veröffentlichungsstatus natürlich deutsch', () => {
+    expect(displayStatus('published')).toBe('Veröffentlicht');
+  });
   it('stellt den nachrangigen Dokumentationsbereich als stabile Projektroute bereit', () => {
     expect(areas).toContain('projektdokumentation');
     expect(parseRoute('/projekte/bc-basic/projektdokumentation', ['bc-basic'])).toEqual({ kind: 'project', projectId: 'bc-basic', area: 'projektdokumentation' });

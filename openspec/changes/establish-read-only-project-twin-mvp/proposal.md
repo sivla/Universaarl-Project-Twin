@@ -4,7 +4,9 @@
 - Status: `active`
 - Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, commitgebundener Snapshotvertrag, nachrangige Projektdokumentation, Prüfungen
 
-Der aktuelle Jira-Interimsblock bindet den Twin exakt an den validierten BC-Basic-Commit `7b988e1cb8dee9b7f227481478ad97449e774100` mit Tree `d9d41714e81effdcc7e1b829bd0b2a32166b8a81`. Alle 111 Indexartefakte, 34 Dokumente und 50 kundenlesbaren Tickets stammen aus dieser einen SHA. Die finale Portfolioabnahme der nachgelagerten Drei-Space-Confluence-Überarbeitung bleibt ausdrücklich offen.
+Der finale Drei-Space-Integrationsblock bindet den Twin exakt an den validierten BC-Basic-Delivery-Commit `4557d93c4b89697c13c7345b39c167f09f441d03` mit Tree `97d29bedf15b6976cd7061ba8f28af430b2d761c`. Alle 121 Indexartefakte, 43 Dokumente, 28 Confluence-Seiten, 31 Navigationsknoten und 50 kundenlesbaren Tickets stammen aus dieser einen SHA. Der dauerhafte Runtimekanal bleibt bis zu einem kontrollierten Producermerge unverändert `codex/universaarl-projekt`.
+
+Im laufenden Betrieb ist keine feste Commit-SHA zu pflegen. Der konfigurierte BC-Producerbranch `codex/universaarl-projekt` wird bei Start und Aktualisierung genau einmal aufgelöst; erst ein vollständig validierter Kandidat ersetzt atomar den letzten gültigen, weiterhin sichtbaren Stand. Der Delivery-Commit wird ausschließlich im temporären Integrationsmodus exakt geprüft und ändert den Runtimekanal nicht.
 
 ## Problem
 Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängende Projektwelt erkunden. Der Projektzwilling muss ihn darstellen, ohne fachliche Wahrheit zu kopieren oder Änderungen zurückzuschreiben.

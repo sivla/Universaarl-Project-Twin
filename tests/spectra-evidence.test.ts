@@ -35,11 +35,13 @@ function v1Fixture() {
 }
 
 describe('commitgebundene Spectra-Evidence', () => {
-  it('löst den erlaubten Branch beim Serverstart automatisch genau einmal auf', () => {
+  it('löst den erlaubten Producerbranch ohne festen Runtime-Commit atomar auf', () => {
     const vite = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
-    expect(vite).toContain("process.env.UABC_STABLE_BRANCH || 'main'");
+    expect(vite).toContain('process.env.UABC_STABLE_BRANCH || blueprintSourceBinding.branch');
     expect(vite).toContain('`refs/heads/${stableBranch}^{commit}`');
-    expect(vite).toContain('officialBcBasicSnapshotAnchor.bootstrapBranch');
+    expect(vite).toContain('createValidatedBranchChannel');
+    expect(vite).toContain('const active = await branchChannel.refresh()');
+    expect(vite).not.toContain('officialBcBasicSnapshotAnchor');
     expect(vite).toContain('return productionRegistry(sourceRoot, commit, tree, branch, false)');
     expect(vite).toContain("'-c', `safe.directory=${sourceRoot}`");
     expect(vite).not.toContain('loadEnv');

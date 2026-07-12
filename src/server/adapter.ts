@@ -193,7 +193,9 @@ function sameFingerprint(before: SourceFingerprint, after: SourceFingerprint) {
 }
 
 function captureBoundFingerprint(repo: string, binding: ProjectSourceBinding): SourceFingerprint {
-  const checkout = captureFingerprint(repo);
+  const branchCommitMode = process.env.UABC_BRANCH_COMMIT_CONTRACT === '1';
+  const checkout = branchCommitMode ? null : captureFingerprint(repo);
+  const repositoryFingerprint = captureRepositoryIdentity(repo);
   const branchRef = `refs/heads/${binding.expectedBranch}`;
   const commit = binding.branchTipRequired ? gitText(repo, ['rev-parse', '--verify', `${branchRef}^{commit}`]) : gitText(repo, ['rev-parse', '--verify', `${binding.expectedCommit}^{commit}`]);
   if (!fullSha.test(commit) || commit !== binding.expectedCommit) sourceError('Der konfigurierte Freigabebranch hat sich vor oder während des commitgebundenen Lesens verändert.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
@@ -202,11 +204,11 @@ function captureBoundFingerprint(repo: string, binding: ProjectSourceBinding): S
   return {
     branch: binding.expectedBranch,
     commit,
-    dirty: checkout.dirty,
+    dirty: checkout?.dirty ?? false,
     headFingerprint: hash(`${branchRef}\0${commit}`),
-    indexFingerprint: checkout.indexFingerprint,
-    statusFingerprint: checkout.statusFingerprint,
-    repositoryFingerprint: checkout.repositoryFingerprint,
+    indexFingerprint: checkout?.indexFingerprint ?? hash(`${commit}\0commitgebundener-index-wird-nicht-gelesen`),
+    statusFingerprint: checkout?.statusFingerprint ?? hash(`${commit}\0commitgebundener-arbeitsbaum-wird-nicht-gelesen`),
+    repositoryFingerprint,
   };
 }
 
@@ -344,7 +346,7 @@ function assertSnapshotBinding(repo: string, fingerprint: SourceFingerprint, bin
   if (fingerprint.commit !== binding.expectedCommit) sourceError('Der aktuelle Quellen-Commit stimmt nicht mit der erwarteten Momentaufnahme ueberein.');
   if (fingerprint.branch !== binding.expectedBranch) sourceError('Der aktuelle Quellen-Branch stimmt nicht mit der erwarteten Bindung ueberein.');
   if (gitText(repo, ['remote', 'get-url', 'origin']) !== binding.expectedRemote) sourceError('Das Quellen-Remote stimmt nicht mit der erwarteten Bindung ueberein.');
-  if (fingerprint.dirty) sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
+  if (process.env.UABC_BRANCH_COMMIT_CONTRACT !== '1' && fingerprint.dirty) sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
 }
 
 const sensitiveTokens = new Set([
@@ -862,6 +864,7 @@ const projectDataIndexSchema = z.object({
   sourceOfTruth: z.literal('openspec'),
   pathSemantics: z.literal('repository-relative'),
   allowedBranch: sourceBranchName.optional(),
+  deliveryBranch: sourceBranchName.optional(),
   validationStatus: z.literal('validated').optional(),
   missingValuePolicy: z.literal('leer'),
   documentCatalog: documentCatalogIndexSchema.optional(),
