@@ -62,6 +62,8 @@ Der V1-Abschluss MUSS die versionierte Abnahme-Evidence vollständig und fail-cl
 
 ## Nachrangige Projektdokumentation
 
+Für Project Twin V1.0 MUSS der kanonische Katalog unter exports/project-data/v1/document-catalog.json aus demselben Commit wie Cockpit, Index und Dokumentblobs gelesen und gegen sein positivgelistetes Draft-2020-12-Schema validiert werden. Indexdefinitionen, Katalogmetadaten, SHA-256-Inhaltswerte, Git-Modus 100644, Hierarchie und Referenzmengen MÜSSEN vollständig übereinstimmen. Fehlende oder manipulierte Katalog-, Schema- oder Dokumentblobs blockieren den Zustand mit HTTP 503 fail-closed.
+
 Der Bereich `projektdokumentation` MUSS alle im Branch-Index positivgelisteten Markdown-Dokumente direkt aus Git-Blobs der einmalig gepinnten Commit-SHA lesbar machen. Suche und Filter nach belegtem Dokumenttyp, Status, Phase und Prozess, Seitenhierarchie, Breadcrumb, Inhaltsverzeichnis, interne Querverweise und Provenienz MÜSSEN ohne eigene Fachinterpretation entstehen. Fehlende Phasen-, Prozess- oder Aktualisierungswerte bleiben ehrlich „Nicht belegt“. Das Cockpit und seine fünf Leitfragen bleiben die primäre Hauptansicht.
 
 Markdown MUSS ohne aktives HTML, Skripte oder unkontrollierte Navigation gerendert werden. Unsichere Links, nicht positivgelistete relative Dokumentziele, fehlende Blobs, ungültige Elternbeziehungen und Commitbewegungen blockieren fail-closed oder bleiben nachweislich nicht klickbar. „In Confluence öffnen“ DARF nur für eine strukturierte kanonische HTTPS-URL innerhalb einer im Snapshot erlaubten Origin und mit stabiler Seitenidentität aktiv sein. Fehlt dieser Producervertrag, zeigt der Twin den Link deaktiviert und benennt die Lücke.

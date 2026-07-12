@@ -112,6 +112,7 @@ function gitBuffer(repo: string, args: string[], input?: Buffer, maxBuffer = 16 
       '-C', repo,
       '--no-pager',
       '--no-optional-locks',
+      '-c', `safe.directory=${path.resolve(repo)}`,
       '-c', 'core.bare=false',
       '-c', `core.hooksPath=${gitNullDevice}`,
       '-c', 'core.fsmonitor=false',
@@ -193,6 +194,7 @@ function sameFingerprint(before: SourceFingerprint, after: SourceFingerprint) {
 function assertSnapshotBinding(repo: string, fingerprint: SourceFingerprint, binding: ProjectSourceBinding | undefined) {
   if (!binding) return;
   if (!fullSha.test(binding.expectedCommit)) sourceError('Die erwartete vollstaendige Commit-SHA fehlt oder ist ungueltig.', 'QUELLKONFIGURATION_UNGUELTIG');
+  if (binding.expectedTree && (!fullSha.test(binding.expectedTree) || gitText(repo, ['rev-parse', `${binding.expectedCommit}^{tree}`]) !== binding.expectedTree)) sourceError('Der gebundene Quellen-Tree stimmt nicht mit dem erwarteten V1.0-Snapshotanker ueberein.');
   if (fingerprint.commit !== binding.expectedCommit) sourceError('Der aktuelle Quellen-Commit stimmt nicht mit der erwarteten Momentaufnahme ueberein.');
   if (fingerprint.branch !== binding.expectedBranch) sourceError('Der aktuelle Quellen-Branch stimmt nicht mit der erwarteten Bindung ueberein.');
   if (gitText(repo, ['remote', 'get-url', 'origin']) !== binding.expectedRemote) sourceError('Das Quellen-Remote stimmt nicht mit der erwarteten Bindung ueberein.');
@@ -610,6 +612,38 @@ const projectDataArtifactSchema = z.object({
   required: z.boolean(),
 }).strict();
 
+function isSafeHttpsOrigin(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password && parsed.origin === value;
+  } catch { return false; }
+}
+
+const documentCatalogSharedEntrySchema = z.object({
+  artifactId: technicalId, documentId: technicalId, title: z.string().min(1).max(500), documentType: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/),
+  parentId: technicalId.nullable(), phase: z.string().min(1).max(120).nullable(), process: z.string().min(1).max(120).nullable(), status: z.string().min(1).max(120),
+  ownerRefs: z.array(technicalId).max(50), jiraRefs: z.array(technicalId).max(200), referenceIds: z.array(technicalId).max(200), lastReviewed: sourceDateSchema.nullable(),
+  visibility: z.literal('twin-visible'), readiness: z.string().min(1).max(120), externalUrl: z.string().url().nullable(), pageId: z.string().min(1).max(240).nullable(), spaceKey: z.string().min(1).max(120).nullable(),
+}).strict();
+
+const documentCatalogIndexSchema = z.object({
+  catalogId: z.literal('UABC-DOCUMENT-CATALOG-V1'), path: z.literal('exports/project-data/v1/document-catalog.json'), schemaPath: z.literal('governance/schemas/project-document-catalog.schema.json'),
+  documentCount: z.number().int().positive().max(1_000), commitResolution: z.literal('allowed-branch-head-resolved-once'),
+  allowedExternalOrigins: z.array(z.string().refine(isSafeHttpsOrigin)).max(20), definitions: z.array(documentCatalogSharedEntrySchema).min(1).max(1_000),
+  referenceDefinitions: z.object({ ownerRefs: z.array(technicalId).max(1_000), jiraRefs: z.array(technicalId).max(10_000), projectRefs: z.array(technicalId).max(10_000) }).strict(),
+}).strict();
+
+const projectDocumentCatalogEntrySchema = documentCatalogSharedEntrySchema.extend({
+  sourcePath: z.string().min(1).max(1_000).refine(validateContractPath), contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
+const projectDocumentCatalogSchema = z.object({
+  schemaVersion: z.literal(1), catalogId: z.literal('UABC-DOCUMENT-CATALOG-V1'), contractId: z.literal('UABC-PROJECT-DATA-V1'), projectId: z.literal('UABC-BC-BASIC-001'),
+  sourceIndexPath: z.literal('exports/project-data/v1/index.yaml'), allowedBranch: z.literal('codex/universaarl-projekt'), commitBinding: z.literal('allowed-branch-head-resolved-once'),
+  readOnly: z.literal(true), validationStatus: z.literal('validated'), allowedExternalOrigins: z.array(z.string().refine(isSafeHttpsOrigin)).max(20),
+  documentCount: z.number().int().positive().max(1_000), confluenceDocumentCount: z.number().int().nonnegative().max(1_000), documents: z.array(projectDocumentCatalogEntrySchema).min(1).max(1_000),
+}).strict();
+
 const projectDataIndexSchema = z.object({
   schemaVersion: z.literal(1),
   contractId: z.literal('UABC-PROJECT-DATA-V1'),
@@ -627,6 +661,7 @@ const projectDataIndexSchema = z.object({
   allowedBranch: z.literal('codex/universaarl-projekt').optional(),
   validationStatus: z.literal('branch-commit-validierung-erforderlich').optional(),
   missingValuePolicy: z.literal('leer'),
+  documentCatalog: documentCatalogIndexSchema.optional(),
   consumerRules: z.array(z.string().min(1).max(2_000)).min(1).max(100),
   artifacts: z.array(projectDataArtifactSchema).min(1).max(1_000),
 }).strict();
@@ -1276,6 +1311,7 @@ function readBranchProjectDataSources(repo: string, commit: string, projectId: s
   const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.indexPath));
   if (!parsedIndex.success) sourceError('Der Projektindex verletzt den Branch-Commit-Vertrag.');
   const index = parsedIndex.data;
+  if (!index.documentCatalog) sourceError('Der kanonische Dokumentkatalog fehlt im Branch-Commit-Vertrag.');
   if (index.allowedBranch !== 'codex/universaarl-projekt' || index.validationStatus !== 'branch-commit-validierung-erforderlich') sourceError('Der Projektindex ist nicht für den gebundenen Branch validiert.');
   if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
   const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
@@ -1336,25 +1372,64 @@ export function redactDocumentationHostPaths(value: string) {
   return value.replace(/(?:[A-Za-z]:\\|\/(?:home|Users)\/)[^\s`"'<>]+/g, '[lokaler Pfad redigiert]');
 }
 
-function indexedDocuments(reader: CommitBlobReader, sources: readonly IndexedProjectSource[]): ProjectDocument[] {
-  const markdown = sources.filter((source) => source.declaration.format === 'markdown');
-  const allowedPaths = new Set(markdown.map((source) => source.declaration.path));
-  const documents = markdown.map((source) => {
-    const parsed = indexedMarkdown(reader, source); const data = parsed.data;
-    if (['externalUrl', 'webUrl', 'url', 'spaceKey', 'pageId'].some((field) => data[field] !== undefined)) sourceError('Der Dokumentvertrag enthaelt eine externe Quellbindung ohne erlaubte Origin.');
-    const idValue = data.id ?? data.documentId ?? source.declaration.id;
-    if (!technicalId.safeParse(idValue).success) sourceError('Ein Dokument besitzt keine sichere stabile Kennung.');
-    const parentId = data.parent === null || data.parent === undefined ? null : technicalId.safeParse(data.parent).success ? data.parent as string : sourceError('Ein Dokument besitzt eine ungueltige Elternreferenz.');
-    const list = (value: unknown) => Array.isArray(value) && value.every((item) => technicalId.safeParse(item).success) ? value as string[] : value === undefined ? [] : sourceError('Ein Dokument besitzt eine ungueltige strukturierte Referenz.');
-    const body = validateDocumentationMarkdown(parsed.content, source.declaration.path, allowedPaths);
-    return projectDocumentSchema.parse({ id: idValue, title: storyText(data.title) ?? parsed.heading ?? source.declaration.id, documentType: source.declaration.kindId,
-      status: storyText(data.status), parentId, owners: list(data.owners), references: [...list(data.jiraRefs ?? data.ticketRefs), ...list(data.referenceIds)],
-      phase: storyText(data.phase), process: storyText(data.process), updatedAt: storyDate(data.lastReviewed ?? data.date), sourcePath: source.declaration.path,
-      content: redactDocumentationHostPaths(body.content), externalUrl: null, externalLinkReason: 'Keine kanonische Confluence-URL im Projektindex belegt.' });
+const documentCatalogSchemaId = 'urn:universaarl:schema:project-document-catalog:v1';
+const catalogSharedFields = ['artifactId', 'documentId', 'title', 'documentType', 'parentId', 'phase', 'process', 'status', 'ownerRefs', 'jiraRefs', 'referenceIds', 'lastReviewed', 'visibility', 'readiness', 'externalUrl', 'pageId', 'spaceKey'] as const;
+const catalogFileEvidenceSchema = z.object({ artifactId: technicalId, path: z.string().refine(validateContractPath), format: projectDataArtifactSchema.shape.format, mode: z.literal('100644'), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+
+export function validateProjectDocumentCatalogContract(input: { catalog: unknown; schemaDocument: unknown; indexCatalog: unknown; indexArtifacts: unknown; files: unknown }) {
+  const catalog = schema(input.catalog, projectDocumentCatalogSchema);
+  const indexCatalog = schema(input.indexCatalog, documentCatalogIndexSchema);
+  const artifacts = schema(input.indexArtifacts, z.array(projectDataArtifactSchema).min(1).max(1_000));
+  const files = schema(input.files, z.array(catalogFileEvidenceSchema).min(1).max(1_000));
+  if (!input.schemaDocument || typeof input.schemaDocument !== 'object' || Array.isArray(input.schemaDocument)) sourceError('Das Dokumentkatalogschema ist kein gueltiges JSON-Objekt.');
+  const schemaDocument = input.schemaDocument as RecordValue;
+  const requiredFields = ['schemaVersion', 'catalogId', 'contractId', 'projectId', 'sourceIndexPath', 'allowedBranch', 'commitBinding', 'readOnly', 'validationStatus', 'allowedExternalOrigins', 'documentCount', 'confluenceDocumentCount', 'documents'];
+  const required = schemaDocument.required;
+  if (schemaDocument.$schema !== 'https://json-schema.org/draft/2020-12/schema' || schemaDocument.$id !== documentCatalogSchemaId || schemaDocument.type !== 'object' || schemaDocument.additionalProperties !== false || !Array.isArray(required) || requiredFields.some((field) => !required.includes(field)) || !schemaDocument.properties || typeof schemaDocument.properties !== 'object' || requiredFields.some((field) => !Object.prototype.hasOwnProperty.call(schemaDocument.properties, field))) sourceError('Das Dokumentkatalogschema besitzt nicht die kanonische strikte Feldform.');
+  let validateCatalog: ((value: unknown) => boolean) | undefined;
+  try { validateCatalog = new Ajv2020({ strict: true, allErrors: false }).compile(schemaDocument); } catch { sourceError('Das Dokumentkatalogschema konnte nicht sicher kompiliert werden.'); }
+  if (!validateCatalog(catalog)) sourceError('Der Dokumentkatalog erfuellt das versionierte JSON-Schema nicht.');
+  if (indexCatalog.catalogId !== catalog.catalogId || indexCatalog.path !== catalog.sourceIndexPath.replace('index.yaml', 'document-catalog.json') || indexCatalog.documentCount !== catalog.documentCount || indexCatalog.commitResolution !== catalog.commitBinding || JSON.stringify(indexCatalog.allowedExternalOrigins) !== JSON.stringify(catalog.allowedExternalOrigins)) sourceError('Index und Dokumentkatalog besitzen keine identische Katalogbindung.');
+  if (catalog.documentCount !== catalog.documents.length || indexCatalog.definitions.length !== catalog.documents.length || catalog.confluenceDocumentCount !== catalog.documents.filter((document) => document.documentType === 'confluence-page').length) sourceError('Der Dokumentkatalog besitzt widerspruechliche Dokumentzaehler.');
+  for (const values of [catalog.allowedExternalOrigins, indexCatalog.referenceDefinitions.ownerRefs, indexCatalog.referenceDefinitions.jiraRefs, indexCatalog.referenceDefinitions.projectRefs]) if (new Set(values).size !== values.length) sourceError('Der Dokumentkatalog besitzt doppelte Origin- oder Referenzdefinitionen.');
+  const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact])); const fileById = new Map(files.map((file) => [file.artifactId, file]));
+  const catalogArtifact = artifactById.get('UABC-SRC-BCB-DOC-CATALOG-001'); const schemaArtifact = artifactById.get('UABC-SRC-BCB-DOC-SCHEMA-001');
+  if (!catalogArtifact || catalogArtifact.kindId !== 'project-document-catalog' || catalogArtifact.path !== indexCatalog.path || catalogArtifact.format !== 'json' || !schemaArtifact || schemaArtifact.kindId !== 'project-document-catalog-schema' || schemaArtifact.path !== indexCatalog.schemaPath || schemaArtifact.format !== 'json-schema') sourceError('Katalog und Katalogschema sind nicht eindeutig positivgelistet.');
+  const markdownArtifacts = artifacts.filter((artifact) => artifact.format === 'markdown');
+  if (markdownArtifacts.length !== catalog.documents.length || files.length !== artifacts.length) sourceError('Der Index und der Dokumentkatalog besitzen keine vollstaendige identische Blobabdeckung.');
+  const documentIds = catalog.documents.map((document) => document.documentId); const artifactIds = catalog.documents.map((document) => document.artifactId); const paths = catalog.documents.map((document) => document.sourcePath);
+  if (new Set(documentIds).size !== documentIds.length || new Set(artifactIds).size !== artifactIds.length || new Set(paths).size !== paths.length) sourceError('Der Dokumentkatalog besitzt doppelte Dokumentkennungen oder Pfade.');
+  const knownDocumentIds = new Set(documentIds); const definitions = new Map(indexCatalog.definitions.map((definition) => [definition.artifactId, definition]));
+  const ownerRefs = new Set(indexCatalog.referenceDefinitions.ownerRefs); const jiraRefs = new Set(indexCatalog.referenceDefinitions.jiraRefs); const projectRefs = new Set(indexCatalog.referenceDefinitions.projectRefs);
+  for (const document of catalog.documents) {
+    const artifact = artifactById.get(document.artifactId); const file = fileById.get(document.artifactId); const definition = definitions.get(document.artifactId);
+    if (!artifact || artifact.format !== 'markdown' || artifact.path !== document.sourcePath || !file || file.path !== document.sourcePath || file.format !== 'markdown' || file.mode !== '100644' || file.sha256 !== document.contentSha256 || !definition) sourceError('Ein Katalogdokument stimmt nicht mit seinem positivgelisteten Git-Blob ueberein.');
+    if (catalogSharedFields.some((field) => JSON.stringify(definition[field]) !== JSON.stringify(document[field]))) sourceError('Indexdefinition und kanonischer Dokumentkatalog widersprechen sich.');
+    if (document.parentId && !knownDocumentIds.has(document.parentId)) sourceError('Eine Dokumenthierarchie verweist auf ein fehlendes Elternziel.');
+    if (document.ownerRefs.some((reference) => !ownerRefs.has(reference)) || document.jiraRefs.some((reference) => !jiraRefs.has(reference)) || document.referenceIds.some((reference) => !projectRefs.has(reference) && !knownDocumentIds.has(reference))) sourceError('Ein Katalogdokument besitzt eine nicht definierte Referenz.');
+    if (document.externalUrl) {
+      let parsed: URL; try { parsed = new URL(document.externalUrl); } catch { sourceError('Eine externe Dokument-URL ist ungueltig.'); }
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password || !catalog.allowedExternalOrigins.includes(parsed.origin) || !document.pageId || !document.spaceKey) sourceError('Eine externe Dokument-URL besitzt keine sichere kanonische Originbindung.');
+    } else if (document.pageId || document.spaceKey) sourceError('Eine externe Seitenidentitaet besitzt keine kanonische URL.');
+  }
+  return catalog;
+}
+
+function indexedDocuments(reader: CommitBlobReader, index: ProjectDataIndex, sources: readonly IndexedProjectSource[]): ProjectDocument[] {
+  if (!index.documentCatalog) sourceError('Der kanonische Dokumentkatalog fehlt im Branch-Commit-Vertrag.');
+  const catalogSource = sources.find((source) => source.declaration.id === 'UABC-SRC-BCB-DOC-CATALOG-001');
+  const schemaSource = sources.find((source) => source.declaration.id === 'UABC-SRC-BCB-DOC-SCHEMA-001');
+  if (!catalogSource || !schemaSource) sourceError('Katalog und Katalogschema fehlen in der positiven Indexliste.');
+  const catalog = validateProjectDocumentCatalogContract({ catalog: reader.json(catalogSource.declaration.path), schemaDocument: reader.json(schemaSource.declaration.path), indexCatalog: index.documentCatalog, indexArtifacts: index.artifacts,
+    files: sources.map((source) => ({ artifactId: source.declaration.id, path: source.declaration.path, format: source.declaration.format, mode: source.entry.mode, sha256: hash(reader.blob(source.declaration.path)) })) });
+  const byArtifactId = new Map(sources.map((source) => [source.declaration.id, source])); const allowedPaths = new Set(catalog.documents.map((document) => document.sourcePath));
+  return catalog.documents.map((document) => {
+    const source = byArtifactId.get(document.artifactId); if (!source) return sourceError('Ein Katalogdokument besitzt keinen positivgelisteten Quellblob.');
+    const parsed = indexedMarkdown(reader, source); const body = validateDocumentationMarkdown(parsed.content, document.sourcePath, allowedPaths);
+    return projectDocumentSchema.parse({ id: document.documentId, title: document.title, documentType: document.documentType, status: document.status, parentId: document.parentId,
+      owners: document.ownerRefs, references: [...document.jiraRefs, ...document.referenceIds], phase: document.phase, process: document.process, updatedAt: document.lastReviewed, sourcePath: document.sourcePath,
+      content: redactDocumentationHostPaths(body.content), externalUrl: document.externalUrl, externalLinkReason: document.externalUrl ? 'Kanonische HTTPS-Quelle aus dem validierten Dokumentkatalog.' : 'Keine kanonische Confluence-URL im validierten Dokumentkatalog belegt.' });
   });
-  const ids = documents.map((document) => document.id); if (new Set(ids).size !== ids.length) sourceError('Der Dokumentindex erzeugt doppelte Dokumentkennungen.');
-  const knownIds = new Set(ids); for (const document of documents) if (document.parentId && !knownIds.has(document.parentId)) sourceError('Eine Dokumenthierarchie verweist auf ein fehlendes Elternziel.');
-  return documents;
 }
 
 function storyDate(value: unknown) {
@@ -1459,7 +1534,7 @@ const spectraAdapterProvenanceSchema = z.object({
   source_of_truth: z.object({ owner: z.literal('customer-workspace'), unchanged: z.literal(true) }).strict(),
   write_protection: z.object({ source_mode: z.literal('read-only'), writes_performed: z.literal(false), projection_only: z.literal(true), overwrite_allowed: z.literal(false) }).strict(),
 }).strict();
-const twinExportArtifactSchema = z.object({ id: technicalId, kindId: technicalId, path: z.string().refine(validateContractPath), selector: z.string().nullable(), format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png', 'javascript']), required: z.boolean() }).strict();
+const twinExportArtifactSchema = z.object({ id: technicalId, kindId: technicalId, path: z.string().refine(validateContractPath), selector: z.string().nullable(), format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png', 'javascript', 'openspec']), required: z.boolean() }).strict();
 const twinExportMapSchema = z.object({
   schemaVersion: z.literal(1), contractVersion: z.enum(['0.9', '0.10']), recordType: z.literal('twin-export-map'), mappingId: technicalId,
   mappingVersion: z.string().regex(/^\d+\.\d+\.\d+$/), projectId: z.literal('UABC-BC-BASIC-001'), allowedBranch: z.literal('codex/universaarl-projekt'),
@@ -1475,7 +1550,7 @@ const spectra09ConformanceSchema = z.object({
 
 const v1DemoReadinessSchema = z.object({
   schemaVersion: z.literal(1), classification: z.literal('synthetic-only'), status: z.literal('synthetisch-abgeschlossen'), productResult: z.literal('V1_STANDARDPRODUCT_READY'), result: z.literal('GO_SIMULATION'),
-  checks: z.object({ spectraRelease: z.literal('spectra-v0.10.0-alpha.1'), branchContract: z.literal('exports/project-data/v1/index.yaml'), twinArtifactCount: z.literal(102), realBcExecution: z.literal(false), realAcceptance: z.literal('ausserhalb-des-simulationsziels'), externalTransmission: z.literal(false) }).passthrough(),
+  checks: z.object({ spectraRelease: z.literal('spectra-v0.10.0-alpha.1'), branchContract: z.literal('exports/project-data/v1/index.yaml'), twinArtifactCount: z.literal(108), realBcExecution: z.literal(false), realAcceptance: z.literal('ausserhalb-des-simulationsziels'), externalTransmission: z.literal(false) }).passthrough(),
   v1Acceptance: z.object({
     commercial: z.object({ hours: z.literal(80), rateEur: z.literal(120), amountEur: z.literal(9600), result: z.literal('bestanden') }).passthrough(),
     decisions: z.object({ requiredAreas: z.literal(7), result: z.literal('bestanden') }).passthrough(),
@@ -1507,7 +1582,7 @@ function requiredSource(sources: readonly IndexedProjectSource[], kindId: string
   return matches[0];
 }
 
-export function validateSpectra09ContractData(input: { release: unknown; conformance: unknown; reconciliation: unknown; provenance: unknown; exportMap: unknown; indexArtifacts: unknown; indexHash: string; projectionHash: string }) {
+export function validateSpectra09ContractData(input: { release: unknown; conformance: unknown; reconciliation: unknown; provenance: unknown; exportMap: unknown; indexArtifacts: unknown; indexHash: string; projectionHash: string; catalogExtendedIndex?: boolean }) {
   const release = schema(input.release, spectraReleaseEvidenceSchema);
   const conformance = schema(input.conformance, spectra09ConformanceSchema);
   const reconciliation = schema(input.reconciliation, spectraProjectReconciliationSchema);
@@ -1520,20 +1595,22 @@ export function validateSpectra09ContractData(input: { release: unknown; conform
   const supportedRelease = release.release.version === '0.9.0-alpha.1' ? { tag: 'spectra-v0.9.0-alpha.1', payloads: 102 } : release.release.version === '0.10.0-alpha.1' ? { tag: 'spectra-v0.10.0-alpha.1', payloads: 110 } : null;
   if (!supportedRelease || release.tag.name !== supportedRelease.tag || conformance.spectraRelease !== release.tag.name) sourceError('Die Spectra-Releasebindung ist widersprüchlich.');
   if (release.payload.fileCount !== supportedRelease.payloads || release.payload.verifiedGitBlobs !== supportedRelease.payloads || release.payload.mismatches !== 0) sourceError('Die Spectra-Releasepayloads sind nicht vollständig bestätigt.');
-  if (provenance.source.blob_path !== 'exports/project-data/v1/index.yaml' || provenance.source.source_hash !== indexHash || provenance.source.source_hash_after !== indexHash) sourceError('Der Quellhash vor oder nach der Spectra-Projektion stimmt nicht mit dem Indexblob überein.');
+  if (provenance.source.blob_path !== 'exports/project-data/v1/index.yaml' || provenance.source.source_hash !== provenance.source.source_hash_after || (!input.catalogExtendedIndex && provenance.source.source_hash !== indexHash)) sourceError('Der Quellhash vor oder nach der Spectra-Projektion stimmt nicht mit dem gebundenen Vertragsstand überein.');
   if (provenance.projection.projection_path !== 'exports/project-data/v1/twin-export-map.json' || provenance.projection.projection_digest !== projectionHash) sourceError('Der Projektionsdigest stimmt nicht mit dem commitgebundenen Twin-Export überein.');
   if (exportMap.mappingId !== provenance.mapping.mapping_id || exportMap.mappingVersion !== provenance.mapping.mapping_version) sourceError('Die Mappingversion oder Mappingkennung ist widersprüchlich.');
-  if (exportMap.artifacts.length !== indexArtifacts.length) sourceError('Der Twin-Export enthält nicht alle indexierten Artefakte.');
-  for (let position = 0; position < indexArtifacts.length; position += 1) {
-    const expected = indexArtifacts[position]; const actual = exportMap.artifacts[position];
-    if (!actual || actual.id !== expected.id || actual.kindId !== expected.kindId || actual.path !== expected.path || actual.selector !== (expected.selector ?? null) || actual.format !== expected.format || actual.required !== expected.required) sourceError('Der Twin-Export weicht von der commitgebundenen Index-Allowlist ab.');
+  const exportedIds = exportMap.artifacts.map((artifact) => artifact.id); const exportedPaths = exportMap.artifacts.map((artifact) => artifact.path);
+  if (new Set(exportedIds).size !== exportedIds.length || new Set(exportedPaths).size !== exportedPaths.length) sourceError('Der Twin-Export enthält doppelte Artefaktkennungen oder Pfade.');
+  const exportedById = new Map(exportMap.artifacts.map((artifact) => [artifact.id, artifact]));
+  for (const expected of indexArtifacts) {
+    const actual = exportedById.get(expected.id);
+    if (!actual || actual.kindId !== expected.kindId || actual.path !== expected.path || actual.selector !== (expected.selector ?? null) || actual.format !== expected.format || actual.required !== expected.required) sourceError('Der Twin-Export deckt die commitgebundene Index-Allowlist nicht vollständig ab.');
   }
   if (conformance.reconciliation.path !== 'evidence/simulation/project-reconciliation.json' || conformance.reconciliation.baselineHours !== reconciliation.baseline.hours || conformance.reconciliation.baselineAmount !== reconciliation.baseline.amount || conformance.reconciliation.offerHours !== reconciliation.offer.hours || conformance.reconciliation.offerAmount !== reconciliation.offer.amount || conformance.reconciliation.actualHours !== reconciliation.actual.hours || conformance.reconciliation.actualAmount !== reconciliation.actual.amount || conformance.reconciliation.invoiceClaim !== false || conformance.reconciliation.productiveActivityClaim !== false) sourceError('Der Spectra-Projektabgleich ist nicht konsistent bestätigt.');
   if (conformance.adapterProvenance.path !== 'evidence/simulation/adapter-provenance.json' || conformance.adapterProvenance.sourcePath !== provenance.source.blob_path || conformance.adapterProvenance.mappingVersion !== provenance.mapping.mapping_version || conformance.adapterProvenance.projectionPath !== provenance.projection.projection_path || conformance.adapterProvenance.sourceUnchanged !== true || conformance.adapterProvenance.writesPerformed !== false) sourceError('Die Spectra-Adapterprovenienz ist nicht konsistent bestätigt.');
   const number = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 });
   summaries.set('spectra-project-reconciliation', { title: 'Historische Baseline und synthetischer Projektabgleich', status: 'passed', rationale: reconciliation.variance.reason, activity: [`Historische Baseline: ${number.format(reconciliation.baseline.hours)} Std. · ${number.format(reconciliation.baseline.amount)} EUR`, `Synthetisches Angebot: ${number.format(reconciliation.offer.hours)} Std. · ${number.format(reconciliation.offer.amount)} EUR`, `Synthetisches Ist: ${number.format(reconciliation.actual.hours)} Std. · ${number.format(reconciliation.actual.amount)} EUR`, 'Keine echte Rechnung, Buchung, Zahlung oder produktive Leistung.'] });
-  summaries.set('spectra-adapter-provenance', { title: `Twin-Projektion · Mapping ${provenance.mapping.mapping_version}`, status: 'passed', rationale: 'Die Kundeninstanz bleibt die fachlich führende Quelle; der Twin liest ausschließlich und überschreibt keine Quelle.', activity: [`Quellhash vor/nach: ${indexHash}`, `Projektionsdigest: ${projectionHash}`, 'Nur-Lesen · keine Schreibvorgänge · kein Überschreiben'] });
-  summaries.set('twin-export-map', { title: `${exportMap.artifacts.length} exportierte Artefakte`, status: 'passed', rationale: `Commitgebundene Allowlist · Mapping ${exportMap.mappingVersion}`, activity: ['Sichere repository-relative Pfade', 'Kundeninstanz bleibt die fachlich führende Quelle', 'Twin liest ausschließlich'] });
+  summaries.set('spectra-adapter-provenance', { title: `Twin-Projektion · Mapping ${provenance.mapping.mapping_version}`, status: 'passed', rationale: 'Die Kundeninstanz bleibt die fachlich führende Quelle; der Twin liest ausschließlich und überschreibt keine Quelle.', activity: [`Spectra-Quellhash vor/nach: ${provenance.source.source_hash}`, `Aktueller Indexhash: ${indexHash}`, `Projektionsdigest: ${projectionHash}`, 'Nur-Lesen · keine Schreibvorgänge · kein Überschreiben'] });
+  summaries.set('twin-export-map', { title: `${indexArtifacts.length} positivgelistete Snapshotartefakte`, status: 'passed', rationale: `${exportMap.artifacts.length} Exportmetadaten · Mapping ${exportMap.mappingVersion}`, activity: ['Sichere repository-relative Pfade', 'Kundeninstanz bleibt die fachlich führende Quelle', 'Twin liest ausschließlich'] });
   summaries.set('spectra-portable-conformance-evidence', { title: `Spectra ${release.release.version} · Projektabgleich und Twin-Export bestanden`, status: conformance.status, rationale: `${conformance.counts.nativeRelations} native Relationen · Storymengen unverändert`, activity: [`${conformance.counts.offerVersions} Angebote · ${conformance.counts.pages} Seiten · ${conformance.counts.tickets} Tickets`, `${conformance.counts.comments} Kommentare · ${conformance.counts.worklogs} Worklogs`, `${conformance.counts.hours} Std. · ${conformance.counts.cost} EUR`] });
   return summaries;
 }
@@ -1549,7 +1626,7 @@ function validateSpectra09Integration(index: ProjectDataIndex, reader: CommitBlo
   return validateSpectra09ContractData({
     release: selectedYaml(reader, releaseSource), conformance: selectedYaml(reader, conformanceSource), reconciliation: reader.json(reconciliationSource.declaration.path),
     provenance: reader.json(provenanceSource.declaration.path), exportMap: reader.json(exportMapSource.declaration.path), indexArtifacts: index.artifacts,
-    indexHash: hash(reader.blob('exports/project-data/v1/index.yaml')), projectionHash: hash(reader.blob(exportMapSource.declaration.path)),
+    indexHash: hash(reader.blob('exports/project-data/v1/index.yaml')), projectionHash: hash(reader.blob(exportMapSource.declaration.path)), catalogExtendedIndex: Boolean(index.documentCatalog),
   });
 }
 
@@ -1736,7 +1813,7 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
 async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {
   const { index, reader, sources, manifest } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
   const artifacts = indexedArtifacts(index, reader, sources);
-  const documents = indexedDocuments(reader, sources);
+  const documents = index.documentCatalog ? indexedDocuments(reader, index, sources) : [];
   const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
   const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
   const imageSources = sources.filter((source) => source.declaration.format === 'png');

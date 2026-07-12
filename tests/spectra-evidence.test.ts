@@ -29,7 +29,7 @@ function spectra10Fixture() {
 
 function v1Fixture() {
   return { schemaVersion: 1, classification: 'synthetic-only', status: 'synthetisch-abgeschlossen', productResult: 'V1_STANDARDPRODUCT_READY', result: 'GO_SIMULATION',
-    checks: { spectraRelease: 'spectra-v0.10.0-alpha.1', branchContract: 'exports/project-data/v1/index.yaml', twinArtifactCount: 102, realBcExecution: false, realAcceptance: 'ausserhalb-des-simulationsziels', externalTransmission: false },
+    checks: { spectraRelease: 'spectra-v0.10.0-alpha.1', branchContract: 'exports/project-data/v1/index.yaml', twinArtifactCount: 108, realBcExecution: false, realAcceptance: 'ausserhalb-des-simulationsziels', externalTransmission: false },
     v1Acceptance: { commercial: { hours: 80, rateEur: 120, amountEur: 9600, result: 'bestanden' }, decisions: { requiredAreas: 7, result: 'bestanden' }, data: { templatePairs: 8, migrationWaves: 3, result: 'bestanden' }, processControls: { glDifference: 0, bankDifference: 0, openP1: 0, openP2: 0, result: 'bestanden' }, uat: { cases: 7, result: 'bestanden-synthetisch' }, operators: { paths: 4, smokeTest: 'UABC-SMOKE-BCB-OPERATOR-001', result: 'bestanden-synthetisch' }, transition: { cutover: 'bestanden', restart: 'bestanden', hypercareDays: 3, result: 'bestanden-synthetisch' }, deliverables: { completed: 9, total: 9, result: 'bestanden-synthetisch' }, contracts: { spectra: 'BOUND-0.10.0-alpha.1', snapshot: 'validiert', twin: 'branch-index-read-only', result: 'bestanden' } },
     realCustomerEntryGate: 'project/bc-basic/phase-2-readiness-gate.yaml' };
 }
@@ -38,6 +38,7 @@ describe('commitgebundene Spectra-Evidence', () => {
   it('löst den erlaubten Branch beim Serverstart automatisch genau einmal auf', () => {
     const vite = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
     expect(vite).toContain("rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}");
+    expect(vite).toContain("'-c', `safe.directory=${sourceRoot}`");
     expect(vite).not.toContain('UABC_EXPECTED_COMMIT');
   });
   it('benennt unterstützte Spectra-Dokumente und den manifestfreien Blockierzustand widerspruchsfrei', () => {
@@ -80,7 +81,7 @@ describe('commitgebundene Spectra-Evidence', () => {
     const summaries = validateSpectra09ContractData(spectra09Fixture());
     expect(summaries.get('spectra-project-reconciliation')).toMatchObject({ title: 'Historische Baseline und synthetischer Projektabgleich', status: 'passed' });
     expect(summaries.get('spectra-project-reconciliation')?.activity).toEqual(['Historische Baseline: 68 Std. · 11.050 EUR', 'Synthetisches Angebot: 80 Std. · 9.600 EUR', 'Synthetisches Ist: 80 Std. · 9.600 EUR', 'Keine echte Rechnung, Buchung, Zahlung oder produktive Leistung.']);
-    expect(summaries.get('twin-export-map')?.title).toBe('1 exportierte Artefakte');
+    expect(summaries.get('twin-export-map')?.title).toBe('1 positivgelistete Snapshotartefakte');
   });
 
   it('validiert Spectra 0.10 mit genau 110 bestätigten Releasepayloads', () => {

@@ -1,7 +1,7 @@
 import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import { resolveBlueprintSourceRoot } from './src/projects/blueprint-source';
+import { officialBcBasicSnapshotAnchor, resolveBlueprintSourceRoot } from './src/projects/blueprint-source';
 import { productionRegistry } from './src/projects/registry';
 import { dispatchProjectApi } from './src/server/api';
 import { execFileSync } from 'node:child_process';
@@ -15,9 +15,11 @@ export default defineConfig(({ mode }) => {
         if (mode === 'test') return;
         const sourceRepo = process.env.UABC_SOURCE_REPO ?? env.UABC_SOURCE_REPO;
         const sourceRoot = resolveBlueprintSourceRoot(process.cwd(), sourceRepo);
-        const pinnedCommit = execFileSync('git', ['-C', sourceRoot, 'rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}'], { encoding: 'utf8' }).trim();
+        const pinnedCommit = execFileSync('git', ['-c', `safe.directory=${sourceRoot}`, '-C', sourceRoot, 'rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}'], { encoding: 'utf8' }).trim();
+        const pinnedTree = execFileSync('git', ['-c', `safe.directory=${sourceRoot}`, '-C', sourceRoot, 'rev-parse', '--verify', `${pinnedCommit}^{tree}`], { encoding: 'utf8' }).trim();
+        if (pinnedCommit !== officialBcBasicSnapshotAnchor.commit || pinnedTree !== officialBcBasicSnapshotAnchor.tree) throw new Error('Die erlaubte BC-Basic-Branchspitze entspricht nicht dem offiziell validierten V1.0-Snapshotanker.');
         process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
-        const registry = productionRegistry(sourceRoot, pinnedCommit);
+        const registry = productionRegistry(sourceRoot, pinnedCommit, pinnedTree);
         server.middlewares.use(async (req, res, next) => {
           try {
             const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;

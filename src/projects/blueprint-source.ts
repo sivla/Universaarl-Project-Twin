@@ -13,9 +13,19 @@ export type BlueprintSourceBinding = Readonly<{
 
 export type SnapshotSourceBinding = Readonly<{
   expectedCommit: string;
+  expectedTree?: string;
   expectedRemote: typeof blueprintSourceBinding.remoteUrl;
   expectedBranch: typeof blueprintSourceBinding.branch;
 }>;
+
+export const officialBcBasicSnapshotAnchor = Object.freeze({
+  commit: 'e6dc15ba951928ca54b795ea421e40a7cc015aeb',
+  tree: '1acfaa375451d7e251830b83192b912ed4d2077e',
+  artifactCount: 108,
+  documentCount: 32,
+  documentCatalogPath: 'exports/project-data/v1/document-catalog.json',
+  documentCatalogSchemaPath: 'governance/schemas/project-document-catalog.schema.json',
+} as const);
 
 export const blueprintSourceBinding: BlueprintSourceBinding = Object.freeze({
   localRelativePath: '..\\Universaarl Projekt BC Basic',
@@ -37,6 +47,6 @@ export function resolveBlueprintSourceRoot(projectRoot: string, localOverride?: 
   return path.resolve(projectRoot, ...blueprintSourceBinding.localRelativePath.split(/[\\/]+/));
 }
 
-export function snapshotSourceBinding(expectedCommit?: string): SnapshotSourceBinding {
-  return Object.freeze({ expectedCommit: expectedCommit?.trim() ?? '', expectedRemote: blueprintSourceBinding.remoteUrl, expectedBranch: blueprintSourceBinding.branch });
+export function snapshotSourceBinding(expectedCommit?: string, expectedTree?: string): SnapshotSourceBinding {
+  return Object.freeze({ expectedCommit: expectedCommit?.trim() ?? '', ...(expectedTree?.trim() ? { expectedTree: expectedTree.trim() } : {}), expectedRemote: blueprintSourceBinding.remoteUrl, expectedBranch: blueprintSourceBinding.branch });
 }

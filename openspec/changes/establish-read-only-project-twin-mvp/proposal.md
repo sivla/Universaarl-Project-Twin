@@ -4,6 +4,8 @@
 - Status: `active`
 - Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, commitgebundener Snapshotvertrag, nachrangige Projektdokumentation, Prüfungen
 
+Der finale V1.0-Bindungsblock ersetzt die dokumentbezogene Frontmatter-Heuristik durch den kanonischen Producerkatalog und bindet den Twin exakt an den unabhängig validierten BC-Basic-Commit `e6dc15ba951928ca54b795ea421e40a7cc015aeb` mit Tree `1acfaa375451d7e251830b83192b912ed4d2077e`. Alle 108 Indexartefakte und 32 Dokumente stammen aus dieser einen SHA.
+
 ## Problem
 Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängende Projektwelt erkunden. Der Projektzwilling muss ihn darstellen, ohne fachliche Wahrheit zu kopieren oder Änderungen zurückzuschreiben.
 
