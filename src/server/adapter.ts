@@ -1431,7 +1431,33 @@ const spectra09ConformanceSchema = z.object({
   counts: z.object({ offerVersions: z.number().int(), pages: z.number().int(), tickets: z.number().int(), comments: z.number().int(), worklogs: z.number().int(), hours: z.number(), cost: z.number(), timelineEvents: z.number().int(), hypercareDays: z.number().int(), nativeRelations: z.number().int() }).passthrough(),
 }).passthrough();
 
+const v1DemoReadinessSchema = z.object({
+  schemaVersion: z.literal(1), classification: z.literal('synthetic-only'), status: z.literal('synthetisch-abgeschlossen'), productResult: z.literal('V1_STANDARDPRODUCT_READY'), result: z.literal('GO_SIMULATION'),
+  checks: z.object({ spectraRelease: z.literal('spectra-v0.10.0-alpha.1'), branchContract: z.literal('exports/project-data/v1/index.yaml'), twinArtifactCount: z.literal(102), realBcExecution: z.literal(false), realAcceptance: z.literal('ausserhalb-des-simulationsziels'), externalTransmission: z.literal(false) }).passthrough(),
+  v1Acceptance: z.object({
+    commercial: z.object({ hours: z.literal(80), rateEur: z.literal(120), amountEur: z.literal(9600), result: z.literal('bestanden') }).passthrough(),
+    decisions: z.object({ requiredAreas: z.literal(7), result: z.literal('bestanden') }).passthrough(),
+    data: z.object({ templatePairs: z.literal(8), migrationWaves: z.literal(3), result: z.literal('bestanden') }).passthrough(),
+    processControls: z.object({ glDifference: z.literal(0), bankDifference: z.literal(0), openP1: z.literal(0), openP2: z.literal(0), result: z.literal('bestanden') }).passthrough(),
+    uat: z.object({ cases: z.literal(7), result: z.literal('bestanden-synthetisch') }).passthrough(),
+    operators: z.object({ paths: z.literal(4), smokeTest: z.literal('UABC-SMOKE-BCB-OPERATOR-001'), result: z.literal('bestanden-synthetisch') }).passthrough(),
+    transition: z.object({ cutover: z.literal('bestanden'), restart: z.literal('bestanden'), hypercareDays: z.literal(3), result: z.literal('bestanden-synthetisch') }).passthrough(),
+    deliverables: z.object({ completed: z.literal(9), total: z.literal(9), result: z.literal('bestanden-synthetisch') }).passthrough(),
+    contracts: z.object({ spectra: z.literal('BOUND-0.10.0-alpha.1'), snapshot: z.literal('validiert'), twin: z.literal('branch-index-read-only'), result: z.literal('bestanden') }).passthrough(),
+  }).strict(),
+  realCustomerEntryGate: z.literal('project/bc-basic/phase-2-readiness-gate.yaml'),
+}).passthrough();
+
 type SpectraSummary = { title: string; status: string; rationale: string; activity?: string[] };
+
+export function validateV1DemoReadiness(input: unknown): SpectraSummary {
+  const value = schema(input, v1DemoReadinessSchema);
+  return {
+    title: 'BC Basic V1 · Standardprodukt bereit', status: value.status,
+    rationale: 'Die vollständige Referenzsimulation ist belegt; eine reale Kundeninstanz beginnt separat am Entry-Gate.',
+    activity: ['V1_STANDARDPRODUCT_READY', '9/9 Lieferobjekte · 7 UAT-Fälle · 4 Operatorpfade', 'Cutover und Restart bestanden · 3 Hypercaretage', 'Offene P1/P2: 0/0', 'Realer Kundeneinstieg beginnt separat am belegten Setup-/UAT-Entry-Gate.'],
+  };
+}
 
 function requiredSource(sources: readonly IndexedProjectSource[], kindId: string) {
   const matches = sources.filter((source) => source.declaration.kindId === kindId);
@@ -1611,6 +1637,11 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
     }
     if (declaration.format !== 'yaml' && declaration.format !== 'json') continue;
     const data = selectedYaml(reader, source);
+    if (declaration.kindId === 'synthetic-demo-evidence') {
+      const summary = validateV1DemoReadiness(data);
+      add({ id: declaration.id, kind: 'document', ...summary, phase: null, wave: null, workstream: 'V1-Abnahme', activity: summary.activity ?? [], sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     const spectraSummary: SpectraSummary | null = spectra09Summaries.get(declaration.kindId) ?? spectraEvidenceSummary(declaration.kindId, data);
     if (spectraSummary) {
       add({ id: declaration.id, kind: 'document', ...spectraSummary, phase: null, wave: null, workstream: 'Spectra',

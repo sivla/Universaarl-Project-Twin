@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { AdapterSourceError, spectraEvidenceSummary, validateSpectra09ContractData } from '../src/server/adapter';
+import { AdapterSourceError, spectraEvidenceSummary, validateSpectra09ContractData, validateV1DemoReadiness } from '../src/server/adapter';
 import { displayDocumentType, uiErrorMessage, uiErrorTitle } from '../src/model';
 
 const indexHash = '1'.repeat(64); const projectionHash = '2'.repeat(64);
@@ -25,6 +25,13 @@ function spectra10Fixture() {
   value.reconciliation.contract_version = '0.10'; value.provenance.contract_version = '0.10'; value.exportMap.contractVersion = '0.10';
   value.provenance.mapping.mapping_version = '1.1.0'; value.exportMap.mappingVersion = '1.1.0'; value.conformance.adapterProvenance.mappingVersion = '1.1.0';
   return value;
+}
+
+function v1Fixture() {
+  return { schemaVersion: 1, classification: 'synthetic-only', status: 'synthetisch-abgeschlossen', productResult: 'V1_STANDARDPRODUCT_READY', result: 'GO_SIMULATION',
+    checks: { spectraRelease: 'spectra-v0.10.0-alpha.1', branchContract: 'exports/project-data/v1/index.yaml', twinArtifactCount: 102, realBcExecution: false, realAcceptance: 'ausserhalb-des-simulationsziels', externalTransmission: false },
+    v1Acceptance: { commercial: { hours: 80, rateEur: 120, amountEur: 9600, result: 'bestanden' }, decisions: { requiredAreas: 7, result: 'bestanden' }, data: { templatePairs: 8, migrationWaves: 3, result: 'bestanden' }, processControls: { glDifference: 0, bankDifference: 0, openP1: 0, openP2: 0, result: 'bestanden' }, uat: { cases: 7, result: 'bestanden-synthetisch' }, operators: { paths: 4, smokeTest: 'UABC-SMOKE-BCB-OPERATOR-001', result: 'bestanden-synthetisch' }, transition: { cutover: 'bestanden', restart: 'bestanden', hypercareDays: 3, result: 'bestanden-synthetisch' }, deliverables: { completed: 9, total: 9, result: 'bestanden-synthetisch' }, contracts: { spectra: 'BOUND-0.10.0-alpha.1', snapshot: 'validiert', twin: 'branch-index-read-only', result: 'bestanden' } },
+    realCustomerEntryGate: 'project/bc-basic/phase-2-readiness-gate.yaml' };
 }
 
 describe('commitgebundene Spectra-Evidence', () => {
@@ -81,6 +88,16 @@ describe('commitgebundene Spectra-Evidence', () => {
     expect(summaries.get('spectra-portable-conformance-evidence')?.title).toBe('Spectra 0.10.0-alpha.1 · Projektabgleich und Twin-Export bestanden');
     const wrongCount = spectra10Fixture(); wrongCount.release.payload.verifiedGitBlobs = 109;
     expect(() => validateSpectra09ContractData(wrongCount)).toThrow(AdapterSourceError);
+  });
+
+  it('wertet den vollständigen V1-Abschluss aus und blockiert widersprüchliche Abnahme-Evidence', () => {
+    expect(validateV1DemoReadiness(v1Fixture())).toMatchObject({ title: 'BC Basic V1 · Standardprodukt bereit', activity: ['V1_STANDARDPRODUCT_READY', '9/9 Lieferobjekte · 7 UAT-Fälle · 4 Operatorpfade', 'Cutover und Restart bestanden · 3 Hypercaretage', 'Offene P1/P2: 0/0', 'Realer Kundeneinstieg beginnt separat am belegten Setup-/UAT-Entry-Gate.'] });
+    for (const mutate of [
+      (value: ReturnType<typeof v1Fixture>) => { value.productResult = 'PENDING'; },
+      (value: ReturnType<typeof v1Fixture>) => { value.v1Acceptance.processControls.openP1 = 1; },
+      (value: ReturnType<typeof v1Fixture>) => { value.v1Acceptance.deliverables.completed = 8; },
+      (value: ReturnType<typeof v1Fixture>) => { value.checks.realBcExecution = true; },
+    ]) { const value = v1Fixture(); mutate(value); expect(() => validateV1DemoReadiness(value)).toThrow(AdapterSourceError); }
   });
 
   it('blockiert fehlende, ungeindexte und unsichere Exportartefakte', () => {
