@@ -631,6 +631,16 @@ const projectDataIndexSchema = z.object({
   artifacts: z.array(projectDataArtifactSchema).min(1).max(1_000),
 }).strict();
 
+const projectStorySchema = z.object({
+  schemaVersion: z.literal(1), storyId: technicalId, projectId: technicalId, classification: z.string().min(1).max(80), status: z.string().min(1).max(80),
+  offer: z.record(z.string(), z.unknown()).optional(),
+  pages: z.array(z.record(z.string(), z.unknown())).default([]),
+  tickets: z.array(z.record(z.string(), z.unknown())).default([]),
+  timeline: z.array(z.record(z.string(), z.unknown())).default([]),
+  hypercare: z.array(z.record(z.string(), z.unknown())).default([]),
+  controls: z.record(z.string(), z.unknown()).optional(),
+}).passthrough();
+
 const snapshotManifestSchema = z.object({
   schemaVersion: z.literal(1),
   producerId: z.literal('blueprint'),
@@ -1305,6 +1315,41 @@ function indexedMarkdown(reader: CommitBlobReader, source: IndexedProjectSource)
   return { data: document?.data ?? {}, heading };
 }
 
+function storyDate(value: unknown) {
+  const date = typeof value === 'string' ? value.slice(0, 10) : '';
+  return sourceDateSchema.safeParse(date).success ? date : null;
+}
+
+function storyStrings(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).slice(0, 100) : [];
+}
+
+function storyText(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function storyAcceptance(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (item && typeof item === 'object' && typeof (item as RecordValue).text === 'string') return [(item as RecordValue).text as string];
+    return typeof item === 'string' ? [item] : [];
+  }).filter((item) => item.trim()).slice(0, 100);
+}
+
+function storyHistory(value: unknown, by: unknown) {
+  if (!Array.isArray(value)) return [];
+  const events: Array<{ at: string; from: string; to: string; by: string }> = [];
+  let previous: string | null = null;
+  for (const item of value) {
+    const status = item && typeof item === 'object' ? storyText((item as RecordValue).status) : storyText(item);
+    const date = item && typeof item === 'object' ? storyDate((item as RecordValue).time) : null;
+    if (!status || !date) continue;
+    if (previous) events.push({ at: `${date}T00:00:00Z`, from: previous, to: status, by: storyText(by) ?? 'Quelle' });
+    previous = status;
+  }
+  return events;
+}
+
 function nullableTechnicalStrings(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => technicalId.safeParse(item).success) : [];
 }
@@ -1314,6 +1359,37 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
   const add = (value: z.input<typeof artifactSchema>) => artifacts.push(sanitizeArtifact(artifactSchema.parse(value)));
   for (const source of sources) {
     const { declaration } = source;
+    if (declaration.kindId === 'project-story-core') {
+      const data = schema(reader.json(declaration.path), projectStorySchema);
+      const offer = data.offer;
+      if (offer) {
+        const versions = Array.isArray(offer.versions) ? offer.versions : [];
+        const versionText = versions.map((item) => item && typeof item === 'object' ? `Version ${String((item as RecordValue).version ?? '?')}: ${String((item as RecordValue).status ?? 'unbekannt')}` : null).filter(Boolean).join(' · ');
+        add({ id: typeof offer.id === 'string' ? offer.id : 'UABC-STORY-OFFER', kind: 'document', title: 'Angebot und Ist-Abgleich', status: storyText(offer.status) ?? 'synthetisch abgeschlossen', phase: null, wave: null, workstream: 'Angebot', rationale: versionText || 'Versionierte Angebotsdaten sind im Storyvertrag belegt.', sourceType: 'project-story-offer', documentType: 'project-story-offer', estimateHours: typeof offer.planned_hours === 'number' ? offer.planned_hours : null, actualHours: typeof offer.actual_hours === 'number' ? offer.actual_hours : null, sourcePath: declaration.path });
+      }
+      for (const page of data.pages) {
+        const id = page.id; if (typeof id !== 'string' || !technicalId.safeParse(id).success) continue;
+        add({ id, kind: 'document', title: storyText(page.title), status: storyText(page.status), phase: null, wave: null, workstream: 'Seitenbaum', rationale: storyStrings(page.references).join(' · ') || null, parentId: typeof page.parent === 'string' ? page.parent : null, documents: storyStrings(page.references), sourceType: 'project-story-page', documentType: 'project-story-page', owner: storyText(page.author_role), startDate: storyDate(page.time), sourcePath: declaration.path });
+      }
+      for (const ticket of data.tickets) {
+        const id = ticket.id; if (typeof id !== 'string' || !technicalId.safeParse(id).success) continue;
+        const kind = ticket.type === 'epic' ? 'epic' : ticket.type === 'story' ? 'story' : ticket.type === 'bug' ? 'bug' : 'task';
+        const comments = Array.isArray(ticket.comments) ? ticket.comments.flatMap((item) => item && typeof item === 'object' && typeof (item as RecordValue).text === 'string' ? [(item as RecordValue).text as string] : typeof item === 'string' ? [item] : []) : [];
+        const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs : [];
+        const hours = worklogs.reduce((sum, item) => sum + (item && typeof item === 'object' && typeof (item as RecordValue).hours === 'number' ? (item as RecordValue).hours as number : 0), 0);
+        const acceptance = storyAcceptance(ticket.acceptanceCriteria);
+        add({ id, kind, title: storyText(ticket.summary) ?? storyText(ticket.title) ?? acceptance[0] ?? id, status: storyText(ticket.status), phase: null, wave: null, workstream: storyStrings(ticket.labels).join(' · ') || null, rationale: acceptance.join(' · ') || null, parentId: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), evidence: storyStrings(ticket.evidenceRefs), documents: storyStrings(ticket.components), sourceType: `project-story-${ticket.type ?? 'ticket'}`, estimateHours: hours || null, actualHours: hours || null, owner: storyText(ticket.assignee), priority: storyText(ticket.priority), activity: comments, startDate: storyDate(ticket.createdAt), dueDate: storyDate(ticket.closedAt), historySynthetic: data.classification === 'synthetic-only', history: storyHistory(ticket.statusHistory, ticket.assignee), sourcePath: declaration.path });
+      }
+      for (const event of data.timeline) {
+        const id = event.id; if (typeof id !== 'string' || !technicalId.safeParse(id).success) continue;
+        add({ id, kind: 'document', title: storyText(event.action) ?? 'Projektstory-Ereignis', status: storyText(event.result), phase: null, wave: null, workstream: storyText(event.phase), rationale: [event.decision, event.nextStep].filter((item): item is string => typeof item === 'string').join(' · ') || null, documents: [...storyStrings(event.tickets), ...storyStrings(event.pages)], evidence: storyStrings(event.evidence), sourceType: 'project-story-timeline', documentType: 'project-story-timeline', owner: storyText(event.role), startDate: storyDate(event.time), sourcePath: declaration.path });
+      }
+      for (const day of data.hypercare) {
+        const id = `HYPERCARE-${String(day.day ?? 'unbekannt')}`; const ticket = typeof day.ticket === 'string' ? [day.ticket] : [];
+        add({ id, kind: 'document', title: `Hypercare-Tag ${String(day.day ?? '?')}`, status: storyText(day.status), phase: null, wave: null, workstream: 'Hypercare', rationale: [day.diagnosis, day.fix, day.retest, day.decision].filter((item): item is string => typeof item === 'string').join(' · ') || null, documents: ticket, evidence: storyStrings(day.evidence), sourceType: 'project-story-hypercare', documentType: 'project-story-hypercare', priority: storyText(day.priority), sourcePath: declaration.path });
+      }
+      continue;
+    }
     if (declaration.format === 'csv') {
       reader.text(declaration.path);
       add({ id: declaration.id, kind: 'document', title: path.posix.basename(declaration.path), status: null, phase: null, wave: null, workstream: null, rationale: null,

@@ -40,6 +40,8 @@ export const artifactSchema = z.object({
   historySynthetic: z.boolean().nullable().default(null), history: z.array(sourceHistoryEventSchema).default([]),
   documentType: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/).nullable().default(null), meetingDate: sourceDateSchema.nullable().default(null),
   meetings: z.array(sourceTechnicalIdSchema).default([]), deliverables: z.array(deliverableSchema).default([]),
+  owner: z.string().min(1).max(120).nullable().default(null), priority: z.string().min(1).max(40).nullable().default(null),
+  activity: z.array(z.string().min(1).max(4_000)).default([]),
   sourcePath: z.string().min(1),
 });
 
@@ -66,7 +68,7 @@ export type ProjectTimeContext = { readonly unsupported: true };
 const germanStatusLabels: Readonly<Record<string, string>> = {
   approved: 'Freigegeben', planned: 'Geplant', deferred: 'Zurückgestellt', passed: 'Bestanden', active: 'Aktiv', proposed: 'Vorgeschlagen',
   done: 'Erledigt', completed: 'Abgeschlossen', ready: 'Bereit', archived: 'Archiviert', documented: 'Dokumentiert', unknown: 'Unbekannt', unbekannt: 'Unbekannt',
-  backlog: 'Arbeitsvorrat', blocked: 'Blockiert', 'in progress': 'In Arbeit', 'in review': 'In Prüfung', 'nicht belegt': 'Nicht belegt',
+  backlog: 'Arbeitsvorrat', blocked: 'Blockiert', created: 'Angelegt', tested: 'Getestet', closed: 'Geschlossen', 'in progress': 'In Arbeit', 'in review': 'In Prüfung', 'nicht belegt': 'Nicht belegt',
 };
 
 export function displayStatus(value: string | null) {
@@ -86,6 +88,7 @@ export function displayBillingStatus(value: string | null) {
 
 const germanArtifactTypes: Readonly<Record<string, string>> = {
   Epic: 'Epic', Story: 'Story', Task: 'Aufgabe', 'Sub-task': 'Unteraufgabe', Bug: 'Fehler',
+  'project-story-epic': 'Story-Epic', 'project-story-story': 'Story', 'project-story-task': 'Story-Aufgabe', 'project-story-bug': 'Story-Fehler',
 };
 
 export function displayArtifactType(value: string | null) {

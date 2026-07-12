@@ -6,8 +6,9 @@
 - [x] Git-Provenienz und Datenlücken anzeigen
 - [x] Horizontale Projektwelt und Detailansichten erstellen
 - [x] Parserprüfungen, Prüfungen der Referenzsicherheit und Prüfungen für ungültige Quellen ergänzen
-- [x] A/B-Snapshotmanifest, externe B-Bindung und deterministischen Payload-Digest implementieren und negativ prüfen
-- [x] Identische Snapshotbindung für Zustand und Nachweisauflösung nachweisen
-- [x] Den bekannten Blueprint-Commit ohne Manifest als deutschen Blockierzustand im Cross-Contract- und Browserlauf nachweisen
+- [x] Manifestfreien Branch-Commitvertrag mit Index, Allowlist und gepinnter Git-Blob-Lesung implementieren und negativ prüfen
+- [x] Identische Branchbindung für Zustand und Nachweisauflösung nachweisen
+- [x] Commitgebundene Projektstory mit Angebot, Seitenbaum, Tickets, Timeline und Hypercare als normalisierte Artefakte anzeigen
+- [ ] Positive und fail-closed Browserabnahme der vollständigen Projektstory gegen den final validierten BC-Basic-Commit
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
