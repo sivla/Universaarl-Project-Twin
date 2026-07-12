@@ -5,6 +5,8 @@ import { officialBcBasicSnapshotAnchor, resolveBlueprintSourceRoot } from './src
 import { productionRegistry } from './src/projects/registry';
 import { dispatchProjectApi } from './src/server/api';
 import { execFileSync } from 'node:child_process';
+import { validatePresentationContract } from './src/server/adapter';
+import { presentationFixtureContext, presentationFixtureState, presentationFixtureVariant, type PresentationFixtureVariant } from './src/testing/presentation-fixture';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -13,6 +15,26 @@ export default defineConfig(({ mode }) => {
       name: 'uabc-project-scoped-read-only-api',
       configureServer(server) {
         if (mode === 'test') return;
+        if (mode === 'presentation-fixture') {
+          const variants: PresentationFixtureVariant[] = ['valid', 'cycle', 'duplicate-id', 'duplicate-order', 'unknown-reference', 'invalid-initial-state', 'unknown-icon'];
+          const configured = process.env.UABC_PRESENTATION_FIXTURE_VARIANT ?? env.UABC_PRESENTATION_FIXTURE_VARIANT ?? 'valid';
+          const variant = variants.includes(configured as PresentationFixtureVariant) ? configured as PresentationFixtureVariant : 'unknown-icon';
+          server.middlewares.use((req, res, next) => {
+            const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+            if (!pathname.startsWith('/api/')) return next();
+            res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            if (pathname === '/api/projects') { res.statusCode = 200; res.end('{"projects":[{"id":"bc-basic","key":"BCB","name":"Business Central Basic"}]}'); return; }
+            if (pathname === '/api/projects/bc-basic/state') {
+              try {
+                if (variant !== 'valid') validatePresentationContract(presentationFixtureVariant(variant), presentationFixtureContext);
+                res.statusCode = 200; res.end(JSON.stringify(presentationFixtureState));
+              } catch { res.statusCode = 503; res.end('{"code":"SNAPSHOT_VERTRAG_BLOCKIERT"}'); }
+              return;
+            }
+            res.statusCode = 404; res.end('{"code":"ENDPUNKT_NICHT_GEFUNDEN"}');
+          });
+          return;
+        }
         const sourceRepo = process.env.UABC_SOURCE_REPO ?? env.UABC_SOURCE_REPO;
         const sourceRoot = resolveBlueprintSourceRoot(process.cwd(), sourceRepo);
         const pinnedCommit = execFileSync('git', ['-c', `safe.directory=${sourceRoot}`, '-C', sourceRoot, 'rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}'], { encoding: 'utf8' }).trim();

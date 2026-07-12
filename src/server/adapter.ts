@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { artifactSchema, displayVerificationType, type Artifact, projectDocumentSchema, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectState } from '../model';
+import { artifactSchema, displayVerificationType, type Artifact, presentationContractSchema, type PresentationContract, projectDocumentSchema, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectState } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
@@ -189,6 +189,64 @@ function sameFingerprint(before: SourceFingerprint, after: SourceFingerprint) {
     && before.indexFingerprint === after.indexFingerprint
     && before.statusFingerprint === after.statusFingerprint
     && before.repositoryFingerprint === after.repositoryFingerprint;
+}
+
+const ticketTypePresentation = {
+  epic: { typeLabel: 'Epic', displayIconKey: 'epic-layers', displayColorToken: 'violet' },
+  story: { typeLabel: 'Story', displayIconKey: 'story-bookmark', displayColorToken: 'violet' },
+  task: { typeLabel: 'Aufgabe', displayIconKey: 'task-check', displayColorToken: 'blue' },
+  subtask: { typeLabel: 'Unteraufgabe', displayIconKey: 'subtask-branch', displayColorToken: 'light-blue' },
+  bug: { typeLabel: 'Fehler', displayIconKey: 'bug', displayColorToken: 'red' },
+  change: { typeLabel: 'Änderung', displayIconKey: 'change-arrow', displayColorToken: 'turquoise' },
+} as const;
+
+export function validatePresentationContract(input: unknown, context: { ticketTypes?: ReadonlyMap<string, string>; ticketStatuses?: ReadonlyMap<string, string>; documentIds?: ReadonlySet<string> } = {}): PresentationContract {
+  const parsed = presentationContractSchema.safeParse(input);
+  if (!parsed.success) sourceError('Die producerdefinierte Präsentationsstruktur ist ungültig.');
+  const contract = parsed.data;
+  const unique = (values: readonly unknown[]) => new Set(values).size === values.length;
+  if (!unique(contract.spaces.map((space) => space.id)) || !unique(contract.spaces.map((space) => space.order))) sourceError('Die Wissensräume besitzen doppelte Kennungen oder Reihenfolgen.');
+  const expectedTypes = Object.keys(ticketTypePresentation);
+  if (!unique(contract.jira.ticketTypes.map((item) => item.type)) || contract.jira.ticketTypes.some((item) => JSON.stringify(ticketTypePresentation[item.type]) !== JSON.stringify({ typeLabel: item.typeLabel, displayIconKey: item.displayIconKey, displayColorToken: item.displayColorToken })) || expectedTypes.some((type) => !contract.jira.ticketTypes.some((item) => item.type === type))) sourceError('Die Tickettypdarstellung verletzt die geschlossene Allowlist.');
+  const ticketIds = contract.jira.tickets.map((ticket) => ticket.ticketId);
+  if (contract.jira.canonicalTicketCount !== ticketIds.length || !unique(ticketIds)) sourceError('Die kanonische Ticketmenge besitzt widersprüchliche Zähler oder Kennungen.');
+  const ticketsById = new Map(contract.jira.tickets.map((ticket) => [ticket.ticketId, ticket]));
+  for (const ticket of contract.jira.tickets) {
+    const expected = ticketTypePresentation[ticket.type];
+    if (ticket.typeLabel !== expected.typeLabel || ticket.displayIconKey !== expected.displayIconKey || ticket.displayColorToken !== expected.displayColorToken || (ticket.parentId && !ticketsById.has(ticket.parentId))) sourceError('Ein Ticket besitzt eine ungültige Typdarstellung oder Elternreferenz.');
+    if (context.ticketTypes && context.ticketTypes.get(ticket.ticketId) !== ticket.type) sourceError('Die Präsentationsstruktur widerspricht dem kanonischen Story-Tickettyp.');
+  }
+  const assertAcyclic = (ids: readonly string[], parentOf: (id: string) => string | null | undefined, message: string) => {
+    for (const id of ids) { const seen = new Set<string>([id]); let current = parentOf(id); while (current) { if (seen.has(current)) sourceError(message); seen.add(current); current = parentOf(current); } }
+  };
+  assertAcyclic(ticketIds, (id) => ticketsById.get(id)?.parentId, 'Die Tickethierarchie enthält einen Zyklus.');
+  for (const space of contract.spaces) {
+    const nodeIds = space.nodes.map((node) => node.id);
+    if (!unique(nodeIds)) sourceError('Ein Wissensraum besitzt doppelte Navigationskennungen.');
+    const nodesById = new Map(space.nodes.map((node) => [node.id, node]));
+    const siblingOrders = new Map<string, number[]>();
+    for (const node of space.nodes) {
+      if (node.parentId && !nodesById.has(node.parentId)) sourceError('Ein Navigationsknoten verweist auf ein fehlendes Elternziel.');
+      if ((node.kind === 'page') !== Boolean(node.documentId)) sourceError('Ein Seitenknoten besitzt keine eindeutige Dokumentbindung.');
+      if (node.documentId && context.documentIds && !context.documentIds.has(node.documentId)) sourceError('Ein Seitenknoten verweist auf ein unbekanntes Dokument.');
+      const key = node.parentId ?? '__root__'; const orders = siblingOrders.get(key) ?? []; orders.push(node.order); siblingOrders.set(key, orders);
+    }
+    if ([...siblingOrders.values()].some((orders) => !unique(orders))) sourceError('Geschwisterknoten besitzen eine doppelte Reihenfolge.');
+    assertAcyclic(nodeIds, (id) => nodesById.get(id)?.parentId, 'Die Wissensraumhierarchie enthält einen Zyklus.');
+  }
+  if (!unique(contract.jira.views.map((view) => view.id)) || !unique(contract.jira.views.map((view) => view.order)) || new Set(contract.jira.views.map((view) => view.kind)).size !== 2) sourceError('Die Jira-Ansichten sind nicht eindeutig als Board und Liste definiert.');
+  for (const view of contract.jira.views) {
+    if (!unique(view.visibleFields) || !unique(view.filters.map((filter) => filter.id)) || !unique(view.groups.map((group) => group.id)) || !unique(view.groups.map((group) => group.order))) sourceError('Eine Jira-Ansicht besitzt doppelte Felder, Filter oder Gruppen.');
+    for (const filter of view.filters) if (!unique(filter.options.map((option) => option.value))) sourceError('Ein Jira-Filter besitzt doppelte Optionen.');
+    const grouped = view.groups.flatMap((group) => group.ticketIds);
+    if (grouped.length !== ticketIds.length || !unique(grouped) || grouped.some((id) => !ticketsById.has(id))) sourceError('Eine Jira-Ansicht bildet die kanonische Ticketmenge nicht genau einmal ab.');
+    if (view.kind === 'board') {
+      if (!unique(view.columns.map((column) => column.id)) || !unique(view.columns.map((column) => column.order))) sourceError('Das Jira-Board besitzt doppelte Spalten oder Reihenfolgen.');
+      const statuses = view.columns.flatMap((column) => column.statuses);
+      if (!unique(statuses) || (context.ticketStatuses && [...context.ticketStatuses.values()].some((status) => !statuses.includes(status)))) sourceError('Das Jira-Board besitzt eine widersprüchliche Statuszuordnung.');
+    }
+  }
+  return contract;
 }
 
 function assertSnapshotBinding(repo: string, fingerprint: SourceFingerprint, binding: ProjectSourceBinding | undefined) {

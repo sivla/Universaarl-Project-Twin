@@ -1,17 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { areas, parseRoute, projectUrl, type Area } from './navigation/routes';
-import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type ProjectContext, type ProjectDocument, type ProjectState, type UiErrorCode } from './model';
+import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type PresentationTicket, type ProjectContext, type ProjectDocument, type ProjectState, type UiErrorCode } from './model';
 import type { PublicProject } from './projects/registry';
 import { buildGanttProjection } from './planning/gantt';
+import { TicketsPage } from './components/TicketsPage';
+import { TicketTypeIcon } from './components/TicketTypeIcon';
+import { DocumentationSpaces } from './components/DocumentationSpaces';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
 import './theme/gantt.css';
 import './theme/documentation.css';
+import './theme/tickets.css';
 
 const labels: Record<Area, string> = {
   'aktueller-stand': 'Aktueller Stand',
+  tickets: 'Tickets',
   projektverlauf: 'Projektverlauf',
   arbeit: 'Arbeit',
   planung: 'Planung',
@@ -160,11 +165,11 @@ function App() {
             : <ProjectArea area={route.area} state={visibleState} context={context} open={(artifact) => setSelected({ viewKey, artifact })} />}
     </main>
     <nav className="bottom-nav" aria-label="Mobile Hauptnavigation">
-      {(['aktueller-stand', 'projektverlauf', 'arbeit'] as Area[]).map((area) => <button key={area} aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(context.projectId, area)}>{labels[area]}</button>)}
+      {(['aktueller-stand', 'tickets', 'projektverlauf'] as Area[]).map((area) => <button key={area} aria-current={route.area === area ? 'page' : undefined} onClick={() => navigate(context.projectId, area)}>{labels[area]}</button>)}
       <button ref={moreButton} aria-expanded={more} onClick={() => setMore(true)}>Mehr</button>
     </nav>
     {more && <MobileMore context={context} projects={projects} active={route.area} navigate={navigate} theme={theme} setTheme={setTheme} close={closeMore} />}
-    {visibleSelection && <Detail artifact={visibleSelection} storyTicket={state?.value.story?.tickets.find((ticket) => ticket.id === visibleSelection.id)} close={() => setSelected(undefined)} />}
+    {visibleSelection && <Detail artifact={visibleSelection} storyTicket={state?.value.story?.tickets.find((ticket) => ticket.id === visibleSelection.id)} presentationTicket={state?.value.presentation?.jira.tickets.find((ticket) => ticket.ticketId === visibleSelection.id)} close={() => setSelected(undefined)} />}
   </div>;
 }
 
@@ -208,6 +213,7 @@ const sourceDateTimeLabel = (value: string) => new Date(value).toLocaleString('d
 
 function ProjectArea({ area, state, context, open }: { area: Area; state: ProjectState; context: ProjectContext; open: (artifact: Artifact) => void }) {
   if (area === 'aktueller-stand') return <Current state={state} context={context} open={open} />;
+  if (area === 'tickets') return <TicketsPage state={state} open={open} />;
   if (area === 'arbeit') return <Work state={state} open={open} />;
   if (area === 'projektverlauf') return <ProjectHistory state={state} open={open} />;
   if (area === 'planung') return <Planning state={state} open={open} />;
@@ -286,6 +292,11 @@ function DocumentCards({ title, artifacts, open, emptyText }: { title: string; a
 
 type StoryTab = 'uebersicht' | 'angebot' | 'seiten' | 'tickets' | 'timeline' | 'hypercare' | 'beziehungen';
 
+function TicketReferenceList({ state, ids }: { state: ProjectState; ids: readonly string[] }) {
+  const presentationById = new Map(state.presentation?.jira.tickets.map((ticket) => [ticket.ticketId, ticket]) ?? []);
+  return <span className="ticket-reference-list">{ids.map((id) => { const ticket = presentationById.get(id); return <span key={id}>{ticket && <TicketTypeIcon ticket={ticket} compact />}<code>{id}</code></span>; })}</span>;
+}
+
 function StoryCockpit({ state, open }: { state: ProjectState; open: (artifact: Artifact) => void }) {
   const [tab, setTab] = useState<StoryTab>('uebersicht');
   const story = state.story;
@@ -297,7 +308,7 @@ function StoryCockpit({ state, open }: { state: ProjectState; open: (artifact: A
     {tab === 'angebot' && story.offer && <div className="source-table-wrap"><table className="source-table"><thead><tr><th>Version</th><th>Datum</th><th>Status</th><th>Änderung</th><th>Stunden</th><th>Kosten</th></tr></thead><tbody>{story.offer.versions.map((version) => <tr key={version.version}><td>{version.version}</td><td>{sourceDateLabel(version.date)}</td><td>{version.status}</td><td>{version.delta}</td><td>{version.hours ?? 'Nicht belegt'}</td><td>{version.cost === null ? 'Nicht belegt' : `${numberFormatter.format(version.cost)} EUR`}</td></tr>)}</tbody></table><p className="honest-note">Plan: {story.offer.plannedHours ?? 'Nicht belegt'} Std. / {story.offer.plannedCost ?? 'Nicht belegt'} EUR · Ist: {story.offer.actualHours ?? 'Nicht belegt'} Std. / {story.offer.actualCost ?? 'Nicht belegt'} EUR.</p></div>}
     {tab === 'seiten' && <div className="story-page-tree">{story.pages.map((page) => <article key={page.id} style={{ paddingInlineStart: `${page.parent ? 1.5 : 0}rem` }}><button className="text-action" onClick={() => artifactById(page.id) && open(artifactById(page.id) as Artifact)}><code>{page.id}</code><strong>{page.title}</strong></button><small>Version {page.version ?? '–'} · {page.status ?? 'Nicht belegt'} · Quelle <code>{page.sourcePath}</code></small><p>{page.content ? page.content.replace(/^---[\s\S]*?---\s*/, '').trim().slice(0, 800) : 'Kein Seiteninhalt belegt.'}</p></article>)}</div>}
     {tab === 'tickets' && <div className="story-ticket-board">{(['done', 'closed', 'in-progress', 'backlog'] as const).map((status) => <section key={status}><h3>{displayStatus(status)}</h3>{story.tickets.filter((ticket) => ticket.status.toLowerCase() === status).map((ticket) => <button key={ticket.id} className="story-ticket" onClick={() => artifactById(ticket.id) && open(artifactById(ticket.id) as Artifact)}><code>{ticket.id}</code><strong>{ticket.summary}</strong><span>{ticket.priority ?? 'Priorität nicht belegt'} · {ticket.worklogs.reduce((sum, log) => sum + log.hours, 0)} Std.</span></button>)}{!story.tickets.some((ticket) => ticket.status.toLowerCase() === status) && <p className="honest-note">Keine Tickets belegt.</p>}</section>)}</div>}
-    {tab === 'timeline' && <div className="story-timeline">{story.timeline.map((event) => <article key={event.id}><time dateTime={event.time}>{sourceDateTimeLabel(event.time)}</time><button className="text-action" onClick={() => artifactById(event.id) && open(artifactById(event.id) as Artifact)}><code>{event.id}</code><strong>{event.phase}: {event.action}</strong></button><p>{event.result} · Entscheidung: {event.decision} · Nächster Schritt: {event.nextStep}</p><small>Tickets: <ReferenceSummary values={event.tickets} /> · Seiten: <ReferenceSummary values={event.pages} /> · Evidence: <ReferenceSummary values={event.evidence} /></small></article>)}</div>}
+    {tab === 'timeline' && <div className="story-timeline">{story.timeline.map((event) => <article key={event.id}><time dateTime={event.time}>{sourceDateTimeLabel(event.time)}</time><button className="text-action" onClick={() => artifactById(event.id) && open(artifactById(event.id) as Artifact)}><code>{event.id}</code><strong>{event.phase}: {event.action}</strong></button><p>{event.result} · Entscheidung: {event.decision} · Nächster Schritt: {event.nextStep}</p><small>Tickets: <TicketReferenceList state={state} ids={event.tickets} /> · Seiten: <ReferenceSummary values={event.pages} /> · Evidence: <ReferenceSummary values={event.evidence} /></small></article>)}</div>}
     {tab === 'hypercare' && <div className="story-hypercare">{story.hypercare.map((day) => <article key={day.day}><header><h3>Tag {day.day}</h3><span>{day.priority} · {day.status}</span></header><p><strong>Diagnose:</strong> {day.diagnosis}</p><p><strong>Fix:</strong> {day.fix}</p><p><strong>Retest:</strong> {day.retest} · <strong>Entscheidung:</strong> {day.decision}</p><p>Ticket <code>{day.ticket}</code> · Seite <code>{day.dailyPage}</code> · Kommentar <code>{day.comment}</code></p><p>Evidence: <ReferenceSummary values={day.evidence} /></p></article>)}</div>}
     {tab === 'beziehungen' && <div className="story-relations"><p className="honest-note">Die Darstellung bleibt auf die ersten 60 von {story.relations.length} positivgelisteten Beziehungen begrenzt.</p>{story.relations.slice(0, 60).map((relation, index) => <div key={`${relation.from}-${relation.to}-${index}`}><button className="text-action" onClick={() => artifactById(relation.from) && open(artifactById(relation.from) as Artifact)}><code>{relation.from}</code></button><span>→ {relation.kind} →</span><button className="text-action" onClick={() => artifactById(relation.to) && open(artifactById(relation.to) as Artifact)}><code>{relation.to}</code></button></div>)}</div>}
   </section>;
@@ -394,6 +405,10 @@ function SafeMarkdown({ content }: { content: string }) {
 }
 
 function Documentation({ state }: { state: ProjectState }) {
+  return state.presentation ? <DocumentationSpaces state={state} /> : <LegacyDocumentation state={state} />;
+}
+
+function LegacyDocumentation({ state }: { state: ProjectState }) {
   const [query, setQuery] = useState(''); const [type, setType] = useState('alle'); const [status, setStatus] = useState('alle'); const [phase, setPhase] = useState('alle'); const [process, setProcess] = useState('alle');
   const [selectedId, setSelectedId] = useState(state.documents[0]?.id ?? ''); const byId = new Map(state.documents.map((document) => [document.id, document]));
   const values = (field: 'documentType' | 'status' | 'phase' | 'process') => [...new Set(state.documents.map((document) => document[field] ?? 'Nicht belegt'))].sort((left, right) => left.localeCompare(right, 'de'));
@@ -420,15 +435,15 @@ function Sources({ state, context }: { state: ProjectState; context: ProjectCont
 
 type StoryTicket = NonNullable<ProjectState['story']>['tickets'][number];
 
-function Detail({ artifact, storyTicket, close }: { artifact: Artifact; storyTicket?: StoryTicket; close: () => void }) {
+function Detail({ artifact, storyTicket, presentationTicket, close }: { artifact: Artifact; storyTicket?: StoryTicket; presentationTicket?: PresentationTicket; close: () => void }) {
   const ref = useRef<HTMLDivElement>(null); const trigger = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   useEffect(() => { ref.current?.querySelector<HTMLButtonElement>('button')?.focus(); const handleKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); }; addEventListener('keydown', handleKey); return () => { removeEventListener('keydown', handleKey); trigger.current?.focus(); }; }, [close]);
   const dependencies = boundedList(artifact.dependencies, renderLimits.detailReferences); const documents = boundedList(artifact.documents, renderLimits.detailReferences);
   const meetings = boundedList(artifact.meetings, renderLimits.detailReferences); const evidence = boundedList(artifact.evidence, renderLimits.detailEvidence);
   const deliverables = boundedList(artifact.deliverables, renderLimits.detailReferences); const history = boundedList(artifact.history, renderLimits.historyEvents);
   const storyEvidence = storyTicket ? boundedList(storyTicket.evidenceRefs, renderLimits.detailEvidence) : null;
-  return <div className="drawer-scrim"><div className="drawer" ref={ref} role="dialog" aria-modal="true" aria-labelledby="detail-title"><button className="drawer-close" onClick={close}>Schließen</button><h2 id="detail-title">{artifact.id}</h2><h3>{sourceText(artifact.title)}</h3><dl>
-    <dt>Typ</dt><dd>{displayArtifactType(artifact.sourceType)}</dd><dt>Status</dt><dd>{displayStatus(artifact.status)}</dd><dt>Phase</dt><dd><code>{sourcePhaseLabel(artifact)}</code></dd><dt>Arbeitsstrom</dt><dd>{sourceText(artifact.workstream)}</dd>
+  return <div className="drawer-scrim"><div className="drawer" ref={ref} role="dialog" aria-modal="true" aria-labelledby="detail-title"><button className="drawer-close" onClick={close}>Schließen</button>{presentationTicket && <TicketTypeIcon ticket={presentationTicket} />}<h2 id="detail-title">{artifact.id}</h2><h3>{sourceText(artifact.title)}</h3><dl>
+    <dt>Typ</dt><dd>{presentationTicket?.typeLabel ?? displayArtifactType(artifact.sourceType)}</dd><dt>Status</dt><dd>{displayStatus(artifact.status)}</dd><dt>Phase</dt><dd><code>{sourcePhaseLabel(artifact)}</code></dd><dt>Arbeitsstrom</dt><dd>{sourceText(artifact.workstream)}</dd>
     <dt>Planaufwand</dt><dd>{sourceEffortLabel(artifact)}</dd><dt>Erfasster Aufwand</dt><dd>{sourceActualLabel(artifact)}</dd><dt>Beginn</dt><dd>{sourceDateLabel(artifact.startDate)}</dd><dt>Fällig</dt><dd>{sourceDateLabel(artifact.dueDate)}</dd>
     <dt>Abrechenbar</dt><dd>{artifact.billable === null ? 'Nicht belegt' : artifact.billable ? 'Ja' : 'Nein'}</dd><dt>Abrechnungswoche</dt><dd>{artifact.billingWeek ?? 'Nicht belegt'}</dd><dt>Abrechnungsstatus</dt><dd>{displayBillingStatus(artifact.billingStatus)}</dd>
     <dt>Dokumenttyp</dt><dd>{displayDocumentType(artifact.documentType)}</dd><dt>Besprechungsdatum</dt><dd>{sourceDateLabel(artifact.meetingDate)}</dd><dt>Verantwortung</dt><dd>{sourceText(artifact.owner)}</dd><dt>Priorität</dt><dd>{sourceText(artifact.priority)}</dd><dt>Quelle</dt><dd><code>{artifact.sourcePath}</code></dd>

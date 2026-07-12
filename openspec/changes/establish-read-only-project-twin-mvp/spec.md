@@ -69,3 +69,23 @@ Der Bereich `projektdokumentation` MUSS alle im Branch-Index positivgelisteten M
 Markdown MUSS ohne aktives HTML, Skripte oder unkontrollierte Navigation gerendert werden. Unsichere Links, nicht positivgelistete relative Dokumentziele, fehlende Blobs, ungültige Elternbeziehungen und Commitbewegungen blockieren fail-closed oder bleiben nachweislich nicht klickbar. „In Confluence öffnen“ DARF nur für eine strukturierte kanonische HTTPS-URL innerhalb einer im Snapshot erlaubten Origin und mit stabiler Seitenidentität aktiv sein. Fehlt dieser Producervertrag, zeigt der Twin den Link deaktiviert und benennt die Lücke.
 
 Akzeptanz: Desktop und Mobil zeigen Dokumentnavigation und Inhalt ohne horizontalen Seitenüberlauf; Tastatur, Fokus, Inhaltsverzeichnis, Verlauf, Leerzustand und deaktivierter Confluence-Link sind verständlich deutsch. Commit, Quelldatei, Aktualisierungsstand und Validierungsstatus sind pro Seite nachgelagert sichtbar. Der Twin speichert keine Dokumentkopie und bietet keinen schreibenden oder kommentierenden Pfad.
+
+## Producerdefinierte Wissensräume und Navigation
+
+Der Twin MUSS Wissensräume, Module, Abschnitte, Seitenbäume, Reihenfolgen und initiale Aufklappzustände ausschließlich aus einer streng validierten Präsentationsstruktur übernehmen. Der Consumer DARF weder Space-Reihenfolge noch Kapitel, Elternbeziehungen oder Standardzustände aus Pfaden, Nummern, Titeln oder Kennungen ableiten. Drei getrennte Räume für Kundenprojekt, BC-Basic-Standardprodukt und Consultant-Handbuch MÜSSEN als eigenständige, deutsch bezeichnete Navigation erscheinen. Direkte Links MÜSSEN den notwendigen eingeklappten Pfad öffnen, ohne den producerdefinierten Standard dauerhaft zu verändern.
+
+Akzeptanz: Doppelte Knoten- oder Reihenfolgenkennungen, Zyklen, unbekannte Knotentypen, ungültige Eltern, Referenzen oder Aufklappzustände blockieren mit HTTP 503. Der sitzungsbezogene Zustand ist an Projekt und Commit gebunden, wird beim Quellenwechsel verworfen und erzeugt keinen Schreibpfad. Module und Unterbäume sind mit Tastatur, sichtbarem Fokus, `aria-expanded` sowie deutschen Auf- und Einklappbezeichnungen bedienbar.
+
+## Kanonische Ticketseite und Typkennzeichnung
+
+Ein eigener Hauptpunkt `tickets` MUSS ausschließlich die vom Producer ausdrücklich als kundenlesbare Projektstory klassifizierte Ticketmenge verwenden. Historische oder interne Traceability-Issues DÜRFEN weder Summen, Filter, Board, Liste noch Timeline verfälschen. Boardspalten, kompakte Liste, Gruppen, Filter, sichtbare Felder und initiale Gruppenstände MÜSSEN producerdefiniert sein. Die Hierarchie entsteht ausschließlich aus den strukturierten Typ- und Elternfeldern.
+
+Die erlaubten Tickettypen sind `epic`, `story`, `task`, `subtask`, `bug` und `change`. Jede Boardkarte, Listenzeile, Suche, jeder Timeline-Verweis und das Ticketdetail MÜSSEN den producerdefinierten Iconschlüssel direkt vor Key und Titel darstellen. Icon, zugänglicher deutscher Typtext und Tooltip tragen gemeinsam die Bedeutung; Status und Priorität bleiben getrennte visuelle Kanäle. Unbekannte Typen, Iconschlüssel, Hierarchien, Gruppen oder Referenzen blockieren fail-closed und werden niemals aus ID oder Titel geraten.
+
+Akzeptanz: Fixturetests beweisen Epic, Story, Aufgabe, Unteraufgabe, Fehler und Änderung sowie Zyklen, doppelte IDs oder Reihenfolgen, unbekannte Referenzen, ungültige Initialzustände und Iconschlüssel. Der Browser zeigt Board und hierarchische Liste, Auf- und Einklappen, Filter, Ticketdetail, Timelinekennzeichen und einen echten 503-Fall.
+
+## Dokumentartgerechtes sicheres Markdown
+
+Der Renderer MUSS sichere Markdownüberschriften, interne Links, semantische Tabellen, verschachtelte Listen, Checklisten und Codeblöcke ohne HTML-Injektion darstellen. Die producerdefinierte Dokumentart darf ausschließlich die visuelle Gewichtung vorhandener Struktur beeinflussen; der Twin DARF keine Lernziele, Prozessschritte, Kontrollen, Prüfergebnisse oder Arbeitsanweisungen ergänzen. Unsichere Links und aktive Inhalte blockieren weiterhin fail-closed.
+
+Akzeptanz: Repräsentative Fixtureseiten für Verifikation, Support, Unternehmen, Prozesse, UAT, Cutover/Hypercare, Produktbuch und Consultant-Handbuch bleiben auf Desktop lesbar; ein einfacher Responsive-Smoke verhindert horizontalen Seitenüberlauf.
