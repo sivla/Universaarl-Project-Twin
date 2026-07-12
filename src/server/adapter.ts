@@ -1387,6 +1387,41 @@ function nullableTechnicalStrings(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => technicalId.safeParse(item).success) : [];
 }
 
+const spectraReleaseEvidenceSchema = z.object({
+  tag: z.object({ name: z.string().min(1), peeledCommit: z.string().regex(fullSha) }).passthrough(),
+  payload: z.object({ bundleDigest: z.string().regex(/^[a-f0-9]{64}$/), fileCount: z.number().int().nonnegative(), verifiedGitBlobs: z.number().int().nonnegative(), mismatches: z.number().int().nonnegative() }).passthrough(),
+  release: z.object({ version: z.string().min(1) }).passthrough(),
+  verification: z.object({ status: z.string().min(1) }).passthrough(),
+}).passthrough();
+
+const spectraConformanceEvidenceSchema = z.object({
+  status: z.string().min(1),
+  spectraRelease: z.string().min(1),
+  graphCoverage: z.object({ nativeRelations: z.number().int().nonnegative(), portableEdges: z.number().int().nonnegative(), productDecision: z.string().min(1), standardizedCoverageMetric: z.boolean() }).passthrough(),
+}).passthrough();
+
+export function spectraEvidenceSummary(kindId: string, value: unknown) {
+  if (kindId === 'spectra-release-evidence') {
+    const data = schema(value, spectraReleaseEvidenceSchema);
+    if (data.payload.fileCount !== data.payload.verifiedGitBlobs || data.payload.mismatches !== 0) sourceError('Die Spectra-Release-Evidence ist nicht vollstaendig bestaetigt.');
+    return {
+      title: `Spectra ${data.release.version} · ${data.payload.verifiedGitBlobs}/${data.payload.fileCount} Payloads`,
+      status: data.verification.status,
+      rationale: `Tag ${data.tag.name} · Commit ${data.tag.peeledCommit} · Digest ${data.payload.bundleDigest}`,
+    };
+  }
+  if (kindId === 'spectra-portable-conformance-evidence') {
+    const data = schema(value, spectraConformanceEvidenceSchema);
+    const decision = data.graphCoverage.productDecision === 'accepted-graph-separation' ? 'Graphtrennung akzeptiert' : `Graphentscheidung ${data.graphCoverage.productDecision}`;
+    return {
+      title: `${data.spectraRelease} · ${decision}`,
+      status: data.status,
+      rationale: `${data.graphCoverage.nativeRelations} native Relationen · ${data.graphCoverage.portableEdges} portable Kanten · Coverage-Metrik ${data.graphCoverage.standardizedCoverageMetric ? 'veröffentlicht' : 'nicht veröffentlicht'}`,
+    };
+  }
+  return null;
+}
+
 function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
   const artifacts: Artifact[] = [];
   const add = (value: z.input<typeof artifactSchema>) => artifacts.push(sanitizeArtifact(artifactSchema.parse(value)));
@@ -1485,6 +1520,12 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
     }
     if (declaration.format !== 'yaml' && declaration.format !== 'json') continue;
     const data = selectedYaml(reader, source);
+    const spectraSummary = spectraEvidenceSummary(declaration.kindId, data);
+    if (spectraSummary) {
+      add({ id: declaration.id, kind: 'document', ...spectraSummary, phase: null, wave: null, workstream: 'Spectra',
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     const families: Array<[string, string, string, string?]> = [
       ['deliverables', 'id', 'title', 'status'], ['decisions', 'id', 'statement', 'status'], ['templates', 'id', 'purpose', 'approvalStatus'],
       ['sessions', 'id', 'title', 'status'], ['scenarios', 'id', 'title'], ['sources', 'id', 'title'], ['worklogs', 'worklogId', 'summary', 'approvalStatus'], ['invoices', 'invoiceId', 'summary', 'status'],
