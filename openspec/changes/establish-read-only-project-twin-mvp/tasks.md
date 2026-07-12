@@ -10,5 +10,6 @@
 - [x] Identische Branchbindung für Zustand und Nachweisauflösung nachweisen
 - [x] Commitgebundene Projektstory mit Angebot, Seitenbaum, Tickets, Timeline und Hypercare als normalisierte Artefakte anzeigen
 - [x] Positive und fail-closed Browserabnahme der vollständigen Projektstory gegen den final validierten BC-Basic-Commit
+- [x] Spectra-0.9-Projektabgleich, Adapterprovenienz und Twin-Export commitgebunden validieren, deutsch anzeigen und im Browser positiv sowie fail-closed nachweisen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

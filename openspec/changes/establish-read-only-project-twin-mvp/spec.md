@@ -39,3 +39,9 @@ Die sichtbare Provenienz besteht im Branchmodus aus Projekt-ID, erlaubtem Branch
 Menschliche Freigabe und Archivierung bleiben eigenständige, noch nicht abgeschlossene Schritte. Dieser Vertrag DARF ihren Abschluss nicht aus Implementierung, Prüfungen oder einem lokalen Versionsstand ableiten.
 
 Akzeptanz: Die Aufgaben für menschliche Freigabe und Archivierung bleiben offen, bis ein gesonderter belegter Freigabevorgang abgeschlossen ist.
+
+## Spectra-0.9-Projektabgleich und Twin-Export
+
+Wenn der Projektindex die Spectra-0.9-Artefakte positivlistet, MUSS der Twin Projektabgleich, Adapterprovenienz, Twin-Export, Release-Evidence und Konformität gemeinsam und fail-closed validieren. Quellhash vor und nach der Projektion MÜSSEN dem commitgebundenen Indexblob entsprechen. Projektionsdigest, Mappingkennung, Mappingversion und sämtliche Exportartefakte MÜSSEN mit den positivgelisteten Git-Blobs und dem Index übereinstimmen. Unsichere Pfade, fehlende oder zusätzliche Artefakte, Hash- oder Digestabweichungen, Schreibvorgänge, Overwriterechte und eine widersprüchliche Releasebindung MÜSSEN die gesamte Ansicht blockieren.
+
+Akzeptanz: Die deutsche Oberfläche zeigt die historische Baseline, das ausdrücklich synthetische Angebot und Ist, die begründete Abweichung, die Exportanzahl sowie die bestätigte Spectra-Releasebindung. Sie kennzeichnet, dass keine echte Rechnung, Buchung, Zahlung oder produktive Leistung stattgefunden hat. Die Kundeninstanz bleibt Source of Truth; der Twin liest ausschließlich und speichert keine zweite fachliche Wahrheit.
