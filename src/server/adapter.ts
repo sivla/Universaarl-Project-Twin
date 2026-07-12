@@ -1312,7 +1312,7 @@ function indexedMarkdown(reader: CommitBlobReader, source: IndexedProjectSource)
   const document = parseBoundedFrontmatter(text, reader.limits);
   const content = document?.content ?? text;
   const heading = content.replace(/\r\n?/g, '\n').split('\n').map((line) => line.match(/^#\s+(.+)\s*$/)?.[1]?.trim()).find(Boolean) ?? null;
-  return { data: document?.data ?? {}, heading };
+  return { data: document?.data ?? {}, heading, content };
 }
 
 function storyDate(value: unknown) {
@@ -1583,8 +1583,13 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
     }
     if (declaration.format === 'markdown') {
       const document = indexedMarkdown(reader, source);
+      const operatorHandover = declaration.kindId === 'project-story-readable-handover';
+      const activity = operatorHandover ? [
+        document.content.includes('UABC-SMOKE-BCB-OPERATOR-001') ? 'Operator-Smoke-Test für ersten Arbeitstag und Hypercare belegt.' : null,
+        document.content.includes('Support übernimmt einen Fall nur mit Rolle') ? 'Support-Diagnosepaket mit Rolle, Umgebung, Fehlerbild, Kontrollwerten, Evidence und Rücksetzpunkt belegt.' : null,
+      ].filter((item): item is string => item !== null) : [];
       add({ id: declaration.id, kind: 'document', title: document.heading, status: null, phase: null, wave: null, workstream: null, rationale: null,
-        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+        activity, sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
       continue;
     }
     if (declaration.format === 'png') continue;
@@ -1610,6 +1615,20 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
     if (spectraSummary) {
       add({ id: declaration.id, kind: 'document', ...spectraSummary, phase: null, wave: null, workstream: 'Spectra',
         activity: spectraSummary.activity ?? [], sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
+    if (declaration.kindId === 'training-plan' && Array.isArray(data.sessions)) {
+      const routines = Array.isArray(data.operatorRoutines) ? data.operatorRoutines.filter((item) => item && typeof item === 'object') as RecordValue[] : [];
+      const escalations = Array.isArray(data.escalationOutcomes) ? data.escalationOutcomes.filter((item) => item && typeof item === 'object') as RecordValue[] : [];
+      const routineRoles = routines.flatMap((routine) => typeof routine.roleRef === 'string' ? [routine.roleRef] : []);
+      for (const raw of data.sessions) if (raw && typeof raw === 'object') {
+        const session = raw as RecordValue; const id = session.id; if (!technicalId.safeParse(id).success) continue;
+        const activity = [session.positiveCase, session.errorCase, session.retest, session.competencyPass].filter((item): item is string => typeof item === 'string');
+        if (activity.length !== 4) sourceError('Ein Operator-Lernpfad ist nicht vollständig belegt.');
+        if (id === (data.sessions[0] as RecordValue).id) activity.push(`Operatorroutinen: ${routines.length} · Rollen: ${routineRoles.join(', ')}`, `Eskalationsausgänge: ${escalations.length}`);
+        add({ id: id as string, kind: 'document', title: storyText(session.title), status: storyText(session.status), phase: null, wave: null, workstream: 'Kundenbefähigung', rationale: storyText(session.competencyPass), activity,
+          sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      }
       continue;
     }
     const families: Array<[string, string, string, string?]> = [

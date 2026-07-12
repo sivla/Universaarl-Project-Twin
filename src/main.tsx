@@ -320,7 +320,11 @@ function BusinessOverview({ state, open }: { state: ProjectState; open: (artifac
   const workshops = [...discovery.matchAll(/^\|\s*\d+\s+[–-]\s+/gmu)].length;
   const decisions = [...discovery.matchAll(/^\|\s*\d+\s*\|/gmu)].length;
   const dataDeliveries = state.artifacts.find((artifact) => artifact.sourceType === 'data-readiness-check')?.activity.length ?? 0;
-  const learningPaths = state.artifacts.filter((artifact) => artifact.sourceType === 'training-plan').length;
+  const training = state.artifacts.filter((artifact) => artifact.sourceType === 'training-plan');
+  const learningPaths = training.length;
+  const operatorSummary = training.flatMap((artifact) => artifact.activity).find((line) => line.startsWith('Operatorroutinen:'));
+  const escalationSummary = training.flatMap((artifact) => artifact.activity).find((line) => line.startsWith('Eskalationsausgänge:'));
+  const operatorHandover = state.artifacts.find((artifact) => artifact.sourceType === 'project-story-readable-handover')?.activity ?? [];
   const startklar = offer && baseline && discovery && workshops && decisions && dataDeliveries && learningPaths && state.artifacts.some((artifact) => artifact.sourceType === 'phase-2-readiness-gate') && state.artifacts.some((artifact) => artifact.sourceType === 'project-story-readable-handover')
     ? { offer: `Verbindliches Angebot: ${offer.plannedHours ?? 'nicht belegt'} Std. · ${offer.plannedCost === null ? 'nicht belegt' : `${offer.plannedCost.toLocaleString('de-DE')} EUR`}`, baseline, minimalPreparation: discovery.includes('Fast-Track:'), workshops, decisions, dataDeliveries, learningPaths }
     : null;
@@ -335,9 +339,9 @@ function BusinessOverview({ state, open }: { state: ProjectState; open: (artifac
     const nextText = focus.title === 'Was ist fertig?' ? `${completedItems} ausdrücklich abgeschlossene oder bestandene Elemente` : focus.title === 'Was ist offen?' ? documentedOpenItems ? `${documentedOpenItems} ausdrücklich offene Arbeitsobjekte oder Datenlücken prüfen` : 'Keine ausdrücklich offenen Arbeitsobjekte, P1/P2 oder Datenlücken' : focus.title === 'Was ist als Nächstes zu tun?' && !openItems ? 'Simulationsabschluss und Handover nachvollziehen; produktive Nutzung bleibt außerhalb des Scopes.' : openItems ? `${openItems} ausdrücklich offene oder blockierte Elemente prüfen` : 'Kein ausdrücklich offener Status in der Projektion';
     const startklarFacts = !startklar ? [] : focus.title === 'Was ist verkauft?' ? [startklar.offer, startklar.baseline]
       : focus.title === 'Wo stehen wir?' ? [`Startklar-Paket: ${startklar.workshops} Workshops · ${startklar.decisions} Entscheidungen · ${startklar.dataDeliveries} Datenlieferungen`]
-        : focus.title === 'Was ist fertig?' ? [`Entry-Gate für Setup und UAT belegt · ${startklar.learningPaths} rollenbasierte Lernpfade`]
+        : focus.title === 'Was ist fertig?' ? [`Entry-Gate für Setup und UAT belegt · ${startklar.learningPaths} Rollenpfade mit positivem Fall, Fehler, Retest und Kompetenzpass`, operatorSummary ? `${operatorSummary} · keine künstlichen Trainings für P-001 oder P-016` : 'Operatorroutinen nicht belegt', 'Kompetenzpass ist simuliert und keine reale Kundensandboxfreigabe.']
           : focus.title === 'Was ist offen?' ? [startklar.minimalPreparation ? 'Minimale Kundenvorbereitung ist beschrieben; technische Dokumentstatus zählen nicht als Kundenaufgabe.' : 'Kundenvorbereitung nicht belegt.']
-            : [`Nächste Handlung: Startklar-Paket und Handover entlang der ${startklar.learningPaths} Rollenpfade nachvollziehen.`];
+            : [`Nächste Handlung: Kunde und Key User führen den Operator-Smoke-Test entlang der ${startklar.learningPaths} Rollenpfade aus; Support übernimmt nur das vollständige Diagnosepaket.`, escalationSummary ?? 'Eskalationsausgänge nicht belegt', ...operatorHandover];
     return <article key={focus.title}><h3>{focus.title}</h3><p>{focus.question}</p>{startklarFacts.length > 0 && <ul className="business-facts">{startklarFacts.map((fact) => <li key={fact}>{fact}</li>)}</ul>}<strong>{matches.length} belegte Elemente</strong><small>{nextText}</small>{matches[0] && <button onClick={() => open(matches[0])}>Belegtes Detail öffnen</button>}</article>;
   })}</div><p className="honest-note">Die vier Reifestufen werden aus den belegten Projektphasen und Gates gelesen: Vorbereitung, Umsetzung, Abnahme und stabilisierter Abschluss. Nicht belegte oder widersprüchliche Aussagen bleiben sichtbar leer beziehungsweise blockieren die Ansicht.</p></section>;
 }
