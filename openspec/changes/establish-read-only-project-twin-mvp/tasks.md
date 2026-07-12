@@ -24,5 +24,6 @@
 - [x] Jira-Interimsvertrag aus dem validierten Producercommit mit Phase → Epic → Story → Aufgabe, 50 producerdefinierten kundenlesbaren Tickets, ausschließlich auf Aufgaben fakturierbaren Worklogs sowie drei Spaces und 22 Navigationsknoten commitgebunden integrieren und browserbelegen
 - [x] Laufenden Producerbranch ohne feste Runtime-SHA einmalig auflösen, Kandidaten atomar validieren und den letzten gültigen Stand bei ungültiger Aktualisierung sichtbar halten
 - [x] Finalen Drei-Space-Delivery-Commit mit 121 Artefakten, 43 Dokumenten, 28 Confluence-Seiten, 6/8/8 Hauptseiten, sechs Unterseiten und Jira commitgebunden integrieren und real browserbelegen
+- [x] Idempotenten lokalen Starter mit Health-, Status-, eigentumsgebundenem Stop- und Neustartnachweis für Port 4173 bereitstellen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

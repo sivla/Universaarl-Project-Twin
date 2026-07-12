@@ -226,6 +226,8 @@ function technicalForm(value, context = 'inline-code') {
   if (/^[a-f0-9]{40,64}$/.test(text) || /^UABC-[A-Z0-9-]+$/.test(text) || /^(?=[A-Z0-9_]*[_0-9])[A-Z][A-Z0-9_]{2,}$/.test(text)) return true;
   if (/^(?:GET|POST|PUT|PATCH|DELETE)\s+\/[A-Za-z0-9_./:{}?&=-]+$/.test(text)) return true;
   if (/^(?:npm|npx|node|git|pwsh|powershell|tsc|vite|vitest)(?:\s+[-A-Za-z0-9_./:=@{}]+)+$/.test(text)) return true;
+  if (/^-[A-Za-z][A-Za-z0-9-]*$/.test(text)) return context === 'inline-code' || context === 'technical-value';
+  if (/^"\$[A-Za-z_][A-Za-z0-9_]*"$/.test(text)) return context === 'inline-code' || context === 'technical-value';
   if (/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(text)) return context === 'inline-code' || context === 'technical-value';
   if (/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(text)) return context === 'inline-code' || context === 'technical-value';
   if (/^v?\d+(?:\.\d+){1,3}$/.test(text)) return true;
@@ -519,6 +521,36 @@ function validateCss(file, text, findings, firstLine = 1) {
   for (const match of text.matchAll(/\bcontent\s*:\s*(["'])([\s\S]*?)\1/g)) if (match[2].trim()) addFinding(findings, segment(file, firstLine + lineAt(text, match.index ?? 0) - 1, match[2]));
 }
 
+function validatePowerShell(file, text, findings, firstLine = 1) {
+  const lines = text.split(/\r?\n/);
+  let blockComment = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lineNumber = firstLine + index;
+    if (blockComment) {
+      const end = line.indexOf('#>');
+      const content = end >= 0 ? line.slice(0, end) : line;
+      if (content.trim()) addFinding(findings, segment(file, lineNumber, content));
+      if (end >= 0) blockComment = false;
+      continue;
+    }
+    const blockStart = line.indexOf('<#');
+    if (blockStart >= 0) {
+      const end = line.indexOf('#>', blockStart + 2);
+      const content = line.slice(blockStart + 2, end >= 0 ? end : undefined);
+      if (content.trim()) addFinding(findings, segment(file, lineNumber, content));
+      blockComment = end < 0;
+    }
+    const comment = line.match(/^\s*#(?!requires\b)(.*)$/i);
+    if (comment?.[1].trim()) addFinding(findings, segment(file, lineNumber, comment[1]));
+    for (const match of line.matchAll(/'(?:''|[^'])*'|"(?:`.|[^"`])*"/g)) {
+      const value = match[0].slice(1, -1).replace(/''/g, "'").replace(/`([`"'$])/g, '$1');
+      const context = technicalForm(value, 'technical-value') || /^-[A-Za-z]/.test(value) || /[$\\/.{}()[\]^*+?|]/.test(value) ? 'technical-value' : 'prose';
+      addFinding(findings, segment(file, lineNumber, value, context));
+    }
+  }
+}
+
 function validateHtml(file, text, findings, firstLine = 1) {
   const blockPattern = /<(script|style)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi;
   let masked = text;
@@ -633,6 +665,7 @@ function validateTextFile(file, bytes, findings) {
   if (yamlExtensions.has(extension)) return validateYaml(file, text, findings);
   if (htmlExtensions.has(extension)) return validateHtml(file, text, findings);
   if (sourceExtensions.has(extension)) return validateSource(file, text, findings);
+  if (extension === '.ps1') return validatePowerShell(file, text, findings);
   if (extension === '.css') return validateCss(file, text, findings);
   fail(`Die Datei ${file} besitzt kein positivgelistetes prüfbares Format.`);
 }

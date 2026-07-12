@@ -303,6 +303,13 @@ describe('Maschinenlesbarer deutscher Sprachvertrag', () => {
     expectRejected(invalidIco, 'symbol.ico');
   });
 
+  it('prüft sichtbare Meldungen in PowerShell-Startern natürlich deutsch', () => {
+    const accepted = runGate(repository({ 'scripts/start.ps1': "Write-Host 'Project Twin ist bereit.'\n" }));
+    expect(accepted.status).toBe(0);
+    expect(accepted.stderr).toBe('');
+    expectRejected(repository({ 'scripts/start.ps1': "Write-Host 'Quick brown fox jumps'\n" }), 'scripts/start.ps1');
+  });
+
   it('weist übergroße, ungültig kodierte und unbekannte Textformate geschlossen zurück', () => {
     const tooLarge = repository();
     write(tooLarge, 'docs/gross.md', Buffer.alloc(1024 * 1024 + 1, 0x61));

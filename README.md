@@ -24,11 +24,11 @@ Die dargestellte Quelle ist eine durch die betreibende Person ausgewählte, comm
 
 ## Lokal starten
 
-1. Den kanonischen Blueprint im Geschwisterordner **Universaarl Projekt BC Basic** bereitstellen. Nur für einen abweichenden lokalen Checkout die Beispieldatei `.env.example` nach `.env.local` kopieren und UABC_SOURCE_REPO auf dessen absoluten Pfad setzen.
-2. `npm ci`
-3. `npm --silent run test:german`
-4. `npm run check`
-5. `npm run dev`
-6. `http://127.0.0.1:4173/projekte/universaarl/aktueller-stand` öffnen.
+1. Den kanonischen Blueprint im Geschwisterordner **Universaarl Projekt BC Basic** bereitstellen. Für einen abweichenden lokalen Checkout kann `UABC_SOURCE_REPO` im aufrufenden Prozess oder der Parameter -SourceRepo gesetzt werden; der Starter liest keine `.env.local`.
+2. Einmalig `npm ci` ausführen.
+3. Den Twin anschließend mit genau einem Befehl starten: `npm run twin:start`.
+4. `http://127.0.0.1:4173/` öffnen. Mit `npm run twin:start -- -OpenBrowser` öffnet der Starter die Adresse nach erfolgreicher Health-Prüfung selbst.
+
+`npm run twin:status` prüft den Health-Endpunkt. `npm run twin:stop` beendet ausschließlich einen Prozess, den dieser Starter selbst mit passender Laufzeitkennung gestartet hat. PID und Protokolle liegen unter dem ignorierten Ordner `.runtime/`. Ist Port 4173 bereits durch einen gesunden Twin belegt, ist der Start idempotent erfolgreich; bei einem fremden oder ungesunden Dienst bricht er verständlich ab und beendet nichts.
 
 Die neue Arbeitsansicht ist unter `http://127.0.0.1:4173/projekte/bc-basic/arbeit` erreichbar. Der Projekt-Twin berechnet weder Termine noch Aufwand oder Rechnungen und besitzt keine schreibende Route. Nicht im Quellenvertrag belegte Meeting-, Planungs-, Dokumentations- oder Abrechnungsdaten werden nicht ergänzt.

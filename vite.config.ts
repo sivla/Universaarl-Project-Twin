@@ -68,6 +68,14 @@ export default defineConfig(({ mode }) => {
             const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
             if (!pathname.startsWith('/api/')) return next();
             const active = await branchChannel.refresh();
+            if (pathname === '/api/health') {
+              res.statusCode = 200;
+              res.setHeader('Cache-Control', 'no-store');
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              res.setHeader('X-Universaarl-Service', 'project-twin');
+              res.end(JSON.stringify({ application: 'project-twin', status: 'bereit', channel: active.channel }));
+              return;
+            }
             const result = await dispatchProjectApi(req.method || 'GET', pathname, active.value);
             if (result.status === 200 && pathname.endsWith('/state') && result.body && typeof result.body === 'object' && 'source' in result.body) {
               const body = result.body as { source?: Record<string, unknown> };
