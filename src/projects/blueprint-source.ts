@@ -19,8 +19,8 @@ export type SnapshotSourceBinding = Readonly<{
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: 'e6dc15ba951928ca54b795ea421e40a7cc015aeb',
-  tree: '1acfaa375451d7e251830b83192b912ed4d2077e',
+  commit: 'ab2497dc4f96ed6f6a402cf84ee160f29d84e822',
+  tree: 'e882c342bb569e7d56a0a84bbf488f1bf7896a90',
   artifactCount: 108,
   documentCount: 32,
   documentCatalogPath: 'exports/project-data/v1/document-catalog.json',
