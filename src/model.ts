@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const phases = ['Strategize', 'Initiate', 'Implement', 'Prepare', 'Operate'] as const;
 export const normalizedPhases = [...phases, 'Nicht belegt'] as const;
-export const artifactKinds = ['epic', 'story', 'task', 'bug', 'change', 'capability', 'architecture', 'document', 'evidence'] as const;
+export const artifactKinds = ['phase', 'epic', 'story', 'task', 'bug', 'change', 'capability', 'architecture', 'document', 'evidence'] as const;
 
 export const sourceDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -52,33 +52,36 @@ export const storyPageSchema = z.object({ id: sourceTechnicalIdSchema, title: z.
 export const storyAcceptanceSchema = z.object({ text: z.string().min(1), fulfilled: z.boolean().nullable() }).strict();
 export const storyCommentSchema = z.object({ id: sourceTechnicalIdSchema, type: z.string().min(1), time: sourceDateSchema.nullable(), role: z.string().min(1).nullable(), text: z.string().min(1), evidenceRef: z.string().nullable() }).strict();
 export const storyWorklogSchema = z.object({ date: sourceDateSchema.nullable(), role: z.string().min(1).nullable(), hours: z.number().nonnegative(), cost: z.number().nonnegative().nullable(), activity: z.string().min(1).nullable(), phase: z.string().min(1).nullable() }).strict();
-export const storyTicketSchema = z.object({ id: sourceTechnicalIdSchema, type: z.string().min(1), status: z.string().min(1), summary: z.string().min(1), assignee: z.string().nullable(), priority: z.string().nullable(), parent: sourceTechnicalIdSchema.nullable(), dependencies: z.array(z.string()).default([]), acceptanceCriteria: z.array(storyAcceptanceSchema).default([]), statusHistory: z.array(z.object({ status: z.string().min(1), time: sourceDateSchema }).strict()).default([]), comments: z.array(storyCommentSchema).default([]), worklogs: z.array(storyWorklogSchema).default([]), evidenceRefs: z.array(z.string()).default([]) }).strict();
+export const storyTicketSchema = z.object({ id: sourceTechnicalIdSchema, type: z.string().min(1), status: z.string().min(1), summary: z.string().min(1), assignee: z.string().nullable(), priority: z.string().nullable(), parent: sourceTechnicalIdSchema.nullable(), dependencies: z.array(z.string()).default([]), acceptanceCriteria: z.array(storyAcceptanceSchema).default([]), statusHistory: z.array(z.object({ status: z.string().min(1), time: sourceDateSchema }).strict()).default([]), comments: z.array(storyCommentSchema).default([]), worklogs: z.array(storyWorklogSchema).default([]), evidenceRefs: z.array(z.string()).default([]), phaseId: sourceTechnicalIdSchema.nullable().default(null), phaseRefs: z.array(sourceTechnicalIdSchema).default([]), billingSource: z.enum(['task-rollup-only', 'task-worklogs']).nullable().default(null), estimateHours: z.number().nonnegative().nullable().default(null), remainingHours: z.number().nonnegative().nullable().default(null), netAmount: z.number().nonnegative().nullable().default(null), billable: z.boolean().nullable().default(null) }).strict();
 export const storyTimelineSchema = z.object({ id: sourceTechnicalIdSchema, time: sourceDateTimeSchema, phase: z.string().min(1), role: z.string().min(1), tickets: z.array(z.string()).default([]), pages: z.array(z.string()).default([]), sessions: z.array(z.string()).default([]), action: z.string().min(1), result: z.string().min(1), evidence: z.array(z.string()).default([]), decision: z.string().min(1), nextStep: z.string().min(1) }).strict();
 export const storyHypercareSchema = z.object({ day: z.number().int().positive(), dailyPage: z.string().min(1), ticket: z.string().min(1), comment: z.string().min(1), priority: z.string().min(1), diagnosis: z.string().min(1), fix: z.string().min(1), retest: z.string().min(1), status: z.string().min(1), decision: z.string().min(1), evidence: z.array(z.string()).default([]) }).strict();
 const storyRelationEndpointSchema = z.string().min(1).max(1_000).refine((value) => !value.includes('\\') && !value.startsWith('/') && !value.includes('..') && !/[\u0000-\u001f]/.test(value));
 export const storyRelationSchema = z.object({ from: storyRelationEndpointSchema, to: storyRelationEndpointSchema, kind: z.string().min(1), label: z.string().min(1).nullable() }).strict();
 
 export const presentationInitialStateSchema = z.enum(['expanded', 'collapsed']);
-export const ticketTypeSchema = z.enum(['epic', 'story', 'task', 'subtask', 'bug', 'change']);
-export const ticketIconKeySchema = z.enum(['epic-layers', 'story-bookmark', 'task-check', 'subtask-branch', 'bug', 'change-arrow']);
-export const ticketColorTokenSchema = z.enum(['violet', 'blue', 'light-blue', 'red', 'turquoise']);
-export const presentationFieldSchema = z.enum(['type', 'key', 'summary', 'status', 'priority', 'phase', 'role', 'assignee', 'worklogHours']);
+export const ticketTypeSchema = z.enum(['phase', 'epic', 'story', 'task']);
+export const ticketIconKeySchema = z.enum(['phase-flag', 'epic-layers', 'story-bookmark', 'task-check', 'jira-phase', 'jira-epic', 'jira-story', 'jira-task']);
+export const ticketColorTokenSchema = z.enum(['slate', 'teal', 'violet', 'purple', 'green', 'blue']);
+export const presentationFieldSchema = z.enum(['type', 'key', 'summary', 'status', 'parent', 'priority', 'phase', 'role', 'assignee', 'worklogHours']);
 
 export const presentationTicketTypeSchema = z.object({
   type: ticketTypeSchema, typeLabel: z.string().min(1).max(40), displayIconKey: ticketIconKeySchema, displayColorToken: ticketColorTokenSchema,
 }).strict();
+export const presentationRollupSchema = z.object({ estimateHours: z.number().nonnegative(), actualHours: z.number().nonnegative(), remainingHours: z.number().nonnegative(), amountEur: z.number().nonnegative() }).strict();
 export const presentationTicketSchema = z.object({
   ticketId: sourceTechnicalIdSchema, type: ticketTypeSchema, typeLabel: z.string().min(1).max(40), displayIconKey: ticketIconKeySchema,
   displayColorToken: ticketColorTokenSchema, parentId: sourceTechnicalIdSchema.nullable(), projectStoryRole: z.literal('customer-readable'),
-  phase: z.string().min(1).max(80).nullable(), role: z.string().min(1).max(120).nullable(), initialState: presentationInitialStateSchema,
+  phaseId: sourceTechnicalIdSchema.nullable(), phaseRefs: z.array(sourceTechnicalIdSchema).max(100), billingSource: z.enum(['task-rollup-only', 'task-worklogs']),
+  estimateHours: z.number().nonnegative(), actualHours: z.number().nonnegative(), remainingHours: z.number().nonnegative(), amountEur: z.number().nonnegative(), billable: z.boolean(),
+  role: z.string().min(1).max(120).nullable(), initialState: presentationInitialStateSchema,
 }).strict();
 const presentationFilterSchema = z.object({
   id: sourceTechnicalIdSchema, label: z.string().min(1).max(80), field: z.enum(['type', 'status', 'priority', 'phase', 'role']),
   options: z.array(z.object({ value: z.string().min(1).max(120), label: z.string().min(1).max(120) }).strict()).min(1).max(100),
 }).strict();
-const presentationGroupSchema = z.object({
-  id: sourceTechnicalIdSchema, label: z.string().min(1).max(160), order: z.number().int().nonnegative(),
-  initialState: presentationInitialStateSchema, ticketIds: z.array(sourceTechnicalIdSchema).min(1).max(1_000),
+const presentationPhaseGroupSchema = z.object({
+  id: sourceTechnicalIdSchema, phaseTicketId: sourceTechnicalIdSchema, label: z.string().min(1).max(160), order: z.number().int().nonnegative(), initialState: presentationInitialStateSchema,
+  epicIds: z.array(sourceTechnicalIdSchema).min(1).max(1_000), ticketIds: z.array(sourceTechnicalIdSchema).min(1).max(1_000),
 }).strict();
 const presentationBoardColumnSchema = z.object({
   id: sourceTechnicalIdSchema, label: z.string().min(1).max(80), order: z.number().int().nonnegative(),
@@ -86,7 +89,7 @@ const presentationBoardColumnSchema = z.object({
 }).strict();
 const presentationViewBase = {
   id: sourceTechnicalIdSchema, label: z.string().min(1).max(80), order: z.number().int().nonnegative(), initialState: presentationInitialStateSchema,
-  visibleFields: z.array(presentationFieldSchema).min(1).max(20), filters: z.array(presentationFilterSchema).max(20), groups: z.array(presentationGroupSchema).min(1).max(100),
+  visibleFields: z.array(presentationFieldSchema).min(1).max(20), filters: z.array(presentationFilterSchema).max(20), groups: z.array(presentationPhaseGroupSchema).length(3),
 };
 export const presentationJiraViewSchema = z.discriminatedUnion('kind', [
   z.object({ ...presentationViewBase, kind: z.literal('board'), columns: z.array(presentationBoardColumnSchema).min(1).max(30) }).strict(),
@@ -95,7 +98,7 @@ export const presentationJiraViewSchema = z.discriminatedUnion('kind', [
 export const presentationNodeSchema = z.object({
   id: sourceTechnicalIdSchema, kind: z.enum(['module', 'group', 'section', 'page']), parentId: sourceTechnicalIdSchema.nullable(),
   order: z.number().int().nonnegative(), initialState: presentationInitialStateSchema, title: z.string().min(1).max(300),
-  purpose: z.string().min(1).max(500), audience: z.string().min(1).max(200), documentId: sourceTechnicalIdSchema.nullable(),
+  purpose: z.string().min(1).max(500).nullable(), audience: z.string().min(1).max(200).nullable(), documentId: sourceTechnicalIdSchema.nullable(),
 }).strict();
 export const presentationSpaceSchema = z.object({
   id: sourceTechnicalIdSchema, title: z.string().min(1).max(160), purpose: z.string().min(1).max(500), audience: z.string().min(1).max(200),
@@ -104,7 +107,7 @@ export const presentationSpaceSchema = z.object({
 export const presentationContractSchema = z.object({
   schemaVersion: z.literal(1), contractId: z.literal('UABC-TWIN-PRESENTATION-V1'), projectId: z.literal('bc-basic'),
   spaces: z.array(presentationSpaceSchema).length(3),
-  jira: z.object({ canonicalTicketCount: z.number().int().positive(), ticketTypes: z.array(presentationTicketTypeSchema).length(6), tickets: z.array(presentationTicketSchema).min(1).max(1_000), views: z.array(presentationJiraViewSchema).length(2) }).strict(),
+  jira: z.object({ canonicalTicketCount: z.number().int().positive(), ticketTypes: z.array(presentationTicketTypeSchema).length(4), tickets: z.array(presentationTicketSchema).min(1).max(1_000), views: z.array(presentationJiraViewSchema).length(2) }).strict(),
 }).strict();
 export const projectDocumentSchema = z.object({
   id: sourceTechnicalIdSchema, title: z.string().min(1).max(500), documentType: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/), status: z.string().min(1).max(120).nullable(),
@@ -119,6 +122,7 @@ export const projectStateSchema = z.object({
     projectId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), branch: z.string().min(1).max(120), commit: z.string().regex(/^[a-f0-9]{40}$/), dirty: z.boolean(),
     headFingerprint: z.string().regex(/^[a-f0-9]{64}$/), indexFingerprint: z.string().regex(/^[a-f0-9]{64}$/), statusFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     snapshot: z.object({ schemaVersion: z.literal(1), producerId: z.literal('blueprint'), producerCommitSha: z.string().regex(/^[a-f0-9]{40}$/), indexPath: sourceRelativePathSchema, payloadBundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), validationStatus: z.literal('validated'), spectraReleaseBinding: z.object({ productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'), releaseVersion: z.string().min(1), releaseTag: z.string().regex(/^spectra-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/), tagCommit: z.string().regex(/^[a-f0-9]{40}$/), manifestPath: sourceRelativePathSchema, manifestSourceCommit: z.string().regex(/^[a-f0-9]{40}$/), consumerMode: z.literal('INSTALLABLE_BLUEPRINT'), installableBlueprint: z.literal(true) }).strict() }).nullable().default(null),
+    channel: z.object({ branch: z.string().min(1).max(200), status: z.enum(['current', 'stale']), lastValidatedAt: z.string().datetime(), notice: z.string().min(1).max(300).nullable() }).strict().nullable().default(null),
     readAt: z.string().datetime(),
   }),
   artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), presentation: presentationContractSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),

@@ -21,5 +21,6 @@
 - [x] Nachrangige Projektdokumentation mit Suche, Filtern, Hierarchie, Inhalt, Querverweisen und Provenienz auf Desktop und Mobil browserbelegt bereitstellen
 - [x] Finalen V1.0-Snapshotanker mit 108/108 Indexartefakten und 32/32 katalogvalidierten Dokumenten commit- und treegebunden integrieren, negativ prüfen und browserbelegen
 - [x] Fixturebasierten Drei-Spaces-/Jira-Präsentationsvertrag mit eigener Ticketseite, Typkennzeichen, modularer Navigation, sicherem semantischem Markdown und fail-closed Negativmatrix implementieren und browserbelegen
+- [x] Jira-Interimsvertrag aus dem validierten Producercommit mit Phase → Epic → Story → Aufgabe, 50 producerdefinierten kundenlesbaren Tickets, ausschließlich auf Aufgaben fakturierbaren Worklogs sowie drei Spaces und 22 Navigationsknoten commitgebunden integrieren und browserbelegen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

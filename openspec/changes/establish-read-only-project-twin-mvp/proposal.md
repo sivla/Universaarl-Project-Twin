@@ -4,7 +4,7 @@
 - Status: `active`
 - Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, commitgebundener Snapshotvertrag, nachrangige Projektdokumentation, Prüfungen
 
-Der finale V1.0-Bindungsblock ersetzt die dokumentbezogene Frontmatter-Heuristik durch den kanonischen Producerkatalog und bindet den Twin exakt an den unabhängig validierten BC-Basic-Commit `ab2497dc4f96ed6f6a402cf84ee160f29d84e822` mit Tree `e882c342bb569e7d56a0a84bbf488f1bf7896a90`. Alle 108 Indexartefakte und 32 Dokumente stammen aus dieser einen SHA.
+Der aktuelle Jira-Interimsblock bindet den Twin exakt an den validierten BC-Basic-Commit `7b988e1cb8dee9b7f227481478ad97449e774100` mit Tree `d9d41714e81effdcc7e1b829bd0b2a32166b8a81`. Alle 111 Indexartefakte, 34 Dokumente und 50 kundenlesbaren Tickets stammen aus dieser einen SHA. Die finale Portfolioabnahme der nachgelagerten Drei-Space-Confluence-Überarbeitung bleibt ausdrücklich offen.
 
 ## Problem
 Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängende Projektwelt erkunden. Der Projektzwilling muss ihn darstellen, ohne fachliche Wahrheit zu kopieren oder Änderungen zurückzuschreiben.

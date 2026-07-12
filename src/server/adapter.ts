@@ -7,13 +7,14 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { artifactSchema, displayVerificationType, type Artifact, presentationContractSchema, type PresentationContract, projectDocumentSchema, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectState } from '../model';
+import { artifactSchema, displayStatus, displayVerificationType, type Artifact, presentationContractSchema, presentationInitialStateSchema, type PresentationContract, projectDocumentSchema, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectState } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
 const exactSafePaths = ['governance/reference-lifecycle.yaml', 'governance/schemas/project-snapshot-manifest.schema.json', 'exports/project-data/v1/index.yaml', 'exports/project-data/v1/snapshot-manifest.json'] as const;
 const fullSha = /^[a-f0-9]{40}$/;
 const blobSha = /^[a-f0-9]{40}$/;
+const sourceBranchName = z.string().min(1).max(200).refine((value) => !value.startsWith('/') && !value.endsWith('/') && !value.includes('..') && !value.includes('//') && !value.includes('@{') && !/[~^:?*[\]\\\s]/.test(value));
 const projectIdPattern = /^[a-z][a-z0-9-]{1,47}$/;
 const pngSignature = Buffer.from('89504e470d0a1a0a', 'hex');
 const gitNullDevice = process.platform === 'win32' ? 'NUL' : os.devNull;
@@ -191,28 +192,64 @@ function sameFingerprint(before: SourceFingerprint, after: SourceFingerprint) {
     && before.repositoryFingerprint === after.repositoryFingerprint;
 }
 
-const ticketTypePresentation = {
+function captureBoundFingerprint(repo: string, binding: ProjectSourceBinding): SourceFingerprint {
+  const checkout = captureFingerprint(repo);
+  const branchRef = `refs/heads/${binding.expectedBranch}`;
+  const commit = binding.branchTipRequired ? gitText(repo, ['rev-parse', '--verify', `${branchRef}^{commit}`]) : gitText(repo, ['rev-parse', '--verify', `${binding.expectedCommit}^{commit}`]);
+  if (!fullSha.test(commit) || commit !== binding.expectedCommit) sourceError('Der konfigurierte Freigabebranch hat sich vor oder während des commitgebundenen Lesens verändert.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
+  const tree = gitText(repo, ['rev-parse', '--verify', `${commit}^{tree}`]);
+  if (!fullSha.test(tree)) sourceError('Der gepinnte Quellen-Tree ist nicht eindeutig.');
+  return {
+    branch: binding.expectedBranch,
+    commit,
+    dirty: checkout.dirty,
+    headFingerprint: hash(`${branchRef}\0${commit}`),
+    indexFingerprint: checkout.indexFingerprint,
+    statusFingerprint: checkout.statusFingerprint,
+    repositoryFingerprint: checkout.repositoryFingerprint,
+  };
+}
+
+function captureSourceFingerprint(repo: string, binding: ProjectSourceBinding | undefined) {
+  return binding ? captureBoundFingerprint(repo, binding) : captureFingerprint(repo);
+}
+
+const fixtureTicketTypePresentation = {
+  phase: { typeLabel: 'Phase', displayIconKey: 'phase-flag', displayColorToken: 'slate' },
   epic: { typeLabel: 'Epic', displayIconKey: 'epic-layers', displayColorToken: 'violet' },
   story: { typeLabel: 'Story', displayIconKey: 'story-bookmark', displayColorToken: 'violet' },
   task: { typeLabel: 'Aufgabe', displayIconKey: 'task-check', displayColorToken: 'blue' },
-  subtask: { typeLabel: 'Unteraufgabe', displayIconKey: 'subtask-branch', displayColorToken: 'light-blue' },
-  bug: { typeLabel: 'Fehler', displayIconKey: 'bug', displayColorToken: 'red' },
-  change: { typeLabel: 'Änderung', displayIconKey: 'change-arrow', displayColorToken: 'turquoise' },
 } as const;
 
-export function validatePresentationContract(input: unknown, context: { ticketTypes?: ReadonlyMap<string, string>; ticketStatuses?: ReadonlyMap<string, string>; documentIds?: ReadonlySet<string> } = {}): PresentationContract {
+const producerTicketTypePresentation = {
+  phase: { typeLabel: 'Phase', displayIconKey: 'jira-phase', displayColorToken: 'teal' },
+  epic: { typeLabel: 'Epic', displayIconKey: 'jira-epic', displayColorToken: 'purple' },
+  story: { typeLabel: 'Story', displayIconKey: 'jira-story', displayColorToken: 'green' },
+  task: { typeLabel: 'Aufgabe', displayIconKey: 'jira-task', displayColorToken: 'blue' },
+} as const;
+
+const ticketTypePresentationProfiles = [fixtureTicketTypePresentation, producerTicketTypePresentation] as const;
+
+export function validatePresentationContract(input: unknown, context: { ticketTypes?: ReadonlyMap<string, string>; ticketStatuses?: ReadonlyMap<string, string>; documentIds?: ReadonlySet<string>; ticketWorklogs?: ReadonlyMap<string, { hours: number; amountEur: number }>; billingTotal?: { hours: number; amountEur: number } } = {}): PresentationContract {
   const parsed = presentationContractSchema.safeParse(input);
-  if (!parsed.success) sourceError('Die producerdefinierte Präsentationsstruktur ist ungültig.');
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path.map(String).join('.') || 'Wurzel';
+    sourceError(`Die producerdefinierte Präsentationsstruktur ist im Feld ${field} ungültig.`);
+  }
   const contract = parsed.data;
   const unique = (values: readonly unknown[]) => new Set(values).size === values.length;
   if (!unique(contract.spaces.map((space) => space.id)) || !unique(contract.spaces.map((space) => space.order))) sourceError('Die Wissensräume besitzen doppelte Kennungen oder Reihenfolgen.');
-  const expectedTypes = Object.keys(ticketTypePresentation);
-  if (!unique(contract.jira.ticketTypes.map((item) => item.type)) || contract.jira.ticketTypes.some((item) => JSON.stringify(ticketTypePresentation[item.type]) !== JSON.stringify({ typeLabel: item.typeLabel, displayIconKey: item.displayIconKey, displayColorToken: item.displayColorToken })) || expectedTypes.some((type) => !contract.jira.ticketTypes.some((item) => item.type === type))) sourceError('Die Tickettypdarstellung verletzt die geschlossene Allowlist.');
+  const expectedTypes = Object.keys(fixtureTicketTypePresentation) as Array<keyof typeof fixtureTicketTypePresentation>;
+  const activeProfile = ticketTypePresentationProfiles.find((profile) => expectedTypes.every((type) => {
+    const item = contract.jira.ticketTypes.find((entry) => entry.type === type);
+    return item && JSON.stringify(profile[type]) === JSON.stringify({ typeLabel: item.typeLabel, displayIconKey: item.displayIconKey, displayColorToken: item.displayColorToken });
+  }));
+  if (!activeProfile || !unique(contract.jira.ticketTypes.map((item) => item.type)) || expectedTypes.some((type) => !contract.jira.ticketTypes.some((item) => item.type === type))) sourceError('Die Tickettypdarstellung verletzt die geschlossene Allowlist.');
   const ticketIds = contract.jira.tickets.map((ticket) => ticket.ticketId);
   if (contract.jira.canonicalTicketCount !== ticketIds.length || !unique(ticketIds)) sourceError('Die kanonische Ticketmenge besitzt widersprüchliche Zähler oder Kennungen.');
   const ticketsById = new Map(contract.jira.tickets.map((ticket) => [ticket.ticketId, ticket]));
   for (const ticket of contract.jira.tickets) {
-    const expected = ticketTypePresentation[ticket.type];
+    const expected = activeProfile[ticket.type];
     if (ticket.typeLabel !== expected.typeLabel || ticket.displayIconKey !== expected.displayIconKey || ticket.displayColorToken !== expected.displayColorToken || (ticket.parentId && !ticketsById.has(ticket.parentId))) sourceError('Ein Ticket besitzt eine ungültige Typdarstellung oder Elternreferenz.');
     if (context.ticketTypes && context.ticketTypes.get(ticket.ticketId) !== ticket.type) sourceError('Die Präsentationsstruktur widerspricht dem kanonischen Story-Tickettyp.');
   }
@@ -220,6 +257,46 @@ export function validatePresentationContract(input: unknown, context: { ticketTy
     for (const id of ids) { const seen = new Set<string>([id]); let current = parentOf(id); while (current) { if (seen.has(current)) sourceError(message); seen.add(current); current = parentOf(current); } }
   };
   assertAcyclic(ticketIds, (id) => ticketsById.get(id)?.parentId, 'Die Tickethierarchie enthält einen Zyklus.');
+  const childrenByParent = new Map<string, PresentationContract['jira']['tickets']>();
+  for (const ticket of contract.jira.tickets) if (ticket.parentId) childrenByParent.set(ticket.parentId, [...(childrenByParent.get(ticket.parentId) ?? []), ticket]);
+  const coreTypes = new Set(['phase', 'epic', 'story', 'task']);
+  if (contract.jira.tickets.some((ticket) => !coreTypes.has(ticket.type))) sourceError('Die abrechenbare Projekthierarchie enthält einen nicht freigegebenen Issue-Typ.');
+  const phaseTickets = contract.jira.tickets.filter((ticket) => ticket.type === 'phase');
+  const phaseTicketIds = contract.jira.tickets.slice(0, 3).map((ticket) => ticket.ticketId);
+  if (phaseTickets.length !== 3 || contract.jira.tickets.slice(0, 3).some((ticket) => ticket.type !== 'phase') || contract.jira.tickets.slice(3).some((ticket) => ticket.type === 'phase')) sourceError('Die ersten drei kanonischen Tickets sind nicht eindeutig die producerdefinierten Phasen.' );
+  for (const ticket of contract.jira.tickets) {
+    const parent = ticket.parentId ? ticketsById.get(ticket.parentId) : undefined;
+    const children = childrenByParent.get(ticket.ticketId) ?? [];
+    if (ticket.type === 'phase') {
+      if (ticket.parentId || ticket.phaseId !== ticket.ticketId || ticket.phaseRefs.length !== 1 || ticket.phaseRefs[0] !== ticket.ticketId || ticket.billingSource !== 'task-rollup-only' || ticket.billable) sourceError('Ein Phase-Ticket verletzt die Wurzel-, Phasen- oder Abrechnungsgrenze.');
+    } else if (ticket.type === 'epic') {
+      if (!parent || parent.type !== 'phase' || ticket.phaseId !== parent.ticketId || ticket.phaseRefs.length !== 1 || ticket.phaseRefs[0] !== parent.ticketId || ticket.billingSource !== 'task-rollup-only' || ticket.billable || !children.length || children.some((child) => child.type !== 'story')) sourceError('Ein fachlicher Epic besitzt keine eindeutige Phase oder keinen fachlichen Story-Inhalt.');
+    } else if (ticket.type === 'story') {
+      if (!parent || parent.type !== 'epic' || !ticket.phaseId || ticket.phaseId !== parent.phaseId || ticket.phaseRefs.length || ticket.billingSource !== 'task-rollup-only' || ticket.billable || !children.length || children.some((child) => child.type !== 'task')) sourceError('Eine Story besitzt keinen eindeutigen fachlichen Epic oder keine Aufgaben.' );
+    } else {
+      if (!parent || parent.type !== 'story' || !ticket.phaseId || ticket.phaseId !== parent.phaseId || ticket.phaseRefs.length || ticket.billingSource !== 'task-worklogs' || !ticket.billable || children.length) sourceError('Eine Aufgabe verletzt die eindeutige Story- oder Abrechnungsbindung.');
+    }
+    const worklog = context.ticketWorklogs?.get(ticket.ticketId);
+    if (ticket.type !== 'task' && worklog && (worklog.hours !== 0 || worklog.amountEur !== 0)) sourceError('Nur Aufgaben dürfen fakturierbare Worklogs besitzen.');
+    if (ticket.type === 'task' && worklog && (ticket.actualHours !== worklog.hours || ticket.amountEur !== worklog.amountEur)) sourceError('Eine Aufgabe widerspricht ihren fakturierbaren Worklogs.');
+  }
+  const descendantTasks = (rootId: string) => {
+    const result: PresentationContract['jira']['tickets'] = []; const queue = [...(childrenByParent.get(rootId) ?? [])];
+    while (queue.length) { const item = queue.shift()!; if (item.type === 'task') result.push(item); else queue.push(...(childrenByParent.get(item.ticketId) ?? [])); }
+    return result;
+  };
+  const sum = (tickets: PresentationContract['jira']['tickets']) => tickets.reduce((totals, ticket) => ({ estimateHours: totals.estimateHours + ticket.estimateHours, actualHours: totals.actualHours + ticket.actualHours, remainingHours: totals.remainingHours + ticket.remainingHours, amountEur: totals.amountEur + ticket.amountEur }), { estimateHours: 0, actualHours: 0, remainingHours: 0, amountEur: 0 });
+  const sameRollup = (left: { estimateHours: number; actualHours: number; remainingHours: number; amountEur: number }, right: { estimateHours: number; actualHours: number; remainingHours: number; amountEur: number }, includeEstimate: boolean) => (!includeEstimate || left.estimateHours === right.estimateHours) && left.actualHours === right.actualHours && left.remainingHours === right.remainingHours && left.amountEur === right.amountEur;
+  for (const ticket of contract.jira.tickets.filter((item) => item.type !== 'task')) {
+    const taskRollup = sum(ticket.type === 'phase' ? contract.jira.tickets.filter((item) => item.type === 'task' && item.phaseId === ticket.ticketId) : descendantTasks(ticket.ticketId));
+    if (!sameRollup(ticket, taskRollup, false)) sourceError('Ein Elternvorgang besitzt keinen eindeutigen Task-basierten Ist-/Rest-/Betragsrollup.');
+  }
+  for (const epic of contract.jira.tickets.filter((ticket) => ticket.type === 'epic')) {
+    const actualPhaseRefs = [...new Set((childrenByParent.get(epic.ticketId) ?? []).map((child) => child.phaseId).filter((id): id is string => Boolean(id)))];
+    if (!unique(epic.phaseRefs) || epic.phaseRefs.length !== actualPhaseRefs.length || epic.phaseRefs.some((id) => !actualPhaseRefs.includes(id))) sourceError('Ein fachlicher Epic besitzt widersprüchliche Phasenreferenzen.');
+  }
+  const tasks = contract.jira.tickets.filter((ticket) => ticket.type === 'task'); const taskTotals = sum(tasks);
+  if (context.billingTotal && (taskTotals.actualHours !== context.billingTotal.hours || taskTotals.amountEur !== context.billingTotal.amountEur)) sourceError('Die fakturierbare Gesamtsumme stammt nicht exakt einmal aus Aufgaben-Worklogs.');
   for (const space of contract.spaces) {
     const nodeIds = space.nodes.map((node) => node.id);
     if (!unique(nodeIds)) sourceError('Ein Wissensraum besitzt doppelte Navigationskennungen.');
@@ -235,11 +312,22 @@ export function validatePresentationContract(input: unknown, context: { ticketTy
     assertAcyclic(nodeIds, (id) => nodesById.get(id)?.parentId, 'Die Wissensraumhierarchie enthält einen Zyklus.');
   }
   if (!unique(contract.jira.views.map((view) => view.id)) || !unique(contract.jira.views.map((view) => view.order)) || new Set(contract.jira.views.map((view) => view.kind)).size !== 2) sourceError('Die Jira-Ansichten sind nicht eindeutig als Board und Liste definiert.');
+  let boundGroups: string | null = null;
   for (const view of contract.jira.views) {
-    if (!unique(view.visibleFields) || !unique(view.filters.map((filter) => filter.id)) || !unique(view.groups.map((group) => group.id)) || !unique(view.groups.map((group) => group.order))) sourceError('Eine Jira-Ansicht besitzt doppelte Felder, Filter oder Gruppen.');
+    if (!unique(view.visibleFields) || !unique(view.filters.map((filter) => filter.id))) sourceError('Eine Jira-Ansicht besitzt doppelte Felder oder Filter.');
     for (const filter of view.filters) if (!unique(filter.options.map((option) => option.value))) sourceError('Ein Jira-Filter besitzt doppelte Optionen.');
-    const grouped = view.groups.flatMap((group) => group.ticketIds);
-    if (grouped.length !== ticketIds.length || !unique(grouped) || grouped.some((id) => !ticketsById.has(id))) sourceError('Eine Jira-Ansicht bildet die kanonische Ticketmenge nicht genau einmal ab.');
+    if (!unique(view.groups.map((group) => group.id)) || !unique(view.groups.map((group) => group.order)) || JSON.stringify(view.groups.map((group) => group.phaseTicketId)) !== JSON.stringify(phaseTicketIds)) sourceError('Eine Jira-Ansicht besitzt nicht dieselben drei Phase-Tickets in producerdefinierter Reihenfolge.');
+    for (const group of view.groups) {
+      if (!unique(group.epicIds) || !unique(group.ticketIds) || ticketsById.get(group.phaseTicketId)?.type !== 'phase') sourceError('Eine Phasengruppe besitzt doppelte oder ungültige Ticketreferenzen.');
+      const expectedEpics = contract.jira.tickets.filter((ticket) => ticket.type === 'epic' && ticket.phaseRefs.includes(group.phaseTicketId)).map((ticket) => ticket.ticketId);
+      const expectedTickets = contract.jira.tickets.filter((ticket) => ticket.ticketId === group.phaseTicketId || (ticket.type === 'epic' ? ticket.phaseRefs.includes(group.phaseTicketId) : ticket.phaseId === group.phaseTicketId)).map((ticket) => ticket.ticketId);
+      if (group.epicIds.length !== expectedEpics.length || group.epicIds.some((id) => !expectedEpics.includes(id)) || group.ticketIds.length !== expectedTickets.length || group.ticketIds.some((id) => !expectedTickets.includes(id))) sourceError('Eine Phasengruppe bildet ihre source-driven Epic- und Ticketmenge nicht exakt ab.');
+    }
+    const groupedTasks = view.groups.flatMap((group) => group.ticketIds).filter((id) => ticketsById.get(id)?.type === 'task');
+    if (!unique(groupedTasks) || groupedTasks.length !== tasks.length) sourceError('Eine Jira-Ansicht zählt Aufgaben oder Worklogs phasenübergreifend doppelt.');
+    const currentGroups = JSON.stringify(view.groups.map(({ id: _id, ...group }) => group));
+    if (boundGroups !== null && currentGroups !== boundGroups) sourceError('Board und kompakte Liste besitzen widersprüchliche Phasengruppen.');
+    boundGroups = currentGroups;
     if (view.kind === 'board') {
       if (!unique(view.columns.map((column) => column.id)) || !unique(view.columns.map((column) => column.order))) sourceError('Das Jira-Board besitzt doppelte Spalten oder Reihenfolgen.');
       const statuses = view.columns.flatMap((column) => column.statuses);
@@ -256,7 +344,7 @@ function assertSnapshotBinding(repo: string, fingerprint: SourceFingerprint, bin
   if (fingerprint.commit !== binding.expectedCommit) sourceError('Der aktuelle Quellen-Commit stimmt nicht mit der erwarteten Momentaufnahme ueberein.');
   if (fingerprint.branch !== binding.expectedBranch) sourceError('Der aktuelle Quellen-Branch stimmt nicht mit der erwarteten Bindung ueberein.');
   if (gitText(repo, ['remote', 'get-url', 'origin']) !== binding.expectedRemote) sourceError('Das Quellen-Remote stimmt nicht mit der erwarteten Bindung ueberein.');
-  if (fingerprint.dirty && process.env.UABC_BRANCH_COMMIT_CONTRACT !== '1') sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
+  if (fingerprint.dirty) sourceError('Die Arbeitskopie ist nicht sauber. Momentaufnahme nicht freigegeben.');
 }
 
 const sensitiveTokens = new Set([
@@ -682,12 +770,29 @@ const documentCatalogSharedEntrySchema = z.object({
   parentId: technicalId.nullable(), phase: z.string().min(1).max(120).nullable(), process: z.string().min(1).max(120).nullable(), status: z.string().min(1).max(120),
   ownerRefs: z.array(technicalId).max(50), jiraRefs: z.array(technicalId).max(200), referenceIds: z.array(technicalId).max(200), lastReviewed: sourceDateSchema.nullable(),
   visibility: z.literal('twin-visible'), readiness: z.string().min(1).max(120), externalUrl: z.string().url().nullable(), pageId: z.string().min(1).max(240).nullable(), spaceKey: z.string().min(1).max(120).nullable(),
+  spaceId: technicalId.optional(), spaceType: z.enum(['customer-project', 'standard-product', 'consultant-internal']).optional(), order: z.number().int().nonnegative().optional(), storyPageId: technicalId.optional(),
+}).strict();
+
+const catalogSpaceSchema = z.object({
+  spaceId: technicalId, spaceType: z.enum(['customer-project', 'standard-product', 'consultant-internal']), title: z.string().min(1).max(300), purpose: z.string().min(1).max(1_000),
+  audience: z.array(z.string().min(1).max(120)).min(1).max(30), order: z.number().int().nonnegative(), homeDocumentId: technicalId,
+  externalUrl: z.string().url().nullable(), pageId: z.string().min(1).max(240).nullable(), spaceKey: z.string().min(1).max(120).nullable(),
+}).strict();
+const catalogNavigationModuleSchema = z.object({ moduleId: technicalId, spaceId: technicalId, title: z.string().min(1).max(300), order: z.number().int().nonnegative() }).strict();
+const catalogNavigationNodeSchema = z.object({
+  nodeId: technicalId, moduleId: technicalId, nodeType: z.enum(['group', 'section', 'page']), title: z.string().min(1).max(300), order: z.number().int().nonnegative(),
+  parentNodeId: technicalId.nullable(), documentId: technicalId.nullable(), description: z.string().min(1).max(1_000).optional(), initialState: presentationInitialStateSchema,
+}).strict();
+const catalogRedirectSchema = z.object({
+  documentId: technicalId, storyPageId: technicalId, sourcePath: z.string().refine(validateContractPath), previousTitle: z.string().min(1).max(500), previousParentId: technicalId.nullable(),
+  targetTitle: z.string().min(1).max(500), targetParentId: technicalId.nullable(), migrationStatus: z.literal('migrated-in-place'),
 }).strict();
 
 const documentCatalogIndexSchema = z.object({
   catalogId: z.literal('UABC-DOCUMENT-CATALOG-V1'), path: z.literal('exports/project-data/v1/document-catalog.json'), schemaPath: z.literal('governance/schemas/project-document-catalog.schema.json'),
   documentCount: z.number().int().positive().max(1_000), commitResolution: z.literal('allowed-branch-head-resolved-once'),
   allowedExternalOrigins: z.array(z.string().refine(isSafeHttpsOrigin)).max(20), definitions: z.array(documentCatalogSharedEntrySchema).min(1).max(1_000),
+  spaces: z.array(catalogSpaceSchema).length(3), navigationModules: z.array(catalogNavigationModuleSchema).length(3), navigationNodes: z.array(catalogNavigationNodeSchema).min(1).max(1_000), redirects: z.array(catalogRedirectSchema).max(1_000),
   referenceDefinitions: z.object({ ownerRefs: z.array(technicalId).max(1_000), jiraRefs: z.array(technicalId).max(10_000), projectRefs: z.array(technicalId).max(10_000) }).strict(),
 }).strict();
 
@@ -697,9 +802,49 @@ const projectDocumentCatalogEntrySchema = documentCatalogSharedEntrySchema.exten
 
 const projectDocumentCatalogSchema = z.object({
   schemaVersion: z.literal(1), catalogId: z.literal('UABC-DOCUMENT-CATALOG-V1'), contractId: z.literal('UABC-PROJECT-DATA-V1'), projectId: z.literal('UABC-BC-BASIC-001'),
-  sourceIndexPath: z.literal('exports/project-data/v1/index.yaml'), allowedBranch: z.literal('codex/universaarl-projekt'), commitBinding: z.literal('allowed-branch-head-resolved-once'),
+  sourceIndexPath: z.literal('exports/project-data/v1/index.yaml'), allowedBranch: sourceBranchName, commitBinding: z.literal('allowed-branch-head-resolved-once'),
   readOnly: z.literal(true), validationStatus: z.literal('validated'), allowedExternalOrigins: z.array(z.string().refine(isSafeHttpsOrigin)).max(20),
+  spaces: z.array(catalogSpaceSchema).length(3), navigationModules: z.array(catalogNavigationModuleSchema).length(3), navigationNodes: z.array(catalogNavigationNodeSchema).min(1).max(1_000), redirects: z.array(catalogRedirectSchema).max(1_000),
   documentCount: z.number().int().positive().max(1_000), confluenceDocumentCount: z.number().int().nonnegative().max(1_000), documents: z.array(projectDocumentCatalogEntrySchema).min(1).max(1_000),
+}).strict();
+
+const producerTicketTypePresentationSchema = z.object({ typeLabel: z.string().min(1).max(40), displayIconKey: z.enum(['jira-phase', 'jira-epic', 'jira-story', 'jira-task']), displayColorToken: z.enum(['teal', 'purple', 'green', 'blue']) }).strict();
+const producerTicketTypesSchema = z.object({ phase: producerTicketTypePresentationSchema, epic: producerTicketTypePresentationSchema, story: producerTicketTypePresentationSchema, task: producerTicketTypePresentationSchema }).strict();
+const producerTicketColumnSchema = z.object({ id: technicalId, title: z.string().min(1).max(120), order: z.number().int().nonnegative(), statuses: z.array(z.string().min(1).max(80)).min(1).max(30) }).strict();
+const producerTicketGroupSchema = z.object({ id: technicalId, type: z.literal('phase'), phaseId: technicalId, title: z.string().min(1).max(200), order: z.number().int().nonnegative(), collapsible: z.literal(true), initialState: presentationInitialStateSchema, epicIds: z.array(technicalId).min(1).max(1_000), ticketIds: z.array(technicalId).min(1).max(1_000) }).strict();
+const producerTicketViewSchema = z.object({
+  id: technicalId, type: z.enum(['board', 'compact-list']), title: z.string().min(1).max(120), order: z.number().int().nonnegative(), initialState: presentationInitialStateSchema,
+  allowedFilters: z.array(z.enum(['status', 'type'])).min(1).max(10), visibleFields: z.array(z.enum(['id', 'type', 'summary', 'status', 'parent'])).min(1).max(20),
+  columns: z.array(producerTicketColumnSchema).default([]), groups: z.array(producerTicketGroupSchema).min(1).max(100),
+}).strict();
+const producerTicketRecordSchema = z.object({
+  id: technicalId, type: z.enum(['phase', 'epic', 'story', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'task']),
+  typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), dependencyRefs: z.array(technicalId).max(100),
+  sourcePath: z.string().refine(validateContractPath), visibility: z.literal('twin-visible'), visibilityRole: z.enum(['customer-project-story', 'internal-traceability']), countingScope: z.enum(['active-project', 'excluded-from-story-counts']),
+  planningRef: technicalId.nullable().optional(), status: z.string().min(1).max(80), summary: z.string().min(1).max(500), description: z.string().min(1).max(4_000), deliverable: z.string().min(1).max(1_000),
+  phaseId: technicalId.nullable(), phaseRefs: z.array(technicalId).nullable(), phase: z.string().min(1).max(80).nullable(), billable: z.boolean(), billingSource: z.enum(['task-rollup-only', 'task-worklogs']),
+  estimateHours: z.number().nonnegative(), actualHours: z.number().nonnegative(), remainingHours: z.number().nonnegative(), hourlyRate: z.number().nonnegative().nullable(), netAmount: z.number().nonnegative(), acceptance: z.array(z.string().min(1).max(2_000)).default([]),
+  history: z.array(z.object({ status: z.string().min(1).max(80), time: sourceDateSchema }).strict()).default([]), worklogHours: z.number().nonnegative(), evidence: z.array(z.string().min(1).max(1_000)).default([]),
+  comments: z.array(z.object({ id: technicalId, type: z.string().min(1).max(80), time: sourceDateSchema, text: z.string().min(1).max(4_000) }).strict()).default([]),
+}).strict();
+const producerTraceabilityRecordSchema = z.object({ id: technicalId, type: z.enum(['phase', 'epic', 'story', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'task']),
+  typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), dependencyRefs: z.array(technicalId).max(100), sourcePath: z.string().refine(validateContractPath),
+  visibility: z.literal('twin-visible'), visibilityRole: z.literal('internal-traceability'), countingScope: z.literal('excluded-from-story-counts'), status: z.string().min(1).max(80), summary: z.string().min(1).max(500) }).strict();
+const producerTraceabilityRelationSchema = z.object({ type: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/), from: technicalId, to: technicalId }).strict();
+const producerTicketCatalogSchema = z.object({
+  schemaVersion: z.literal(1), projectId: z.literal('UABC-BC-BASIC-001'), classification: z.literal('synthetic-only'), sourceContract: z.literal('evidence/simulation/project-story.json'), generated: z.literal(true),
+  derivedFrom: z.array(z.string().refine(validateContractPath)).min(1).max(20), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'task'])).length(4), typePresentations: producerTicketTypesSchema,
+  liveIconPolicy: z.object({ sourceMode: z.literal('local-allowlist-only'), allowlistedAssets: z.array(z.string()).max(20), allowedOrigins: z.array(z.string()).max(20), digestAlgorithm: z.literal('SHA-256'), digestRequired: z.literal(true) }).strict(),
+  views: z.array(producerTicketViewSchema).length(2), recordCount: z.number().int().positive(), customerStoryCount: z.number().int().positive(), internalTraceabilityCount: z.number().int().nonnegative(),
+  countedWorklogHours: z.number().nonnegative(), historicalPlanningBaselineHours: z.number().nonnegative().optional(), ticketRecords: z.array(producerTicketRecordSchema).min(1).max(1_000),
+  traceabilityRecords: z.array(producerTraceabilityRecordSchema).default([]), traceabilityRelations: z.array(producerTraceabilityRelationSchema).default([]),
+}).strict();
+const ticketCatalogIndexSchema = z.object({
+  path: z.literal('atlassian/jira/issues/bc-basic-story-tickets.yaml'), sourceContract: z.literal('evidence/simulation/project-story.json'), migrationMatrix: z.literal('project/bc-basic/ticket-migration.yaml'),
+  recordCount: z.number().int().positive(), customerStoryCount: z.number().int().positive(), internalTraceabilityCount: z.number().int().nonnegative(), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'task'])).length(4),
+  typeField: z.literal('type'), canonicalTypeField: z.literal('canonicalType'), parentField: z.literal('parent'), visibilityRoleField: z.literal('visibilityRole'), countingScopeField: z.literal('countingScope'), typePresentationsField: z.literal('typePresentations'),
+  typeLabelField: z.literal('typeLabel'), displayIconKeyField: z.literal('displayIconKey'), displayColorTokenField: z.literal('displayColorToken'), liveIconPolicyField: z.literal('liveIconPolicy'), viewsField: z.literal('views'),
+  presentationTypes: z.array(z.enum(['phase', 'epic', 'story', 'task'])).length(4), viewIds: z.array(technicalId).length(2), viewTypes: z.array(z.enum(['board', 'compact-list'])).length(2), inferTypeFromKeyOrTitle: z.literal(false),
 }).strict();
 
 const projectDataIndexSchema = z.object({
@@ -716,13 +861,24 @@ const projectDataIndexSchema = z.object({
   readOnly: z.literal(true),
   sourceOfTruth: z.literal('openspec'),
   pathSemantics: z.literal('repository-relative'),
-  allowedBranch: z.literal('codex/universaarl-projekt').optional(),
-  validationStatus: z.literal('branch-commit-validierung-erforderlich').optional(),
+  allowedBranch: sourceBranchName.optional(),
+  validationStatus: z.literal('validated').optional(),
   missingValuePolicy: z.literal('leer'),
   documentCatalog: documentCatalogIndexSchema.optional(),
+  ticketCatalog: ticketCatalogIndexSchema.optional(),
+  referenceDefinitions: z.object({ jiraRefs: z.array(technicalId).min(1).max(1_000) }).strict().optional(),
   consumerRules: z.array(z.string().min(1).max(2_000)).min(1).max(100),
   artifacts: z.array(projectDataArtifactSchema).min(1).max(1_000),
 }).strict();
+
+export function validateProjectDataIndexContract(input: unknown): ProjectDataIndex {
+  const parsed = projectDataIndexSchema.safeParse(input);
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path.map(String).join('.') || 'Wurzel';
+    sourceError(`Der Projektindex verletzt den festgelegten project-data/v1-Vertrag im Feld ${field}.`);
+  }
+  return parsed.data;
+}
 
 const projectStorySchema = z.object({
   schemaVersion: z.literal(1), storyId: technicalId, projectId: technicalId, classification: z.string().min(1).max(80), status: z.string().min(1).max(80),
@@ -805,7 +961,10 @@ const indexedVerificationSchema = z.object({
 
 function schema<T>(value: unknown, validator: z.ZodType<T>): T {
   const parsed = validator.safeParse(value);
-  if (!parsed.success) sourceError('Ein Quellblob verletzt den festgelegten Datenvertrag.');
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path.map(String).join('.') || 'Wurzel';
+    sourceError(`Ein Quellblob verletzt den festgelegten Datenvertrag im Feld ${field}.`);
+  }
   return parsed.data;
 }
 
@@ -1293,9 +1452,9 @@ function payloadDigest(reader: CommitBlobReader, sources: readonly IndexedProjec
   return `sha256:${digest.digest('hex')}`;
 }
 
-function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
+function readProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits, sourceBinding?: ProjectSourceBinding) {
   const branchCommitContract = process.env.UABC_BRANCH_COMMIT_CONTRACT === '1';
-  if (branchCommitContract) return readBranchProjectDataSources(repo, commit, projectId, contract, limits);
+  if (branchCommitContract) return readBranchProjectDataSources(repo, commit, projectId, contract, limits, sourceBinding?.expectedBranch);
   if (contract.manifestPath !== 'exports/project-data/v1/snapshot-manifest.json' || contract.schemaPath !== 'governance/schemas/project-snapshot-manifest.schema.json' || contract.indexPath !== 'exports/project-data/v1/index.yaml' || contract.expectedProducerId !== 'blueprint') sourceError('Der konfigurierte Projektvertrag ist nicht vollständig.', 'QUELLKONFIGURATION_UNGUELTIG');
   const manifestEntries = parseExactTree(repo, commit, [contract.manifestPath], limits);
   if (manifestEntries.length !== 1) sourceError('Das erforderliche Snapshotmanifest fehlt.');
@@ -1322,9 +1481,7 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
   const indexEntries = parseExactTree(repo, commit, [contract.indexPath], limits);
   if (indexEntries.length !== 1) sourceError('Der erforderliche Projektindex fehlt.');
   const indexReader = new CommitBlobReader(repo, commit, limits, indexEntries, validateContractPath);
-  const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.indexPath));
-  if (!parsedIndex.success) sourceError('Der Projektindex verletzt den festgelegten project-data/v1-Vertrag.');
-  const index = parsedIndex.data;
+  const index = validateProjectDataIndexContract(indexReader.yaml(contract.indexPath));
   if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
   const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
   if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Projektindex enthält doppelte Artefakt-IDs oder Pfade.');
@@ -1362,15 +1519,13 @@ function readProjectDataSources(repo: string, commit: string, projectId: string,
   return { index, reader, sources, manifest };
 }
 
-function readBranchProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits) {
+function readBranchProjectDataSources(repo: string, commit: string, projectId: string, contract: ProjectSourceContract, limits: ReaderLimits, expectedBranch?: string) {
   const indexEntries = parseExactTree(repo, commit, [contract.indexPath], limits);
   if (indexEntries.length !== 1) sourceError('Der erforderliche Projektindex fehlt.');
   const indexReader = new CommitBlobReader(repo, commit, limits, indexEntries, validateContractPath);
-  const parsedIndex = projectDataIndexSchema.safeParse(indexReader.yaml(contract.indexPath));
-  if (!parsedIndex.success) sourceError('Der Projektindex verletzt den Branch-Commit-Vertrag.');
-  const index = parsedIndex.data;
-  if (!index.documentCatalog) sourceError('Der kanonische Dokumentkatalog fehlt im Branch-Commit-Vertrag.');
-  if (index.allowedBranch !== 'codex/universaarl-projekt' || index.validationStatus !== 'branch-commit-validierung-erforderlich') sourceError('Der Projektindex ist nicht für den gebundenen Branch validiert.');
+  const index = validateProjectDataIndexContract(indexReader.yaml(contract.indexPath));
+  if (!index.documentCatalog || !index.referenceDefinitions) sourceError('Der kanonische Dokument- und Referenzvertrag fehlt im Branch-Commit-Vertrag.');
+  if (!expectedBranch || index.allowedBranch !== expectedBranch || index.validationStatus !== 'validated') sourceError('Der Projektindex ist nicht für den konfigurierten Freigabebranch validiert.');
   if (index.projectId !== contract.expectedProjectId || index.routeKey !== projectId) sourceError('Der Projektindex ist nicht der konfigurierten Projektkennung zugeordnet.');
   const ids = index.artifacts.map((item) => item.id); const paths = index.artifacts.map((item) => item.path);
   if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Projektindex enthält doppelte Artefakt-IDs oder Pfade.');
@@ -1419,9 +1574,10 @@ export function validateDocumentationMarkdown(input: string, sourcePath: string,
     if (!target || target.startsWith('#')) continue;
     if (/^https:\/\//i.test(target) || /^[a-z][a-z0-9+.-]*:|^\/\//i.test(target) || target.includes('%')) sourceError('Ein Dokument enthaelt einen nicht freigegebenen Link.');
     const relative = target.split('#', 1)[0];
-    const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), relative));
-    if (!validateContractPath(resolved) || !allowedPaths.has(resolved)) sourceError('Ein Dokument verweist auf ein nicht positivgelistetes Dokumentziel.');
-    targets.push(resolved);
+    const directoryReference = relative.endsWith('/');
+    const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), relative)).replace(/\/$/, '');
+    if (!validateContractPath(resolved)) sourceError('Ein Dokument enthaelt einen nicht freigegebenen Link.');
+    if (allowedPaths.has(resolved) || (directoryReference && [...allowedPaths].some((allowedPath) => allowedPath.startsWith(`${resolved}/`)))) targets.push(resolved);
   }
   return { content, targets };
 }
@@ -1431,7 +1587,7 @@ export function redactDocumentationHostPaths(value: string) {
 }
 
 const documentCatalogSchemaId = 'urn:universaarl:schema:project-document-catalog:v1';
-const catalogSharedFields = ['artifactId', 'documentId', 'title', 'documentType', 'parentId', 'phase', 'process', 'status', 'ownerRefs', 'jiraRefs', 'referenceIds', 'lastReviewed', 'visibility', 'readiness', 'externalUrl', 'pageId', 'spaceKey'] as const;
+const catalogSharedFields = ['artifactId', 'documentId', 'title', 'documentType', 'parentId', 'phase', 'process', 'status', 'ownerRefs', 'jiraRefs', 'referenceIds', 'lastReviewed', 'visibility', 'readiness', 'externalUrl', 'pageId', 'spaceKey', 'spaceId', 'spaceType', 'order', 'storyPageId'] as const;
 const catalogFileEvidenceSchema = z.object({ artifactId: technicalId, path: z.string().refine(validateContractPath), format: projectDataArtifactSchema.shape.format, mode: z.literal('100644'), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 
 export function validateProjectDocumentCatalogContract(input: { catalog: unknown; schemaDocument: unknown; indexCatalog: unknown; indexArtifacts: unknown; files: unknown }) {
@@ -1441,13 +1597,14 @@ export function validateProjectDocumentCatalogContract(input: { catalog: unknown
   const files = schema(input.files, z.array(catalogFileEvidenceSchema).min(1).max(1_000));
   if (!input.schemaDocument || typeof input.schemaDocument !== 'object' || Array.isArray(input.schemaDocument)) sourceError('Das Dokumentkatalogschema ist kein gueltiges JSON-Objekt.');
   const schemaDocument = input.schemaDocument as RecordValue;
-  const requiredFields = ['schemaVersion', 'catalogId', 'contractId', 'projectId', 'sourceIndexPath', 'allowedBranch', 'commitBinding', 'readOnly', 'validationStatus', 'allowedExternalOrigins', 'documentCount', 'confluenceDocumentCount', 'documents'];
+  const requiredFields = ['schemaVersion', 'catalogId', 'contractId', 'projectId', 'sourceIndexPath', 'allowedBranch', 'commitBinding', 'readOnly', 'validationStatus', 'allowedExternalOrigins', 'spaces', 'navigationModules', 'navigationNodes', 'redirects', 'documentCount', 'confluenceDocumentCount', 'documents'];
   const required = schemaDocument.required;
   if (schemaDocument.$schema !== 'https://json-schema.org/draft/2020-12/schema' || schemaDocument.$id !== documentCatalogSchemaId || schemaDocument.type !== 'object' || schemaDocument.additionalProperties !== false || !Array.isArray(required) || requiredFields.some((field) => !required.includes(field)) || !schemaDocument.properties || typeof schemaDocument.properties !== 'object' || requiredFields.some((field) => !Object.prototype.hasOwnProperty.call(schemaDocument.properties, field))) sourceError('Das Dokumentkatalogschema besitzt nicht die kanonische strikte Feldform.');
   let validateCatalog: ((value: unknown) => boolean) | undefined;
   try { validateCatalog = new Ajv2020({ strict: true, allErrors: false }).compile(schemaDocument); } catch { sourceError('Das Dokumentkatalogschema konnte nicht sicher kompiliert werden.'); }
   if (!validateCatalog(catalog)) sourceError('Der Dokumentkatalog erfuellt das versionierte JSON-Schema nicht.');
-  if (indexCatalog.catalogId !== catalog.catalogId || indexCatalog.path !== catalog.sourceIndexPath.replace('index.yaml', 'document-catalog.json') || indexCatalog.documentCount !== catalog.documentCount || indexCatalog.commitResolution !== catalog.commitBinding || JSON.stringify(indexCatalog.allowedExternalOrigins) !== JSON.stringify(catalog.allowedExternalOrigins)) sourceError('Index und Dokumentkatalog besitzen keine identische Katalogbindung.');
+  if (indexCatalog.catalogId !== catalog.catalogId || indexCatalog.path !== catalog.sourceIndexPath.replace('index.yaml', 'document-catalog.json') || indexCatalog.documentCount !== catalog.documentCount || indexCatalog.commitResolution !== catalog.commitBinding || JSON.stringify(indexCatalog.allowedExternalOrigins) !== JSON.stringify(catalog.allowedExternalOrigins)
+    || JSON.stringify(indexCatalog.spaces) !== JSON.stringify(catalog.spaces) || JSON.stringify(indexCatalog.navigationModules) !== JSON.stringify(catalog.navigationModules) || JSON.stringify(indexCatalog.navigationNodes) !== JSON.stringify(catalog.navigationNodes) || JSON.stringify(indexCatalog.redirects) !== JSON.stringify(catalog.redirects)) sourceError('Index und Dokumentkatalog besitzen keine identische Katalog- und Navigationsbindung.');
   if (catalog.documentCount !== catalog.documents.length || indexCatalog.definitions.length !== catalog.documents.length || catalog.confluenceDocumentCount !== catalog.documents.filter((document) => document.documentType === 'confluence-page').length) sourceError('Der Dokumentkatalog besitzt widerspruechliche Dokumentzaehler.');
   for (const values of [catalog.allowedExternalOrigins, indexCatalog.referenceDefinitions.ownerRefs, indexCatalog.referenceDefinitions.jiraRefs, indexCatalog.referenceDefinitions.projectRefs]) if (new Set(values).size !== values.length) sourceError('Der Dokumentkatalog besitzt doppelte Origin- oder Referenzdefinitionen.');
   const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact])); const fileById = new Map(files.map((file) => [file.artifactId, file]));
@@ -1458,6 +1615,21 @@ export function validateProjectDocumentCatalogContract(input: { catalog: unknown
   const documentIds = catalog.documents.map((document) => document.documentId); const artifactIds = catalog.documents.map((document) => document.artifactId); const paths = catalog.documents.map((document) => document.sourcePath);
   if (new Set(documentIds).size !== documentIds.length || new Set(artifactIds).size !== artifactIds.length || new Set(paths).size !== paths.length) sourceError('Der Dokumentkatalog besitzt doppelte Dokumentkennungen oder Pfade.');
   const knownDocumentIds = new Set(documentIds); const definitions = new Map(indexCatalog.definitions.map((definition) => [definition.artifactId, definition]));
+  const spaceIds = catalog.spaces.map((space) => space.spaceId); const moduleIds = catalog.navigationModules.map((module) => module.moduleId); const nodeIds = catalog.navigationNodes.map((node) => node.nodeId);
+  if (new Set(spaceIds).size !== spaceIds.length || new Set(catalog.spaces.map((space) => space.order)).size !== catalog.spaces.length || new Set(moduleIds).size !== moduleIds.length || new Set(catalog.navigationModules.map((module) => module.order)).size !== catalog.navigationModules.length || new Set(nodeIds).size !== nodeIds.length) sourceError('Der Dokumentkatalog besitzt doppelte Space-, Modul- oder Navigationskennungen.');
+  if (catalog.spaces.some((space) => !knownDocumentIds.has(space.homeDocumentId)) || catalog.navigationModules.some((module) => !spaceIds.includes(module.spaceId))) sourceError('Ein Wissensraum oder Navigationsmodul besitzt keine gültige Dokument- oder Spacebindung.');
+  const nodesById = new Map(catalog.navigationNodes.map((node) => [node.nodeId, node]));
+  for (const node of catalog.navigationNodes) {
+    if (!moduleIds.includes(node.moduleId) || (node.parentNodeId && (!nodesById.has(node.parentNodeId) || nodesById.get(node.parentNodeId)?.moduleId !== node.moduleId)) || ((node.nodeType === 'page') !== Boolean(node.documentId)) || (node.documentId && !knownDocumentIds.has(node.documentId))) sourceError('Ein Navigationsknoten besitzt eine ungültige Modul-, Eltern- oder Dokumentbindung.');
+    const seen = new Set<string>([node.nodeId]); let parent = node.parentNodeId;
+    while (parent) { if (seen.has(parent)) sourceError('Die Dokumentnavigation enthält einen Zyklus.'); seen.add(parent); parent = nodesById.get(parent)?.parentNodeId ?? null; }
+  }
+  for (const module of catalog.navigationModules) {
+    const siblings = new Map<string, number[]>();
+    for (const node of catalog.navigationNodes.filter((item) => item.moduleId === module.moduleId)) { const parent = node.parentNodeId ?? '__root__'; siblings.set(parent, [...(siblings.get(parent) ?? []), node.order]); }
+    if ([...siblings.values()].some((orders) => new Set(orders).size !== orders.length)) sourceError('Die Dokumentnavigation besitzt eine doppelte Geschwisterreihenfolge.');
+  }
+  if (new Set(catalog.redirects.map((redirect) => redirect.documentId)).size !== catalog.redirects.length || catalog.redirects.some((redirect) => !knownDocumentIds.has(redirect.documentId) || (redirect.targetParentId && !knownDocumentIds.has(redirect.targetParentId)))) sourceError('Das Dokument-Migrationsmapping besitzt eine ungültige oder doppelte Zielbindung.');
   const ownerRefs = new Set(indexCatalog.referenceDefinitions.ownerRefs); const jiraRefs = new Set(indexCatalog.referenceDefinitions.jiraRefs); const projectRefs = new Set(indexCatalog.referenceDefinitions.projectRefs);
   for (const document of catalog.documents) {
     const artifact = artifactById.get(document.artifactId); const file = fileById.get(document.artifactId); const definition = definitions.get(document.artifactId);
@@ -1473,20 +1645,82 @@ export function validateProjectDocumentCatalogContract(input: { catalog: unknown
   return catalog;
 }
 
-function indexedDocuments(reader: CommitBlobReader, index: ProjectDataIndex, sources: readonly IndexedProjectSource[]): ProjectDocument[] {
+function indexedDocuments(reader: CommitBlobReader, index: ProjectDataIndex, sources: readonly IndexedProjectSource[]) {
   if (!index.documentCatalog) sourceError('Der kanonische Dokumentkatalog fehlt im Branch-Commit-Vertrag.');
   const catalogSource = sources.find((source) => source.declaration.id === 'UABC-SRC-BCB-DOC-CATALOG-001');
   const schemaSource = sources.find((source) => source.declaration.id === 'UABC-SRC-BCB-DOC-SCHEMA-001');
   if (!catalogSource || !schemaSource) sourceError('Katalog und Katalogschema fehlen in der positiven Indexliste.');
   const catalog = validateProjectDocumentCatalogContract({ catalog: reader.json(catalogSource.declaration.path), schemaDocument: reader.json(schemaSource.declaration.path), indexCatalog: index.documentCatalog, indexArtifacts: index.artifacts,
     files: sources.map((source) => ({ artifactId: source.declaration.id, path: source.declaration.path, format: source.declaration.format, mode: source.entry.mode, sha256: hash(reader.blob(source.declaration.path)) })) });
-  const byArtifactId = new Map(sources.map((source) => [source.declaration.id, source])); const allowedPaths = new Set(catalog.documents.map((document) => document.sourcePath));
-  return catalog.documents.map((document) => {
+  const byArtifactId = new Map(sources.map((source) => [source.declaration.id, source])); const allowedPaths = new Set(index.artifacts.map((artifact) => artifact.path));
+  const documents: ProjectDocument[] = catalog.documents.map((document) => {
     const source = byArtifactId.get(document.artifactId); if (!source) return sourceError('Ein Katalogdokument besitzt keinen positivgelisteten Quellblob.');
     const parsed = indexedMarkdown(reader, source); const body = validateDocumentationMarkdown(parsed.content, document.sourcePath, allowedPaths);
     return projectDocumentSchema.parse({ id: document.documentId, title: document.title, documentType: document.documentType, status: document.status, parentId: document.parentId,
       owners: document.ownerRefs, references: [...document.jiraRefs, ...document.referenceIds], phase: document.phase, process: document.process, updatedAt: document.lastReviewed, sourcePath: document.sourcePath,
       content: redactDocumentationHostPaths(body.content), externalUrl: document.externalUrl, externalLinkReason: document.externalUrl ? 'Kanonische HTTPS-Quelle aus dem validierten Dokumentkatalog.' : 'Keine kanonische Confluence-URL im validierten Dokumentkatalog belegt.' });
+  });
+  return { catalog, documents };
+}
+
+function producerPresentationProjection(index: ProjectDataIndex, reader: CommitBlobReader, sources: readonly IndexedProjectSource[], catalog: z.infer<typeof projectDocumentCatalogSchema>, story: NonNullable<ProjectState['story']>) {
+  if (!index.ticketCatalog || !index.referenceDefinitions) sourceError('Der kanonische Ticket- und Referenzvertrag fehlt im Branch-Commit-Vertrag.');
+  const ticketSource = sources.find((source) => source.declaration.kindId === 'project-story-ticket-catalog');
+  if (!ticketSource || ticketSource.declaration.path !== index.ticketCatalog.path || ticketSource.declaration.format !== 'yaml') sourceError('Der kanonische Ticketkatalog ist nicht eindeutig positivgelistet.');
+  const ticketCatalog = schema(selectedYaml(reader, ticketSource), producerTicketCatalogSchema);
+  const rawTypes = ['phase', 'epic', 'story', 'task'] as const;
+  if (new Set(ticketCatalog.canonicalTypes).size !== rawTypes.length || rawTypes.some((type) => !ticketCatalog.canonicalTypes.includes(type)) || JSON.stringify(index.ticketCatalog.canonicalTypes) !== JSON.stringify(ticketCatalog.canonicalTypes)) sourceError('Der Ticketkatalog besitzt keine eindeutige kanonische Typmenge.');
+  if (ticketCatalog.recordCount !== ticketCatalog.ticketRecords.length + ticketCatalog.traceabilityRecords.length || ticketCatalog.customerStoryCount !== ticketCatalog.ticketRecords.length || ticketCatalog.internalTraceabilityCount !== ticketCatalog.traceabilityRecords.length || ticketCatalog.customerStoryCount + ticketCatalog.internalTraceabilityCount !== ticketCatalog.recordCount
+    || index.ticketCatalog.recordCount !== ticketCatalog.recordCount || index.ticketCatalog.customerStoryCount !== ticketCatalog.customerStoryCount || index.ticketCatalog.internalTraceabilityCount !== ticketCatalog.internalTraceabilityCount) sourceError('Index und Ticketkatalog besitzen widersprüchliche Ticketzähler.');
+  const allIds = [...ticketCatalog.ticketRecords, ...ticketCatalog.traceabilityRecords].map((ticket) => ticket.id);
+  if (new Set(allIds).size !== allIds.length) sourceError('Der Ticketkatalog besitzt doppelte Ticketkennungen.');
+  for (const ticket of [...ticketCatalog.ticketRecords, ...ticketCatalog.traceabilityRecords]) {
+    const typePresentation = ticketCatalog.typePresentations[ticket.type];
+    if (ticket.canonicalType !== ticket.type || ticket.typeLabel !== typePresentation.typeLabel || ticket.displayIconKey !== typePresentation.displayIconKey || ticket.displayColorToken !== typePresentation.displayColorToken) sourceError('Ein Ticket widerspricht seiner producerdefinierten Typdarstellung.');
+  }
+  const canonicalRecords = ticketCatalog.ticketRecords.filter((ticket) => ticket.visibilityRole === 'customer-project-story' && ticket.countingScope === 'active-project');
+  const internalRecords = ticketCatalog.traceabilityRecords;
+  if (canonicalRecords.length !== ticketCatalog.customerStoryCount || internalRecords.length !== ticketCatalog.internalTraceabilityCount || canonicalRecords.length + internalRecords.length !== ticketCatalog.recordCount) sourceError('Der Ticketkatalog trennt Projektstory und interne Traceability nicht eindeutig.');
+  if (new Set(index.referenceDefinitions.jiraRefs).size !== canonicalRecords.length || JSON.stringify(index.referenceDefinitions.jiraRefs) !== JSON.stringify(canonicalRecords.map((record) => record.id))) sourceError('Der Projektindex besitzt keine eindeutige vollständige Jira-Referenzmenge.');
+  const storyById = new Map(story.tickets.map((ticket) => [ticket.id, ticket]));
+  if (storyById.size !== canonicalRecords.length || canonicalRecords.some((record) => !storyById.has(record.id)) || story.tickets.some((ticket) => !canonicalRecords.some((record) => record.id === ticket.id))) sourceError('Ticketkatalog und kanonische Projektstory besitzen keine identische sichtbare Ticketmenge.');
+  if (index.ticketCatalog.sourceContract !== ticketCatalog.sourceContract || JSON.stringify(index.ticketCatalog.viewIds) !== JSON.stringify(ticketCatalog.views.map((view) => view.id)) || JSON.stringify(index.ticketCatalog.viewTypes) !== JSON.stringify(ticketCatalog.views.map((view) => view.type))) sourceError('Index und Ticketkatalog besitzen keine identische Viewbindung.');
+
+  const spaces = catalog.spaces.map((space) => {
+    const modules = catalog.navigationModules.filter((module) => module.spaceId === space.spaceId);
+    if (modules.length !== 1) sourceError('Ein Wissensraum besitzt kein eindeutiges Navigationsmodul.');
+    const nodes = catalog.navigationNodes.filter((node) => node.moduleId === modules[0].moduleId);
+    const roots = nodes.filter((node) => node.parentNodeId === null);
+    if (roots.length !== 1) sourceError('Ein Wissensraum besitzt keinen eindeutigen Navigationswurzelknoten.');
+    return {
+      id: space.spaceId, title: space.title, purpose: space.purpose, audience: space.audience.join(', '), order: space.order, initialState: roots[0].initialState,
+      nodes: nodes.map((node) => ({ id: node.nodeId, kind: node.nodeType, parentId: node.parentNodeId, order: node.order, initialState: node.initialState, title: node.title, purpose: node.description ?? null, audience: null, documentId: node.documentId })),
+    };
+  });
+  const ticketTypes = rawTypes.map((type) => ({ type, ...producerTicketTypePresentation[type] }));
+  const tickets = canonicalRecords.map((record) => {
+    const storyTicket = storyById.get(record.id)!;
+    if (storyTicket.type !== record.type || storyTicket.parent !== record.parent || storyTicket.status !== record.status || storyTicket.phaseId !== record.phaseId || JSON.stringify(storyTicket.phaseRefs) !== JSON.stringify(record.phaseRefs ?? [])
+      || storyTicket.billingSource !== record.billingSource || storyTicket.estimateHours !== record.estimateHours || storyTicket.remainingHours !== record.remainingHours || storyTicket.netAmount !== record.netAmount || storyTicket.billable !== record.billable) sourceError('Ticketkatalog und Projektstory widersprechen sich bei Typ, Hierarchie, Phase oder Abrechnung.');
+    storyTicket.dependencies = [...record.dependencyRefs];
+    return { ticketId: record.id, type: record.type, ...producerTicketTypePresentation[record.type], parentId: record.parent, projectStoryRole: 'customer-readable' as const,
+      phaseId: record.phaseId, phaseRefs: record.phaseRefs ?? [], billingSource: record.billingSource, estimateHours: record.estimateHours, actualHours: record.actualHours, remainingHours: record.remainingHours, amountEur: record.netAmount, billable: record.billable,
+      role: storyTicket.assignee, initialState: ['phase', 'epic', 'story'].includes(record.type) ? 'expanded' as const : 'collapsed' as const };
+  });
+  const statusValues = [...new Set(canonicalRecords.map((ticket) => ticket.status))];
+  const views = ticketCatalog.views.map((view) => {
+    const filters = view.allowedFilters.map((field) => ({ id: `FILTER-${field.toUpperCase()}`, label: field === 'type' ? 'Typ' : 'Status', field,
+      options: field === 'type' ? ticketTypes.map((type) => ({ value: type.type, label: type.typeLabel })) : statusValues.map((status) => ({ value: status, label: displayStatus(status) })) }));
+    const base = { id: view.id, label: view.title, order: view.order, initialState: view.initialState, visibleFields: view.visibleFields.map((field) => field === 'id' ? 'key' as const : field), filters,
+      groups: view.groups.map((group) => ({ id: group.id, phaseTicketId: group.phaseId, label: group.title, order: group.order, initialState: group.initialState, epicIds: group.epicIds, ticketIds: group.ticketIds })) };
+    return view.type === 'board'
+      ? { ...base, kind: 'board' as const, columns: view.columns.map((column) => ({ id: column.id, label: column.title, order: column.order, initialState: 'expanded' as const, statuses: column.statuses })) }
+      : { ...base, kind: 'list' as const, columns: [] };
+  });
+  return validatePresentationContract({ schemaVersion: 1, contractId: 'UABC-TWIN-PRESENTATION-V1', projectId: 'bc-basic', spaces, jira: { canonicalTicketCount: canonicalRecords.length, ticketTypes, tickets, views } }, {
+    ticketTypes: new Map(story.tickets.map((ticket) => [ticket.id, ticket.type])), ticketStatuses: new Map(story.tickets.map((ticket) => [ticket.id, ticket.status])),
+    ticketWorklogs: new Map(story.tickets.map((ticket) => [ticket.id, { hours: ticket.worklogs.reduce((sum, worklog) => sum + worklog.hours, 0), amountEur: ticket.worklogs.reduce((sum, worklog) => sum + (worklog.cost ?? 0), 0) }])),
+    billingTotal: story.controls ? { hours: story.controls.worklogHours, amountEur: story.controls.worklogCost } : undefined, documentIds: new Set(catalog.documents.map((document) => document.documentId)),
   });
 }
 
@@ -1546,9 +1780,11 @@ function projectStoryProjection(reader: CommitBlobReader, source: IndexedProject
   const tickets = raw.tickets.map((ticket) => {
     const acceptance = storyAcceptance(ticket.acceptanceCriteria).map((text) => ({ text, fulfilled: true }));
     const comments = Array.isArray(ticket.comments) ? ticket.comments.map((comment, index) => comment && typeof comment === 'object' ? { id: storyText((comment as RecordValue).id) ?? `COMMENT-${index + 1}`, type: storyText((comment as RecordValue).type) ?? 'work', time: storyDate((comment as RecordValue).time), role: storyText((comment as RecordValue).role), text: storyText((comment as RecordValue).text) ?? 'Nicht belegt', evidenceRef: storyText((comment as RecordValue).evidenceRef) } : null).filter(Boolean) : [];
-    const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs.map((worklog) => worklog && typeof worklog === 'object' ? { date: storyDate((worklog as RecordValue).date), role: storyText((worklog as RecordValue).role), hours: typeof (worklog as RecordValue).hours === 'number' ? (worklog as RecordValue).hours as number : 0, cost: typeof (worklog as RecordValue).cost === 'number' ? (worklog as RecordValue).cost as number : null, activity: storyText((worklog as RecordValue).activity), phase: storyText((worklog as RecordValue).phase) } : null).filter(Boolean) : [];
+    const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs.map((worklog) => worklog && typeof worklog === 'object' ? { date: storyDate((worklog as RecordValue).date), role: storyText((worklog as RecordValue).role), hours: typeof (worklog as RecordValue).hours === 'number' ? (worklog as RecordValue).hours as number : 0, cost: typeof (worklog as RecordValue).netAmount === 'number' ? (worklog as RecordValue).netAmount as number : typeof (worklog as RecordValue).cost === 'number' ? (worklog as RecordValue).cost as number : null, activity: storyText((worklog as RecordValue).activity), phase: storyText((worklog as RecordValue).phase) } : null).filter(Boolean) : [];
     const statusHistory = Array.isArray(ticket.statusHistory) ? ticket.statusHistory.map((event) => event && typeof event === 'object' && typeof (event as RecordValue).status === 'string' && typeof (event as RecordValue).time === 'string' ? { status: (event as RecordValue).status as string, time: (event as RecordValue).time as string } : null).filter(Boolean) : [];
-    return { id: String(ticket.id), type: String(ticket.type ?? 'task'), status: String(ticket.status ?? 'unbekannt'), summary: storyText(ticket.summary) ?? acceptance[0]?.text ?? String(ticket.id), assignee: storyText(ticket.assignee), priority: storyText(ticket.priority), parent: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), acceptanceCriteria: acceptance, statusHistory, comments, worklogs, evidenceRefs: storyStrings(ticket.evidenceRefs) };
+    return { id: String(ticket.id), type: String(ticket.type ?? 'task'), status: String(ticket.status ?? 'unbekannt'), summary: storyText(ticket.summary) ?? acceptance[0]?.text ?? String(ticket.id), assignee: storyText(ticket.assignee), priority: storyText(ticket.priority), parent: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), acceptanceCriteria: acceptance, statusHistory, comments, worklogs, evidenceRefs: storyStrings(ticket.evidenceRefs),
+      phaseId: storyText(ticket.phaseId), phaseRefs: storyStrings(ticket.phaseRefs), billingSource: ticket.billingSource === 'task-rollup-only' || ticket.billingSource === 'task-worklogs' ? ticket.billingSource : null,
+      estimateHours: typeof ticket.estimateHours === 'number' ? ticket.estimateHours : null, remainingHours: typeof ticket.remainingHours === 'number' ? ticket.remainingHours : null, netAmount: typeof ticket.netAmount === 'number' ? ticket.netAmount : null, billable: typeof ticket.billable === 'boolean' ? ticket.billable : null };
   });
   const timeline = raw.timeline.map((event) => ({ id: String(event.id), time: String(event.time), phase: String(event.phase), role: String(event.role), tickets: storyStrings(event.tickets), pages: storyStrings(event.pages), sessions: storyStrings(event.sessions), action: String(event.action), result: String(event.result), evidence: storyEvidence(event.evidence), decision: String(event.decision), nextStep: String(event.nextStep) }));
   const hypercare = raw.hypercare.map((day) => ({ day: Number(day.day), dailyPage: String(day.dailyPage), ticket: String(day.ticket), comment: String(day.comment), priority: String(day.priority), diagnosis: String(day.diagnosis), fix: String(day.fix), retest: String(day.retest), status: String(day.status), decision: String(day.decision), evidence: storyEvidence(day.evidence) }));
@@ -1730,12 +1966,12 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
       }
       for (const ticket of data.tickets) {
         const id = ticket.id; if (typeof id !== 'string' || !technicalId.safeParse(id).success) continue;
-        const kind = ticket.type === 'epic' ? 'epic' : ticket.type === 'story' ? 'story' : ticket.type === 'bug' ? 'bug' : 'task';
+        const kind = ticket.type === 'phase' ? 'phase' : ticket.type === 'epic' ? 'epic' : ticket.type === 'story' ? 'story' : 'task';
         const comments = Array.isArray(ticket.comments) ? ticket.comments.flatMap((item) => item && typeof item === 'object' && typeof (item as RecordValue).text === 'string' ? [(item as RecordValue).text as string] : typeof item === 'string' ? [item] : []) : [];
         const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs : [];
         const hours = worklogs.reduce((sum, item) => sum + (item && typeof item === 'object' && typeof (item as RecordValue).hours === 'number' ? (item as RecordValue).hours as number : 0), 0);
         const acceptance = storyAcceptance(ticket.acceptanceCriteria);
-        add({ id, kind, title: storyText(ticket.summary) ?? storyText(ticket.title) ?? acceptance[0] ?? id, status: storyText(ticket.status), phase: null, wave: null, workstream: storyStrings(ticket.labels).join(' · ') || null, rationale: acceptance.join(' · ') || null, parentId: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), evidence: storyStrings(ticket.evidenceRefs), documents: storyStrings(ticket.components), sourceType: `project-story-${ticket.type ?? 'ticket'}`, estimateHours: hours || null, actualHours: hours || null, owner: storyText(ticket.assignee), priority: storyText(ticket.priority), activity: comments, startDate: storyDate(ticket.createdAt), dueDate: storyDate(ticket.closedAt), historySynthetic: data.classification === 'synthetic-only', history: storyHistory(ticket.statusHistory, ticket.assignee), sourcePath: declaration.path });
+        add({ id, kind, title: storyText(ticket.summary) ?? storyText(ticket.title) ?? acceptance[0] ?? id, status: storyText(ticket.status), phase: null, wave: null, workstream: storyStrings(ticket.labels).join(' · ') || null, rationale: acceptance.join(' · ') || null, parentId: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), evidence: storyStrings(ticket.evidenceRefs), documents: storyStrings(ticket.components), sourceType: `project-story-${ticket.type ?? 'ticket'}`, sourcePhase: storyText(ticket.phase), phaseId: storyText(ticket.phaseId), estimateHours: typeof ticket.estimateHours === 'number' ? ticket.estimateHours : null, actualHours: typeof ticket.actualHours === 'number' ? ticket.actualHours : hours || null, billable: typeof ticket.billable === 'boolean' ? ticket.billable : null, owner: storyText(ticket.assignee), priority: storyText(ticket.priority), activity: comments, startDate: storyDate(ticket.createdAt), dueDate: storyDate(ticket.closedAt), historySynthetic: data.classification === 'synthetic-only', history: storyHistory(ticket.statusHistory, ticket.assignee), sourcePath: declaration.path });
       }
       for (const event of data.timeline) {
         const id = event.id; if (typeof id !== 'string' || !technicalId.safeParse(id).success) continue;
@@ -1869,23 +2105,32 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
 }
 
 async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {
-  const { index, reader, sources, manifest } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
-  const artifacts = indexedArtifacts(index, reader, sources);
-  const documents = index.documentCatalog ? indexedDocuments(reader, index, sources) : [];
+  const { index, reader, sources, manifest } = readProjectDataSources(repo, before.commit, projectId, contract, limits, options.sourceBinding);
+  let artifacts = indexedArtifacts(index, reader, sources);
+  const documentation = index.documentCatalog ? indexedDocuments(reader, index, sources) : null;
+  const documents = documentation?.documents ?? [];
   const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
   const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
+  const presentation = documentation && story && index.ticketCatalog ? producerPresentationProjection(index, reader, sources, documentation.catalog, story) : null;
+  if (presentation && story) {
+    const storyTicketById = new Map(story.tickets.map((ticket) => [ticket.id, ticket]));
+    artifacts = artifacts.map((artifact) => {
+      const ticket = storyTicketById.get(artifact.id);
+      return ticket ? { ...artifact, dependencies: [...ticket.dependencies] } : artifact;
+    });
+  }
   const imageSources = sources.filter((source) => source.declaration.format === 'png');
   const evidenceItems = imageSources.map((source) => ({ id: evidenceIdFor(projectId, reader, source.entry), title: source.declaration.id }));
   const warnings = before.dirty ? ['Die Arbeitskopie enthält nicht commitgebundene Änderungen; alle dargestellten Fachdaten stammen unverändert aus dem ausgewiesenen Commit.'] : [];
   options.testHookAfterRead?.();
-  const after = captureFingerprint(repo);
+  const after = captureSourceFingerprint(repo, options.sourceBinding);
   assertSnapshotBinding(repo, after, options.sourceBinding);
   if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich während des Lesens verändert; die Momentaufnahme ist ungültig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
   return projectStateSchema.parse({ source: { projectId, branch: safeBranchDisplay(before.branch), commit: before.commit, dirty: before.dirty,
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
     snapshot: process.env.UABC_BRANCH_COMMIT_CONTRACT === '1' ? null : { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
       spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
-    artifacts, evidenceItems, documents, story, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
+    artifacts, evidenceItems, documents, story, presentation, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
       capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });
@@ -1895,7 +2140,7 @@ export async function createTwinState(projectId: string, repo: string, options: 
   assertProjectId(projectId);
   prepareRepo(repo);
   const limits = tightenLimits(options.limits);
-  const before = captureFingerprint(repo);
+  const before = captureSourceFingerprint(repo, options.sourceBinding);
   assertSnapshotBinding(repo, before, options.sourceBinding);
   if (options.projectDataContract) return createProjectDataState(projectId, repo, options.projectDataContract, options, before, limits);
   const reader = new CommitBlobReader(repo, before.commit, limits);
@@ -1927,7 +2172,7 @@ export async function createTwinState(projectId: string, repo: string, options: 
   const workstreams = [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de'));
 
   options.testHookAfterRead?.();
-  const after = captureFingerprint(repo);
+  const after = captureSourceFingerprint(repo, options.sourceBinding);
   assertSnapshotBinding(repo, after, options.sourceBinding);
   if (!sameFingerprint(before, after)) sourceError('Die Quellreferenzen haben sich waehrend des Lesens veraendert; die Momentaufnahme ist ungueltig.', 'QUELLE_WAEHREND_LESEN_GEAENDERT');
 
@@ -1962,14 +2207,14 @@ export function resolveEvidenceId(projectId: string, repo: string, evidenceId: s
   try {
     assertProjectId(projectId);
     prepareRepo(repo);
-    const before = captureFingerprint(repo);
+    const before = captureSourceFingerprint(repo, options.sourceBinding);
     assertSnapshotBinding(repo, before, options.sourceBinding);
     if (options.projectDataContract) {
-      const { reader, sources } = readProjectDataSources(repo, before.commit, projectId, options.projectDataContract, defaultLimits);
+      const { reader, sources } = readProjectDataSources(repo, before.commit, projectId, options.projectDataContract, defaultLimits, options.sourceBinding);
       const match = sources.filter((source) => source.declaration.format === 'png').find((source) => evidenceIdFor(projectId, reader, source.entry) === evidenceId);
       if (!match) return null;
       const bytes = reader.png(match.entry.path);
-      const after = captureFingerprint(repo);
+      const after = captureSourceFingerprint(repo, options.sourceBinding);
       assertSnapshotBinding(repo, after, options.sourceBinding);
       if (!evidenceReadStable(options.projectDataContract !== undefined, sameFingerprint(before, after))) return null;
       return { contentType: 'image/png', bytes: Buffer.from(bytes) };
@@ -1979,7 +2224,7 @@ export function resolveEvidenceId(projectId: string, repo: string, evidenceId: s
     const match = reader.entries.filter(isEvidencePng).find((entry) => evidenceIdFor(projectId, reader, entry) === evidenceId);
     if (!match) return null;
     const bytes = reader.png(match.path);
-    const after = captureFingerprint(repo);
+    const after = captureSourceFingerprint(repo, options.sourceBinding);
     assertSnapshotBinding(repo, after, options.sourceBinding);
     if (!evidenceReadStable(false, sameFingerprint(before, after))) return null;
     return { contentType: 'image/png', bytes: Buffer.from(bytes) };

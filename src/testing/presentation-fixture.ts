@@ -1,30 +1,41 @@
 import { artifactSchema, projectDocumentSchema, projectStateSchema, type PresentationContract, type ProjectState } from '../model';
 import { validatePresentationContract } from '../server/adapter';
 
-const ticket = (id: string, type: string, status: string, summary: string, parent: string | null, priority: string) => ({
-  id, type, status, summary, assignee: 'Projektteam', priority, parent, dependencies: [],
+const ticket = (id: string, type: 'phase' | 'epic' | 'story' | 'task', status: string, summary: string, parent: string | null, priority: string, phaseId: string | null, phaseRefs: string[], estimateHours: number, actualHours: number, billable: boolean, worklogPhase: string | null = null) => ({ story: {
+  id, type, status, summary, assignee: 'Projektteam', priority, parent, dependencies: [], phaseId, phaseRefs, billingSource: billable ? 'task-worklogs' : 'task-rollup-only', estimateHours, remainingHours: 0, netAmount: actualHours * 120, billable,
   acceptanceCriteria: [{ text: `${summary} ist in der Simulation nachvollziehbar.`, fulfilled: status === 'done' }],
   statusHistory: [{ status: 'backlog', time: '2026-08-01' }, ...(status === 'backlog' ? [] : [{ status, time: '2026-08-10' }])],
   comments: [{ id: `${id}-COMMENT`, type: status === 'done' ? 'Abschlusskommentar' : 'Arbeitskommentar', time: '2026-08-10', role: 'Projektteam', text: `Fixture-Kommentar für ${id}.`, evidenceRef: 'EVIDENCE-1' }],
-  worklogs: [{ date: '2026-08-10', role: 'Projektteam', hours: 2, cost: 240, activity: summary, phase: 'Umsetzung' }], evidenceRefs: ['EVIDENCE-1'],
-});
+  worklogs: billable ? [{ date: '2026-08-10', role: 'Projektteam', hours: actualHours, cost: actualHours * 120, activity: summary, phase: worklogPhase }] : [], evidenceRefs: ['EVIDENCE-1'],
+}, presentation: { phaseId, phaseRefs, billingSource: billable ? 'task-worklogs' : 'task-rollup-only', estimateHours, actualHours, remainingHours: 0, amountEur: actualHours * 120, billable } });
 
-export const fixtureStoryTickets = [
-  ticket('TICKET-EPIC-1', 'epic', 'backlog', 'Einführung fachlich steuern', null, 'Hoch'),
-  ticket('TICKET-STORY-1', 'story', 'in-progress', 'Verkaufsprozess durchgängig abbilden', 'TICKET-EPIC-1', 'Hoch'),
-  ticket('TICKET-TASK-1', 'task', 'done', 'Buchungsmatrix einrichten', 'TICKET-STORY-1', 'Mittel'),
-  ticket('TICKET-SUBTASK-1', 'subtask', 'done', 'Kontrollwerte dokumentieren', 'TICKET-TASK-1', 'Niedrig'),
-  ticket('TICKET-BUG-1', 'bug', 'in-progress', 'Rundungsabweichung korrigieren', 'TICKET-STORY-1', 'Hoch'),
-  ticket('TICKET-CHANGE-1', 'change', 'backlog', 'Abnahmeweg anpassen', 'TICKET-STORY-1', 'Mittel'),
+const fixtureTicketDefinitions = [
+  ticket('UABC-1', 'phase', 'done', 'Phase 1 · Grundlagen', null, 'Hoch', 'UABC-1', ['UABC-1'], 30, 30, false),
+  ticket('UABC-2', 'phase', 'done', 'Phase 2 · Prozesse', null, 'Hoch', 'UABC-2', ['UABC-2'], 30, 30, false),
+  ticket('UABC-3', 'phase', 'done', 'Phase 3 · Betrieb', null, 'Hoch', 'UABC-3', ['UABC-3'], 20, 20, false),
+  ticket('UABC-4', 'epic', 'done', 'Finanzwesen', 'UABC-1', 'Hoch', 'UABC-1', ['UABC-1'], 20, 20, false),
+  ticket('UABC-5', 'epic', 'done', 'Einkauf', 'UABC-1', 'Mittel', 'UABC-1', ['UABC-1'], 10, 10, false),
+  ticket('UABC-6', 'epic', 'done', 'Steuern', 'UABC-2', 'Hoch', 'UABC-2', ['UABC-2'], 12, 12, false),
+  ticket('UABC-7', 'epic', 'done', 'Verkauf', 'UABC-2', 'Mittel', 'UABC-2', ['UABC-2'], 18, 18, false),
+  ticket('UABC-8', 'epic', 'done', 'Go-live, Hypercare und Abschluss', 'UABC-3', 'Hoch', 'UABC-3', ['UABC-3'], 20, 20, false),
+  ticket('UABC-9', 'story', 'done', 'Finanzbasis einrichten', 'UABC-4', 'Hoch', 'UABC-1', [], 20, 20, false),
+  ticket('UABC-10', 'story', 'done', 'Beschaffung durchgängig abbilden', 'UABC-5', 'Mittel', 'UABC-1', [], 10, 10, false),
+  ticket('UABC-11', 'story', 'done', 'Steuerlogik prüfen', 'UABC-6', 'Hoch', 'UABC-2', [], 12, 12, false),
+  ticket('UABC-12', 'story', 'done', 'Verkaufsprozess durchgängig abbilden', 'UABC-7', 'Mittel', 'UABC-2', [], 18, 18, false),
+  ticket('UABC-13', 'story', 'done', 'Betriebsübergang absichern', 'UABC-8', 'Hoch', 'UABC-3', [], 20, 20, false),
+  ticket('UABC-14', 'task', 'done', 'Buchungsmatrix einrichten', 'UABC-9', 'Mittel', 'UABC-1', [], 20, 20, true, 'Phase 1'),
+  ticket('UABC-15', 'task', 'done', 'Bestellprozess konfigurieren', 'UABC-10', 'Mittel', 'UABC-1', [], 10, 10, true, 'Phase 1'),
+  ticket('UABC-16', 'task', 'done', 'Steuerlogik retesten', 'UABC-11', 'Mittel', 'UABC-2', [], 12, 12, true, 'Phase 2'),
+  ticket('UABC-17', 'task', 'done', 'Verkaufsprozess konfigurieren', 'UABC-12', 'Mittel', 'UABC-2', [], 18, 18, true, 'Phase 2'),
+  ticket('UABC-18', 'task', 'done', 'Handover abschließen', 'UABC-13', 'Mittel', 'UABC-3', [], 20, 20, true, 'Phase 3'),
 ] as const;
+export const fixtureStoryTickets = fixtureTicketDefinitions.map((item) => item.story);
 
 const ticketTypes = [
+  { type: 'phase', typeLabel: 'Phase', displayIconKey: 'phase-flag', displayColorToken: 'slate' },
   { type: 'epic', typeLabel: 'Epic', displayIconKey: 'epic-layers', displayColorToken: 'violet' },
   { type: 'story', typeLabel: 'Story', displayIconKey: 'story-bookmark', displayColorToken: 'violet' },
   { type: 'task', typeLabel: 'Aufgabe', displayIconKey: 'task-check', displayColorToken: 'blue' },
-  { type: 'subtask', typeLabel: 'Unteraufgabe', displayIconKey: 'subtask-branch', displayColorToken: 'light-blue' },
-  { type: 'bug', typeLabel: 'Fehler', displayIconKey: 'bug', displayColorToken: 'red' },
-  { type: 'change', typeLabel: 'Änderung', displayIconKey: 'change-arrow', displayColorToken: 'turquoise' },
 ] as const;
 
 const fixtureDocuments = [
@@ -37,7 +48,9 @@ const fixtureDocuments = [
 ].map((document, index) => projectDocumentSchema.parse({ ...document, status: 'validated', owners: [], references: [], phase: index < 2 ? 'Projektstart' : null, process: null, updatedAt: '2026-08-10', sourcePath: `fixture/${document.id.toLowerCase()}.md`, externalUrl: null, externalLinkReason: 'Im Fixture ist keine externe URL vorgesehen.' }));
 
 const allTicketIds = fixtureStoryTickets.map((item) => item.id);
-const groups = [{ id: 'GROUP-EPIC-1', label: 'Epic: Einführung fachlich steuern', order: 0, initialState: 'expanded', ticketIds: allTicketIds }];
+const phaseGroups = allTicketIds.slice(0, 3).map((phaseTicketId, order) => ({ id: `GROUP-PHASE-${order + 1}`, phaseTicketId, label: fixtureStoryTickets.find((ticket) => ticket.id === phaseTicketId)!.summary, order, initialState: 'expanded' as const,
+  epicIds: fixtureTicketDefinitions.filter(({ story, presentation }) => story.type === 'epic' && presentation.phaseRefs.includes(phaseTicketId)).map(({ story }) => story.id),
+  ticketIds: fixtureTicketDefinitions.filter(({ story, presentation }) => story.id === phaseTicketId || (story.type === 'epic' ? presentation.phaseRefs.includes(phaseTicketId) : presentation.phaseId === phaseTicketId)).map(({ story }) => story.id) }));
 const filters = [
   { id: 'FILTER-TYPE', label: 'Typ', field: 'type', options: ticketTypes.map((item) => ({ value: item.type, label: item.typeLabel })) },
   { id: 'FILTER-STATUS', label: 'Status', field: 'status', options: [{ value: 'backlog', label: 'Arbeitsvorrat' }, { value: 'in-progress', label: 'In Arbeit' }, { value: 'done', label: 'Erledigt' }] },
@@ -63,39 +76,49 @@ export const presentationFixtureInput = {
       { id: 'CONSULTANT-PAGE-CUTOVER', kind: 'page', parentId: 'CONSULTANT-MODULE', order: 1, initialState: 'collapsed', title: 'Cutover und Hypercare', purpose: 'Übergang kontrollieren', audience: 'Consultants', documentId: 'DOC-CONSULTANT-CUTOVER' },
     ] },
   ],
-  jira: { canonicalTicketCount: allTicketIds.length, ticketTypes, tickets: fixtureStoryTickets.map((item) => ({ ticketId: item.id, ...ticketTypes.find((entry) => entry.type === item.type)!, parentId: item.parent, projectStoryRole: 'customer-readable', phase: 'Umsetzung', role: item.assignee, initialState: ['epic', 'story'].includes(item.type) ? 'expanded' : 'collapsed' })), views: [
-    { id: 'VIEW-BOARD', kind: 'board', label: 'Board', order: 0, initialState: 'expanded', visibleFields: ['type', 'key', 'summary', 'priority', 'worklogHours'], filters, groups, columns: [
+  jira: { canonicalTicketCount: allTicketIds.length, ticketTypes, tickets: fixtureTicketDefinitions.map(({ story, presentation }) => ({ ticketId: story.id, ...ticketTypes.find((entry) => entry.type === story.type)!, parentId: story.parent, projectStoryRole: 'customer-readable', ...presentation, role: story.assignee, initialState: ['phase', 'epic', 'story'].includes(story.type) ? 'expanded' : 'collapsed' })), views: [
+    { id: 'VIEW-BOARD', kind: 'board', label: 'Board', order: 0, initialState: 'expanded', visibleFields: ['type', 'key', 'summary', 'priority', 'worklogHours'], filters, groups: phaseGroups, columns: [
       { id: 'COLUMN-BACKLOG', label: 'Arbeitsvorrat', order: 0, initialState: 'expanded', statuses: ['backlog'] },
       { id: 'COLUMN-IN-PROGRESS', label: 'In Arbeit', order: 1, initialState: 'expanded', statuses: ['in-progress'] },
       { id: 'COLUMN-DONE', label: 'Erledigt', order: 2, initialState: 'expanded', statuses: ['done'] },
     ] },
-    { id: 'VIEW-LIST', kind: 'list', label: 'Kompakte Liste', order: 1, initialState: 'collapsed', visibleFields: ['type', 'key', 'summary', 'status', 'priority', 'phase', 'role'], filters, groups, columns: [] },
+    { id: 'VIEW-LIST', kind: 'list', label: 'Kompakte Liste', order: 1, initialState: 'collapsed', visibleFields: ['type', 'key', 'summary', 'status', 'priority', 'phase', 'role'], filters, groups: phaseGroups, columns: [] },
   ] },
 } as const;
 
 const ticketTypesById = new Map(fixtureStoryTickets.map((item) => [item.id, item.type]));
 const ticketStatusesById = new Map(fixtureStoryTickets.map((item) => [item.id, item.status]));
+const ticketWorklogs = new Map(fixtureStoryTickets.map((item) => [item.id, { hours: item.worklogs.reduce((sum, worklog) => sum + worklog.hours, 0), amountEur: item.worklogs.reduce((sum, worklog) => sum + (worklog.cost ?? 0), 0) }]));
 const documentIds = new Set(fixtureDocuments.map((item) => item.id));
-export const presentationFixtureContext = { ticketTypes: ticketTypesById, ticketStatuses: ticketStatusesById, documentIds };
+export const presentationFixtureContext = { ticketTypes: ticketTypesById, ticketStatuses: ticketStatusesById, ticketWorklogs, billingTotal: { hours: 80, amountEur: 9600 }, documentIds };
 export const presentationFixture = validatePresentationContract(presentationFixtureInput, presentationFixtureContext);
 
-const fixtureArtifacts = fixtureStoryTickets.map((item) => artifactSchema.parse({ id: item.id, kind: item.type === 'subtask' ? 'task' : item.type, title: item.summary, status: item.status, parentId: item.parent, sourceType: `project-story-${item.type}`, priority: item.priority, owner: item.assignee, actualHours: 2, sourcePath: 'fixture/project-story.json' }));
+const fixtureArtifacts = fixtureStoryTickets.map((item) => artifactSchema.parse({ id: item.id, kind: item.type, title: item.summary, status: item.status, parentId: item.parent, sourceType: `project-story-${item.type}`, priority: item.priority, owner: item.assignee, estimateHours: item.estimateHours, actualHours: item.worklogs.reduce((sum, worklog) => sum + worklog.hours, 0), billable: item.billable, sourcePath: 'fixture/project-story.json' }));
 
 export const presentationFixtureState: ProjectState = projectStateSchema.parse({
   source: { projectId: 'bc-basic', branch: 'fixture/presentation-contract', commit: '1'.repeat(40), dirty: false, headFingerprint: '2'.repeat(64), indexFingerprint: '3'.repeat(64), statusFingerprint: '4'.repeat(64), snapshot: null, readAt: '2026-08-10T12:00:00Z' },
   artifacts: fixtureArtifacts, evidenceItems: [], documents: fixtureDocuments,
-  story: { storyId: 'FIXTURE-STORY', status: 'validated', offer: null, pages: [], tickets: fixtureStoryTickets, timeline: [{ id: 'TIMELINE-1', time: '2026-08-10T12:00:00Z', phase: 'Umsetzung', role: 'Projektteam', tickets: ['TICKET-EPIC-1', 'TICKET-STORY-1', 'TICKET-TASK-1', 'TICKET-BUG-1'], pages: [], sessions: [], action: 'Fixture geprüft', result: 'Board und Liste sind darstellbar.', evidence: [], decision: 'Consumervertrag verwenden', nextStep: 'Producer integrieren' }], hypercare: [], relations: [], controls: { openP1: 0, openP2: 0, worklogHours: 12, worklogCost: 1440, realBcExecution: false } },
+  story: { storyId: 'FIXTURE-STORY', status: 'validated', offer: null, pages: [], tickets: fixtureStoryTickets, timeline: [{ id: 'TIMELINE-1', time: '2026-08-10T12:00:00Z', phase: 'Phase 2', role: 'Projektteam', tickets: ['UABC-6', 'UABC-11', 'UABC-16'], pages: [], sessions: [], action: 'Fixture geprüft', result: 'Board und Liste sind darstellbar.', evidence: [], decision: 'Consumervertrag verwenden', nextStep: 'Producer integrieren' }], hypercare: [], relations: [], controls: { openP1: 0, openP2: 0, worklogHours: 80, worklogCost: 9600, realBcExecution: false } },
   presentation: presentationFixture, workstreams: ['Umsetzung'], gaps: [], warnings: ['Lokale Consumerfixture; keine BC-Basic-Fachwahrheit.'], stats: { jira: fixtureStoryTickets.length, changes: 0, documents: fixtureDocuments.length, capabilities: 0, evidence: 0 },
 });
 
-export type PresentationFixtureVariant = 'valid' | 'cycle' | 'duplicate-id' | 'duplicate-order' | 'unknown-reference' | 'invalid-initial-state' | 'unknown-icon';
+export type PresentationFixtureVariant = 'valid' | 'cycle' | 'duplicate-id' | 'duplicate-order' | 'unknown-reference' | 'invalid-initial-state' | 'unknown-icon' | 'invalid-parent' | 'nonbillable-task' | 'rollup-mismatch' | 'phase-ref-mismatch' | 'phase-container' | 'wrong-phase-order' | 'phase-billable' | 'epic-without-phase' | 'duplicate-epic-reference';
 export function presentationFixtureVariant(variant: PresentationFixtureVariant): unknown {
   const value = structuredClone(presentationFixtureInput) as any;
   if (variant === 'cycle') { value.spaces[0].nodes[0].parentId = value.spaces[0].nodes[1].id; }
   if (variant === 'duplicate-id') { value.spaces[0].nodes[1].id = value.spaces[0].nodes[0].id; }
   if (variant === 'duplicate-order') { value.spaces[0].nodes[2].order = value.spaces[0].nodes[1].order; }
-  if (variant === 'unknown-reference') { value.jira.views[0].groups[0].ticketIds[0] = 'TICKET-UNKNOWN'; }
+  if (variant === 'unknown-reference') { value.jira.views[0].groups[0].phaseTicketId = 'UABC-999'; }
   if (variant === 'invalid-initial-state') { value.jira.views[0].initialState = 'open'; }
   if (variant === 'unknown-icon') { value.jira.ticketTypes[0].displayIconKey = 'external-jira-icon'; }
+  if (variant === 'invalid-parent') { value.jira.tickets.find((ticket: any) => ticket.type === 'task').parentId = 'UABC-4'; }
+  if (variant === 'nonbillable-task') { value.jira.tickets.find((ticket: any) => ticket.type === 'task').billable = false; }
+  if (variant === 'rollup-mismatch') { value.jira.tickets[0].actualHours += 1; }
+  if (variant === 'phase-ref-mismatch') { value.jira.tickets.find((ticket: any) => ticket.ticketId === 'UABC-10').phaseId = 'UABC-2'; }
+  if (variant === 'phase-container') { value.jira.phases = [{ id: 'PHASE-CONTAINER', label: 'Phase' }]; }
+  if (variant === 'wrong-phase-order') { [value.jira.tickets[0], value.jira.tickets[1]] = [value.jira.tickets[1], value.jira.tickets[0]]; }
+  if (variant === 'phase-billable') { value.jira.tickets[0].billable = true; }
+  if (variant === 'epic-without-phase') { value.jira.tickets.find((ticket: any) => ticket.type === 'epic').parentId = null; }
+  if (variant === 'duplicate-epic-reference') { value.jira.views[0].groups[0].epicIds.push(value.jira.views[0].groups[0].epicIds[0]); }
   return value;
 }

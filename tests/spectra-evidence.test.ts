@@ -37,8 +37,12 @@ function v1Fixture() {
 describe('commitgebundene Spectra-Evidence', () => {
   it('löst den erlaubten Branch beim Serverstart automatisch genau einmal auf', () => {
     const vite = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
-    expect(vite).toContain("rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}");
+    expect(vite).toContain("process.env.UABC_STABLE_BRANCH || 'main'");
+    expect(vite).toContain('`refs/heads/${stableBranch}^{commit}`');
+    expect(vite).toContain('officialBcBasicSnapshotAnchor.bootstrapBranch');
+    expect(vite).toContain('return productionRegistry(sourceRoot, commit, tree, branch, false)');
     expect(vite).toContain("'-c', `safe.directory=${sourceRoot}`");
+    expect(vite).not.toContain('loadEnv');
     expect(vite).not.toContain('UABC_EXPECTED_COMMIT');
   });
   it('benennt unterstützte Spectra-Dokumente und den manifestfreien Blockierzustand widerspruchsfrei', () => {

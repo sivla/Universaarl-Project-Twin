@@ -3,7 +3,7 @@ import path from 'node:path';
 export type BlueprintSourceBinding = Readonly<{
   localRelativePath: '..\\Universaarl Projekt BC Basic';
   remoteUrl: 'https://github.com/sivla/FiBu.git';
-  branch: 'codex/universaarl-projekt';
+  branch: string;
   manifestPath: 'exports/project-data/v1/snapshot-manifest.json';
   schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json';
   indexPath: 'exports/project-data/v1/index.yaml';
@@ -15,14 +15,16 @@ export type SnapshotSourceBinding = Readonly<{
   expectedCommit: string;
   expectedTree?: string;
   expectedRemote: typeof blueprintSourceBinding.remoteUrl;
-  expectedBranch: typeof blueprintSourceBinding.branch;
+  expectedBranch: string;
+  branchTipRequired: boolean;
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: 'ab2497dc4f96ed6f6a402cf84ee160f29d84e822',
-  tree: 'e882c342bb569e7d56a0a84bbf488f1bf7896a90',
-  artifactCount: 108,
-  documentCount: 32,
+  commit: '7b988e1cb8dee9b7f227481478ad97449e774100',
+  tree: 'd9d41714e81effdcc7e1b829bd0b2a32166b8a81',
+  bootstrapBranch: 'codex/universaarl-projekt',
+  artifactCount: 111,
+  documentCount: 34,
   documentCatalogPath: 'exports/project-data/v1/document-catalog.json',
   documentCatalogSchemaPath: 'governance/schemas/project-document-catalog.schema.json',
 } as const);
@@ -30,7 +32,7 @@ export const officialBcBasicSnapshotAnchor = Object.freeze({
 export const blueprintSourceBinding: BlueprintSourceBinding = Object.freeze({
   localRelativePath: '..\\Universaarl Projekt BC Basic',
   remoteUrl: 'https://github.com/sivla/FiBu.git',
-  branch: 'codex/universaarl-projekt',
+  branch: 'main',
   manifestPath: 'exports/project-data/v1/snapshot-manifest.json',
   schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json',
   indexPath: 'exports/project-data/v1/index.yaml',
@@ -47,6 +49,6 @@ export function resolveBlueprintSourceRoot(projectRoot: string, localOverride?: 
   return path.resolve(projectRoot, ...blueprintSourceBinding.localRelativePath.split(/[\\/]+/));
 }
 
-export function snapshotSourceBinding(expectedCommit?: string, expectedTree?: string): SnapshotSourceBinding {
-  return Object.freeze({ expectedCommit: expectedCommit?.trim() ?? '', ...(expectedTree?.trim() ? { expectedTree: expectedTree.trim() } : {}), expectedRemote: blueprintSourceBinding.remoteUrl, expectedBranch: blueprintSourceBinding.branch });
+export function snapshotSourceBinding(expectedCommit?: string, expectedTree?: string, expectedBranch = blueprintSourceBinding.branch, branchTipRequired = true): SnapshotSourceBinding {
+  return Object.freeze({ expectedCommit: expectedCommit?.trim() ?? '', ...(expectedTree?.trim() ? { expectedTree: expectedTree.trim() } : {}), expectedRemote: blueprintSourceBinding.remoteUrl, expectedBranch: expectedBranch.trim(), branchTipRequired });
 }

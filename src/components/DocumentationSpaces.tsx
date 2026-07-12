@@ -51,8 +51,9 @@ export function DocumentationSpaces({ state }: { state: ProjectState }) {
   const children = (parentId: string | null) => [...activeSpace.nodes].filter((node) => node.parentId === parentId).sort((a, b) => a.order - b.order);
   const renderNode = (node: SpaceNode): ReactNode => {
     const descendants = children(node.id); const key = `node:${activeSpace.id}:${node.id}`; const isOpen = expanded[key] ?? false;
-    if (node.kind === 'page') { if (node.documentId && !visibleDocumentIds.has(node.documentId)) return null; return <li key={node.id}><button className="space-page-link" aria-current={selectedNodeId === node.id ? 'page' : undefined} onClick={() => openNode(activeSpace, node.id)}><strong>{node.title}</strong><small>{node.purpose} · {node.audience}</small></button></li>; }
-    return <li key={node.id} className={`space-node space-node-${node.kind}`}><button className="space-node-toggle" aria-expanded={isOpen} onClick={() => toggle(key)}><span>{isOpen ? '−' : '+'}</span><strong>{node.title}</strong><small>{node.purpose} · {node.audience}</small></button>{isOpen && descendants.length > 0 && <ul>{descendants.map(renderNode)}</ul>}</li>;
+    const meta = [node.purpose, node.audience].filter((value): value is string => Boolean(value)).join(' · ');
+    if (node.kind === 'page') { if (node.documentId && !visibleDocumentIds.has(node.documentId)) return null; return <li key={node.id}><button className="space-page-link" aria-current={selectedNodeId === node.id ? 'page' : undefined} onClick={() => openNode(activeSpace, node.id)}><strong>{node.title}</strong>{meta && <small>{meta}</small>}</button></li>; }
+    return <li key={node.id} className={`space-node space-node-${node.kind}`}><button className="space-node-toggle" aria-expanded={isOpen} onClick={() => toggle(key)}><span>{isOpen ? '−' : '+'}</span><strong>{node.title}</strong>{meta && <small>{meta}</small>}</button>{isOpen && descendants.length > 0 && <ul>{descendants.map(renderNode)}</ul>}</li>;
   };
   const breadcrumb = selectedNode ? ancestors(activeSpace, selectedNode.id) : []; const headings = selected ? markdownHeadings(selected.content) : [];
 

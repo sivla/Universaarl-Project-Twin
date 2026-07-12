@@ -1,12 +1,14 @@
 import type { PresentationTicket } from '../model';
 
 const ticketGlyphs: Readonly<Record<PresentationTicket['displayIconKey'], string>> = {
+  'phase-flag': '⚑',
   'epic-layers': '▰',
   'story-bookmark': '◆',
   'task-check': '✓',
-  'subtask-branch': '↳',
-  bug: '✹',
-  'change-arrow': '↔',
+  'jira-phase': '⚑',
+  'jira-epic': '▰',
+  'jira-story': '◆',
+  'jira-task': '✓',
 };
 
 export function TicketTypeIcon({ ticket, compact = false }: { ticket: PresentationTicket; compact?: boolean }) {

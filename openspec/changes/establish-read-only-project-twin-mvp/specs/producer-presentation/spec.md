@@ -20,7 +20,7 @@ Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anf
 
 #### Scenario: Tickettypen sind vor dem Öffnen unterscheidbar
 
-- **WHEN** die kanonische Menge Epic, Story, Aufgabe, Unteraufgabe, Fehler und Änderung enthält
+- **WHEN** die kanonische Menge genau Phase, Epic, Story und Aufgabe im fortlaufenden UABC-Nummernkreis enthält
 - **THEN** zeigt Board, Liste, Suche, Timeline-Verweis und Ticketdetail jeweils den erlaubten Iconschlüssel zusammen mit dem deutschen Typtext an
 
 #### Scenario: Eine unbekannte Ticketdarstellung wird blockiert
@@ -41,3 +41,17 @@ Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anf
 
 - **WHEN** ein Dokument aktives HTML, Skriptinhalt, ein unsicheres Linkziel oder eine unbekannte Dokumentreferenz enthält
 - **THEN** wird der Inhalt gemäß Quellvertrag fail-closed blockiert oder nachweislich nicht klickbar dargestellt
+
+### Requirement: Konfigurierter Freigabekanal mit letztem gültigem Stand
+
+Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anforderung. Der Twin muss den konfigurierten Freigabebranch bei einem Start genau einmal auflösen und einen neuen Commit erst nach vollständiger Validierung atomar aktivieren. Ein fehlgeschlagener Kandidat darf den zuletzt gültigen Stand nicht verändern.
+
+#### Scenario: Ein gültiger Freigabecommit wird atomar aktiviert
+
+- **WHEN** der konfigurierte Freigabebranch auf einen vollständig validierten Commit zeigt
+- **THEN** lesen Cockpit, Tickets und Wissensräume ausschließlich Git-Blobs genau dieses Commits und zeigen den Stand als aktuell an
+
+#### Scenario: Eine fehlgeschlagene Aktualisierung bewahrt den letzten gültigen Stand
+
+- **WHEN** der Freigabebranch fehlt oder sein neuer Commit den Quellvertrag verletzt
+- **THEN** bleibt der letzte gültige commitgebundene Stand sichtbar und wird mit einem sicheren deutschen Aktualisierungshinweis als veraltet gekennzeichnet
