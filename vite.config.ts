@@ -14,10 +14,10 @@ export default defineConfig(({ mode }) => {
       configureServer(server) {
         if (mode === 'test') return;
         const sourceRepo = process.env.UABC_SOURCE_REPO ?? env.UABC_SOURCE_REPO;
-        const expectedCommit = process.env.UABC_BRANCH_COMMIT_CONTRACT === '1'
-          ? execFileSync('git', ['-C', resolveBlueprintSourceRoot(process.cwd(), sourceRepo), 'rev-parse', 'refs/heads/codex/universaarl-projekt'], { encoding: 'utf8' }).trim()
-          : process.env.UABC_EXPECTED_COMMIT ?? env.UABC_EXPECTED_COMMIT;
-        const registry = productionRegistry(resolveBlueprintSourceRoot(process.cwd(), sourceRepo), expectedCommit);
+        const sourceRoot = resolveBlueprintSourceRoot(process.cwd(), sourceRepo);
+        const pinnedCommit = execFileSync('git', ['-C', sourceRoot, 'rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}'], { encoding: 'utf8' }).trim();
+        process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
+        const registry = productionRegistry(sourceRoot, pinnedCommit);
         server.middlewares.use(async (req, res, next) => {
           try {
             const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;

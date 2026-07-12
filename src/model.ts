@@ -141,6 +141,14 @@ const germanDocumentTypes: Readonly<Record<string, string>> = {
   'spectra09-integration-generator': 'Spectra-0.9-Integrationsgenerator',
   'spectra09-integration-validator': 'Spectra-0.9-Integrationsvalidator',
   'spectra09-integration-tests': 'Spectra-0.9-Integrationsprüfungen',
+  'spectra10-integration-generator': 'Spectra-0.10-Integrationsgenerator',
+  'spectra10-integration-validator': 'Spectra-0.10-Integrationsvalidator',
+  'spectra10-integration-tests': 'Spectra-0.10-Integrationsprüfungen',
+  'spectra-reference-graph-coverage-schema': 'Schema für die Spectra-Referenzabdeckung',
+  'spectra-reference-graph-coverage': 'Spectra-Referenzabdeckung',
+  'derived-native-reference-graph': 'Nativer Referenzgraph',
+  'reference-graph-mapping-rules': 'Abbildungsregeln für Referenzen',
+  'portable-reference-graph': 'Portabler Referenzgraph',
 };
 
 export function displayDocumentType(value: string | null) {

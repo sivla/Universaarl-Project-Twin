@@ -26,7 +26,7 @@ Akzeptanz: Jira-Typ, Status, Phase, Arbeitsstrom, Aufwand, Abhängigkeiten, expl
 
 ## Commitgebundener Branchvertrag
 
-Die produktive Registry MUSS das Kundenprojekt `bc-basic`, das Repository und den Branch `codex/universaarl-projekt` ausdrücklich binden. Der Branch wird beim Start genau einmal zu einer vollständigen 40-stelligen Commit-SHA aufgelöst. Danach liest der Twin ausschließlich Git-Blobs dieser SHA; ein beweglicher Branch-HEAD, Arbeitsbaum, generischer Tree-Scan oder Rückfall auf zuletzt bekannte Werte ist unzulässig.
+Die produktive Registry MUSS das Kundenprojekt `bc-basic`, das Repository und den Branch `codex/universaarl-projekt` ausdrücklich binden. Der Branch wird bei jedem Serverstart automatisch und genau einmal zu einer vollständigen 40-stelligen Commit-SHA aufgelöst; eine manuelle Commitfreigabe ist nicht erforderlich. Danach liest der Twin ausschließlich Git-Blobs dieser SHA; ein beweglicher Branch-HEAD, Arbeitsbaum, generischer Tree-Scan oder Rückfall auf zuletzt bekannte Werte ist unzulässig.
 
 `exports/project-data/v1/index.yaml` ist im Branchmodus der einzige aktuelle Daten- und Allowlistvertrag. Er MUSS Projektidentität, Vertragsversion, `readOnly`, `contractRole`, `pathSemantics`, `allowedBranch` und `validationStatus` exakt erfüllen. Jeder positivgelistete Pfad wird als Blob mit sicherem Modus, Existenz, Größe, Format, Referenzen und vorhandenem Digest geprüft. Unsichere, doppelte, nicht positivgelistete oder fehlende Pfade blockieren fail-closed. `snapshot-manifest.json`, `producerCommitSha`, Parent-A, A/B-Diff und das alte Snapshot-Schema werden im Branchmodus überhaupt nicht geöffnet, geparst oder kompiliert.
 
@@ -42,8 +42,14 @@ Menschliche Freigabe und Archivierung bleiben eigenständige, noch nicht abgesch
 
 Akzeptanz: Die Aufgaben für menschliche Freigabe und Archivierung bleiben offen, bis ein gesonderter belegter Freigabevorgang abgeschlossen ist.
 
-## Spectra-0.9-Projektabgleich und Twin-Export
+## Spectra-Projektabgleich und Twin-Export
 
-Wenn der Projektindex die Spectra-0.9-Artefakte positivlistet, MUSS der Twin Projektabgleich, Adapterprovenienz, Twin-Export, Release-Evidence und Konformität gemeinsam und fail-closed validieren. Quellhash vor und nach der Projektion MÜSSEN dem commitgebundenen Indexblob entsprechen. Projektionsdigest, Mappingkennung, Mappingversion und sämtliche Exportartefakte MÜSSEN mit den positivgelisteten Git-Blobs und dem Index übereinstimmen. Unsichere Pfade, fehlende oder zusätzliche Artefakte, Hash- oder Digestabweichungen, Schreibvorgänge, Overwriterechte und eine widersprüchliche Releasebindung MÜSSEN die gesamte Ansicht blockieren.
+Wenn der Projektindex die Spectra-0.9- oder Spectra-0.10-Artefakte positivlistet, MUSS der Twin Projektabgleich, Adapterprovenienz, Twin-Export, Release-Evidence und Konformität gemeinsam und fail-closed validieren. Für Spectra `0.10.0-alpha.1` MÜSSEN Tag, Releasebindung und genau 110 bestätigte Releasepayloads übereinstimmen. Quellhash vor und nach der Projektion MÜSSEN dem commitgebundenen Indexblob entsprechen. Projektionsdigest, Mappingkennung, Mappingversion und sämtliche Exportartefakte MÜSSEN mit den positivgelisteten Git-Blobs und dem Index übereinstimmen. Unsichere Pfade, fehlende oder zusätzliche Artefakte, Hash- oder Digestabweichungen, Schreibvorgänge, Overwriterechte und eine widersprüchliche Releasebindung MÜSSEN die gesamte Ansicht blockieren.
 
 Akzeptanz: Die deutsche Oberfläche zeigt die historische Baseline, das ausdrücklich synthetische Angebot und Ist, die begründete Abweichung, die Exportanzahl sowie die bestätigte Spectra-Releasebindung. Sie kennzeichnet, dass keine echte Rechnung, Buchung, Zahlung oder produktive Leistung stattgefunden hat. Die Kundeninstanz bleibt Source of Truth; der Twin liest ausschließlich und speichert keine zweite fachliche Wahrheit.
+
+## Handlungsorientierte Hauptansicht
+
+Die Hauptansicht MUSS die Projekterfahrung auf fünf Fragen verdichten: Was ist verkauft, wo steht das Projekt, was ist fertig, was ist offen und was ist als Nächstes zu tun. Angebot, Scope, Phasen, Prozesse, Entscheidungen, Daten und Setup, Tickets, UAT, Cutover und Hypercare MÜSSEN aus belegten Artefakten erreichbar bleiben. Technische SHAs, Digests, Spectra-Provenienz und das generische Artefaktverzeichnis MÜSSEN nachgelagert in einer einklappbaren Prüfinfo erscheinen.
+
+Akzeptanz: Eine betreibende Person erkennt in der Hauptansicht ohne Öffnen der Prüfinfo Simulationsgrenze, Projektstand, ausdrücklich offene Punkte und nächste Handlung. Desktop und Mobil zeigen alle fünf Fragen ohne horizontales Abschneiden; Tastaturfokus und Sprunglink bleiben nutzbar.

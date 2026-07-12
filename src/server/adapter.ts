@@ -1397,19 +1397,19 @@ const spectraReleaseEvidenceSchema = z.object({
 const spectraConformanceEvidenceSchema = z.object({
   status: z.string().min(1),
   spectraRelease: z.string().min(1),
-  graphCoverage: z.object({ nativeRelations: z.number().int().nonnegative(), portableEdges: z.number().int().nonnegative(), productDecision: z.string().min(1), standardizedCoverageMetric: z.boolean() }).passthrough(),
+  graphCoverage: z.object({ nativeRelations: z.number().int().nonnegative(), portableEdges: z.number().int().nonnegative(), productDecision: z.string().min(1).optional(), standardizedCoverageMetric: z.boolean().optional(), semantics: z.string().min(1).optional(), coverageRatio: z.number().min(0).max(1).optional() }).passthrough(),
 }).passthrough();
 
 const financialStateSchema = z.object({ version: z.number().int().positive(), hours: z.number().nonnegative(), rate: z.number().nonnegative(), amount: z.number().nonnegative(), currency: z.literal('EUR') }).strict();
 const spectraProjectReconciliationSchema = z.object({
-  schema_version: z.literal(1), contract_version: z.literal('0.9'), record_type: z.literal('project-reconciliation'), reconciliation_id: technicalId,
+  schema_version: z.literal(1), contract_version: z.enum(['0.9', '0.10']), record_type: z.literal('project-reconciliation'), reconciliation_id: technicalId,
   product_id: z.literal('spectra'), profile: z.literal('implementation'), classification: z.literal('synthetic-fixture'), synthetic: z.literal(true),
   baseline: financialStateSchema, offer: financialStateSchema, actual: financialStateSchema,
   variance: z.object({ hours: z.number(), rate: z.number(), amount: z.number(), reason_code: z.string().min(1), reason: z.string().min(1).max(4_000) }).strict(),
   truth_boundary: z.object({ owner: z.literal('synthetic-fixture'), source_of_truth: z.literal('synthetic-fixture'), invoice_claim: z.literal(false), productive_activity_claim: z.literal(false), billing_status: z.literal('not-applicable') }).strict(),
 }).strict();
 const spectraAdapterProvenanceSchema = z.object({
-  schema_version: z.literal(1), contract_version: z.literal('0.9'), record_type: z.literal('adapter-provenance'), provenance_id: technicalId,
+  schema_version: z.literal(1), contract_version: z.enum(['0.9', '0.10']), record_type: z.literal('adapter-provenance'), provenance_id: technicalId,
   product_id: z.literal('spectra'), profile: z.literal('implementation'), classification: z.literal('customer-workspace'), synthetic: z.literal(false),
   source: z.object({ blob_path: z.string().refine(validateContractPath), source_hash: z.string().regex(/^[a-f0-9]{64}$/), source_hash_after: z.string().regex(/^[a-f0-9]{64}$/), media_type: z.literal('application/yaml') }).strict(),
   mapping: z.object({ mapping_id: technicalId, mapping_version: z.string().regex(/^\d+\.\d+\.\d+$/), deterministic: z.literal(true) }).strict(),
@@ -1419,15 +1419,15 @@ const spectraAdapterProvenanceSchema = z.object({
 }).strict();
 const twinExportArtifactSchema = z.object({ id: technicalId, kindId: technicalId, path: z.string().refine(validateContractPath), selector: z.string().nullable(), format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png', 'javascript']), required: z.boolean() }).strict();
 const twinExportMapSchema = z.object({
-  schemaVersion: z.literal(1), contractVersion: z.literal('0.9'), recordType: z.literal('twin-export-map'), mappingId: technicalId,
+  schemaVersion: z.literal(1), contractVersion: z.enum(['0.9', '0.10']), recordType: z.literal('twin-export-map'), mappingId: technicalId,
   mappingVersion: z.string().regex(/^\d+\.\d+\.\d+$/), projectId: z.literal('UABC-BC-BASIC-001'), allowedBranch: z.literal('codex/universaarl-projekt'),
   classification: z.literal('synthetische-projektevidence'), sourceOfTruth: z.literal('exports/project-data/v1/index.yaml'), readOnly: z.literal(true),
   artifacts: z.array(twinExportArtifactSchema).min(1).max(1_000),
 }).strict();
 const spectra09ConformanceSchema = z.object({
-  status: z.literal('passed'), spectraRelease: z.string().regex(/^spectra-v0\.9\.0-alpha\.1$/),
-  reconciliation: z.object({ path: z.string().refine(validateContractPath), baselineHours: z.number(), baselineAmount: z.number(), offerHours: z.number(), offerAmount: z.number(), actualHours: z.number(), actualAmount: z.number(), invoiceClaim: z.boolean(), productiveActivityClaim: z.boolean(), officialSpectraValidator: z.literal('passed') }).passthrough(),
-  adapterProvenance: z.object({ path: z.string().refine(validateContractPath), sourcePath: z.string().refine(validateContractPath), mappingVersion: z.string(), projectionPath: z.string().refine(validateContractPath), sourceUnchanged: z.boolean(), writesPerformed: z.boolean(), officialSpectraValidator: z.literal('passed') }).passthrough(),
+  status: z.literal('passed'), spectraRelease: z.string().regex(/^spectra-v0\.(?:9|10)\.0-alpha\.1$/),
+  reconciliation: z.object({ path: z.string().refine(validateContractPath), baselineHours: z.number(), baselineAmount: z.number(), offerHours: z.number(), offerAmount: z.number(), actualHours: z.number(), actualAmount: z.number(), invoiceClaim: z.boolean(), productiveActivityClaim: z.boolean(), officialSpectraValidator: z.literal('passed').optional() }).passthrough(),
+  adapterProvenance: z.object({ path: z.string().refine(validateContractPath), sourcePath: z.string().refine(validateContractPath), mappingVersion: z.string(), projectionPath: z.string().refine(validateContractPath), sourceUnchanged: z.boolean(), writesPerformed: z.boolean(), officialSpectraValidator: z.literal('passed').optional() }).passthrough(),
   counts: z.object({ offerVersions: z.number().int(), pages: z.number().int(), tickets: z.number().int(), comments: z.number().int(), worklogs: z.number().int(), hours: z.number(), cost: z.number(), timelineEvents: z.number().int(), hypercareDays: z.number().int(), nativeRelations: z.number().int() }).passthrough(),
 }).passthrough();
 
@@ -1435,7 +1435,7 @@ type SpectraSummary = { title: string; status: string; rationale: string; activi
 
 function requiredSource(sources: readonly IndexedProjectSource[], kindId: string) {
   const matches = sources.filter((source) => source.declaration.kindId === kindId);
-  if (matches.length !== 1) sourceError('Der Spectra-0.9-Vertrag ist nicht vollständig und eindeutig positivgelistet.');
+  if (matches.length !== 1) sourceError('Der Spectra-Projektvertrag ist nicht vollständig und eindeutig positivgelistet.');
   return matches[0];
 }
 
@@ -1448,9 +1448,10 @@ export function validateSpectra09ContractData(input: { release: unknown; conform
   const indexArtifacts = schema(input.indexArtifacts, z.array(projectDataArtifactSchema).min(1).max(1_000));
   const summaries = new Map<string, SpectraSummary>();
   const indexHash = input.indexHash; const projectionHash = input.projectionHash;
-  if (!/^[a-f0-9]{64}$/.test(indexHash) || !/^[a-f0-9]{64}$/.test(projectionHash)) sourceError('Die berechneten Spectra-0.9-Blobdigests sind ungültig.');
-  if (release.release.version !== '0.9.0-alpha.1' || release.tag.name !== 'spectra-v0.9.0-alpha.1' || conformance.spectraRelease !== release.tag.name) sourceError('Die Spectra-0.9-Releasebindung ist widersprüchlich.');
-  if (release.payload.fileCount !== 102 || release.payload.verifiedGitBlobs !== 102 || release.payload.mismatches !== 0) sourceError('Die Spectra-0.9-Releasepayloads sind nicht vollständig bestätigt.');
+  if (!/^[a-f0-9]{64}$/.test(indexHash) || !/^[a-f0-9]{64}$/.test(projectionHash)) sourceError('Die berechneten Spectra-Blobdigests sind ungültig.');
+  const supportedRelease = release.release.version === '0.9.0-alpha.1' ? { tag: 'spectra-v0.9.0-alpha.1', payloads: 102 } : release.release.version === '0.10.0-alpha.1' ? { tag: 'spectra-v0.10.0-alpha.1', payloads: 110 } : null;
+  if (!supportedRelease || release.tag.name !== supportedRelease.tag || conformance.spectraRelease !== release.tag.name) sourceError('Die Spectra-Releasebindung ist widersprüchlich.');
+  if (release.payload.fileCount !== supportedRelease.payloads || release.payload.verifiedGitBlobs !== supportedRelease.payloads || release.payload.mismatches !== 0) sourceError('Die Spectra-Releasepayloads sind nicht vollständig bestätigt.');
   if (provenance.source.blob_path !== 'exports/project-data/v1/index.yaml' || provenance.source.source_hash !== indexHash || provenance.source.source_hash_after !== indexHash) sourceError('Der Quellhash vor oder nach der Spectra-Projektion stimmt nicht mit dem Indexblob überein.');
   if (provenance.projection.projection_path !== 'exports/project-data/v1/twin-export-map.json' || provenance.projection.projection_digest !== projectionHash) sourceError('Der Projektionsdigest stimmt nicht mit dem commitgebundenen Twin-Export überein.');
   if (exportMap.mappingId !== provenance.mapping.mapping_id || exportMap.mappingVersion !== provenance.mapping.mapping_version) sourceError('Die Mappingversion oder Mappingkennung ist widersprüchlich.');
@@ -1465,7 +1466,7 @@ export function validateSpectra09ContractData(input: { release: unknown; conform
   summaries.set('spectra-project-reconciliation', { title: 'Historische Baseline und synthetischer Projektabgleich', status: 'passed', rationale: reconciliation.variance.reason, activity: [`Historische Baseline: ${number.format(reconciliation.baseline.hours)} Std. · ${number.format(reconciliation.baseline.amount)} EUR`, `Synthetisches Angebot: ${number.format(reconciliation.offer.hours)} Std. · ${number.format(reconciliation.offer.amount)} EUR`, `Synthetisches Ist: ${number.format(reconciliation.actual.hours)} Std. · ${number.format(reconciliation.actual.amount)} EUR`, 'Keine echte Rechnung, Buchung, Zahlung oder produktive Leistung.'] });
   summaries.set('spectra-adapter-provenance', { title: `Twin-Projektion · Mapping ${provenance.mapping.mapping_version}`, status: 'passed', rationale: 'Die Kundeninstanz bleibt die fachlich führende Quelle; der Twin liest ausschließlich und überschreibt keine Quelle.', activity: [`Quellhash vor/nach: ${indexHash}`, `Projektionsdigest: ${projectionHash}`, 'Nur-Lesen · keine Schreibvorgänge · kein Überschreiben'] });
   summaries.set('twin-export-map', { title: `${exportMap.artifacts.length} exportierte Artefakte`, status: 'passed', rationale: `Commitgebundene Allowlist · Mapping ${exportMap.mappingVersion}`, activity: ['Sichere repository-relative Pfade', 'Kundeninstanz bleibt die fachlich führende Quelle', 'Twin liest ausschließlich'] });
-  summaries.set('spectra-portable-conformance-evidence', { title: 'Spectra 0.9 · Projektabgleich und Twin-Export bestanden', status: conformance.status, rationale: `${conformance.counts.nativeRelations} native Relationen · Storymengen unverändert`, activity: [`${conformance.counts.offerVersions} Angebote · ${conformance.counts.pages} Seiten · ${conformance.counts.tickets} Tickets`, `${conformance.counts.comments} Kommentare · ${conformance.counts.worklogs} Worklogs`, `${conformance.counts.hours} Std. · ${conformance.counts.cost} EUR`] });
+  summaries.set('spectra-portable-conformance-evidence', { title: `Spectra ${release.release.version} · Projektabgleich und Twin-Export bestanden`, status: conformance.status, rationale: `${conformance.counts.nativeRelations} native Relationen · Storymengen unverändert`, activity: [`${conformance.counts.offerVersions} Angebote · ${conformance.counts.pages} Seiten · ${conformance.counts.tickets} Tickets`, `${conformance.counts.comments} Kommentare · ${conformance.counts.worklogs} Worklogs`, `${conformance.counts.hours} Std. · ${conformance.counts.cost} EUR`] });
   return summaries;
 }
 
@@ -1496,11 +1497,11 @@ export function spectraEvidenceSummary(kindId: string, value: unknown) {
   }
   if (kindId === 'spectra-portable-conformance-evidence') {
     const data = schema(value, spectraConformanceEvidenceSchema);
-    const decision = data.graphCoverage.productDecision === 'accepted-graph-separation' ? 'Graphtrennung akzeptiert' : `Graphentscheidung ${data.graphCoverage.productDecision}`;
+    const decision = data.graphCoverage.productDecision === 'accepted-graph-separation' ? 'Graphtrennung akzeptiert' : data.graphCoverage.semantics === 'explained-native-relations' ? 'Referenzabdeckung erklärt' : 'Referenzabdeckung bestätigt';
     return {
       title: `${data.spectraRelease} · ${decision}`,
       status: data.status,
-      rationale: `${data.graphCoverage.nativeRelations} native Relationen · ${data.graphCoverage.portableEdges} portable Kanten · Coverage-Metrik ${data.graphCoverage.standardizedCoverageMetric ? 'veröffentlicht' : 'nicht veröffentlicht'}`,
+      rationale: `${data.graphCoverage.nativeRelations} native Relationen · ${data.graphCoverage.portableEdges} portable Kanten · ${data.graphCoverage.coverageRatio !== undefined ? `Abdeckung ${Math.round(data.graphCoverage.coverageRatio * 100)} %` : data.graphCoverage.standardizedCoverageMetric !== undefined ? `Coverage-Metrik ${data.graphCoverage.standardizedCoverageMetric ? 'veröffentlicht' : 'nicht veröffentlicht'}` : 'Abdeckung bestätigt'}`,
     };
   }
   return null;

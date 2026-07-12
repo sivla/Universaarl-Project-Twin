@@ -8,7 +8,7 @@ Die versionierte Quellenbindung verwendet standardmäßig den Geschwisterordner 
 
 ## Commitgebundene Quellenbindung
 
-`UABC_EXPECTED_COMMIT` ist zwingend und enthält die vollständige, validierte 40-stellige Commit-SHA der Kundeninstanz. Der Twin liest alle unterstützten fachlichen Dateien als Git-Blobs aus genau diesem Commit. Remote, Branch, ein sauberer Checkout und eine während des Lesens unveränderte Quelle werden zusätzlich geprüft; ein Geschwisterordner, Pfad, Remote oder Branch allein ist keine Freigabe. Fehlende oder abweichende Bindungen führen zu einem sicheren Fehlerzustand. Absolute lokale Pfade werden weder an UI, DOM oder A11y ausgeliefert noch als dauerhafter Vertrag gespeichert.
+Der Twin löst den erlaubten Branch `codex/universaarl-projekt` bei jedem Serverstart genau einmal auf eine vollständige Commit-SHA auf und liest anschließend alle unterstützten fachlichen Dateien als Git-Blobs aus genau diesem Commit. Eine manuelle Commitfreigabe ist nicht erforderlich. Remote, Branch, Index, Allowlist, Referenzen, Digests und eine während des Lesens unveränderte Quelle werden fail-closed geprüft. Absolute lokale Pfade werden weder an UI, DOM oder A11y ausgeliefert noch als dauerhafter Vertrag gespeichert.
 
 - Kanonische Oberflächenrouten: `/projekte/:projektId/:bereich`
 - Schreibgeschützte Programmierschnittstellen: `GET /api/projects`, `GET /api/projects/:projectId/state`, `GET /api/projects/:projectId/evidence/:evidenceId`

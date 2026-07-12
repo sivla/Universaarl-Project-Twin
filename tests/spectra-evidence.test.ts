@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { AdapterSourceError, spectraEvidenceSummary, validateSpectra09ContractData } from '../src/server/adapter';
 import { displayDocumentType, uiErrorMessage, uiErrorTitle } from '../src/model';
 
@@ -16,7 +18,21 @@ function spectra09Fixture() {
   };
 }
 
+function spectra10Fixture() {
+  const value = spectra09Fixture();
+  value.release.release.version = '0.10.0-alpha.1'; value.release.tag.name = 'spectra-v0.10.0-alpha.1'; value.release.payload.fileCount = 110; value.release.payload.verifiedGitBlobs = 110;
+  value.conformance.spectraRelease = 'spectra-v0.10.0-alpha.1';
+  value.reconciliation.contract_version = '0.10'; value.provenance.contract_version = '0.10'; value.exportMap.contractVersion = '0.10';
+  value.provenance.mapping.mapping_version = '1.1.0'; value.exportMap.mappingVersion = '1.1.0'; value.conformance.adapterProvenance.mappingVersion = '1.1.0';
+  return value;
+}
+
 describe('commitgebundene Spectra-Evidence', () => {
+  it('löst den erlaubten Branch beim Serverstart automatisch genau einmal auf', () => {
+    const vite = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
+    expect(vite).toContain("rev-parse', '--verify', 'refs/heads/codex/universaarl-projekt^{commit}");
+    expect(vite).not.toContain('UABC_EXPECTED_COMMIT');
+  });
   it('benennt unterstützte Spectra-Dokumente und den manifestfreien Blockierzustand widerspruchsfrei', () => {
     expect(displayDocumentType('spectra-release-evidence')).toBe('Spectra-Release-Nachweis');
     expect(displayDocumentType('spectra-portable-conformance-evidence')).toBe('Spectra-Konformitätsnachweis');
@@ -58,6 +74,13 @@ describe('commitgebundene Spectra-Evidence', () => {
     expect(summaries.get('spectra-project-reconciliation')).toMatchObject({ title: 'Historische Baseline und synthetischer Projektabgleich', status: 'passed' });
     expect(summaries.get('spectra-project-reconciliation')?.activity).toEqual(['Historische Baseline: 68 Std. · 11.050 EUR', 'Synthetisches Angebot: 80 Std. · 9.600 EUR', 'Synthetisches Ist: 80 Std. · 9.600 EUR', 'Keine echte Rechnung, Buchung, Zahlung oder produktive Leistung.']);
     expect(summaries.get('twin-export-map')?.title).toBe('1 exportierte Artefakte');
+  });
+
+  it('validiert Spectra 0.10 mit genau 110 bestätigten Releasepayloads', () => {
+    const summaries = validateSpectra09ContractData(spectra10Fixture());
+    expect(summaries.get('spectra-portable-conformance-evidence')?.title).toBe('Spectra 0.10.0-alpha.1 · Projektabgleich und Twin-Export bestanden');
+    const wrongCount = spectra10Fixture(); wrongCount.release.payload.verifiedGitBlobs = 109;
+    expect(() => validateSpectra09ContractData(wrongCount)).toThrow(AdapterSourceError);
   });
 
   it('blockiert fehlende, ungeindexte und unsichere Exportartefakte', () => {
