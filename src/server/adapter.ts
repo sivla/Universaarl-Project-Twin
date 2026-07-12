@@ -1467,6 +1467,12 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
       continue;
     }
     if (declaration.format === 'png') continue;
+    if (declaration.format === 'json-schema' || declaration.format === 'javascript') {
+      reader.text(declaration.path);
+      add({ id: declaration.id, kind: 'document', title: path.posix.basename(declaration.path), status: null, phase: null, wave: null, workstream: 'Quellvertrag', rationale: null,
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     if (declaration.kindId === 'project-plan') {
       const data = selectedYaml(reader, source); const phases = Array.isArray(data.phases) ? data.phases : [];
       for (const raw of phases) if (raw && typeof raw === 'object') { const item = raw as RecordValue; if (technicalId.safeParse(item.id).success) add({ id: item.id as string, kind: 'document',
@@ -1484,7 +1490,12 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
       ['sessions', 'id', 'title', 'status'], ['scenarios', 'id', 'title'], ['sources', 'id', 'title'], ['worklogs', 'worklogId', 'summary', 'approvalStatus'], ['invoices', 'invoiceId', 'summary', 'status'],
     ];
     const family = families.find(([key]) => Array.isArray(data[key]));
-    if (!family) continue;
+    if (!family) {
+      add({ id: declaration.id, kind: 'document', title: storyText(data.title) ?? storyText(data.displayName) ?? declaration.kindId,
+        status: storyText(data.status) ?? storyText(data.validationStatus) ?? storyText(data.bindingStatus), phase: null, wave: null, workstream: 'Quellvertrag', rationale: null,
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     for (const raw of data[family[0]] as unknown[]) if (raw && typeof raw === 'object') {
       const item = raw as RecordValue; const id = item[family[1]]; if (!technicalId.safeParse(id).success) continue;
       add({ id: id as string, kind: 'document', title: typeof item[family[2]] === 'string' ? item[family[2]] as string : null,
