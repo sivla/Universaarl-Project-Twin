@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AdapterSourceError, spectraEvidenceSummary, validateSpectra09ContractData } from '../src/server/adapter';
+import { displayDocumentType, uiErrorMessage, uiErrorTitle } from '../src/model';
 
 const indexHash = '1'.repeat(64); const projectionHash = '2'.repeat(64);
 const declaration = { id: 'UABC-SRC-TEST-001', kindId: 'test-artifact', path: 'evidence/test.json', format: 'json' as const, required: true };
@@ -16,6 +17,16 @@ function spectra09Fixture() {
 }
 
 describe('commitgebundene Spectra-Evidence', () => {
+  it('benennt unterstützte Spectra-Dokumente und den manifestfreien Blockierzustand widerspruchsfrei', () => {
+    expect(displayDocumentType('spectra-release-evidence')).toBe('Spectra-Release-Nachweis');
+    expect(displayDocumentType('spectra-portable-conformance-evidence')).toBe('Spectra-Konformitätsnachweis');
+    expect(displayDocumentType('spectra-project-reconciliation')).toBe('Spectra-Projektabgleich');
+    expect(displayDocumentType('spectra-adapter-provenance')).toBe('Spectra-Adapterprovenienz');
+    expect(displayDocumentType('twin-export-map')).toBe('Twin-Exportvertrag');
+    expect(uiErrorTitle('SNAPSHOT_VERTRAG_BLOCKIERT')).toBe('Commitgebundener Quellvertrag blockiert');
+    expect(uiErrorMessage('SNAPSHOT_VERTRAG_BLOCKIERT')).toContain('Repository, Branch, Commit, Index, Allowlist, Referenzen und Digests');
+    expect(uiErrorMessage('SNAPSHOT_VERTRAG_BLOCKIERT')).not.toMatch(/Manifest|Snapshot/);
+  });
   it('zeigt Releasebindung und bestaetigte Payloadvollstaendigkeit ohne erfundene Werte', () => {
     expect(spectraEvidenceSummary('spectra-release-evidence', {
       tag: { name: 'spectra-v0.8.0-alpha.1', peeledCommit: '5dd23c2ff2c408c03fd613348fcb305635cfbf9a' },

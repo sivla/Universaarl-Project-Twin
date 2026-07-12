@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { areas, parseRoute, projectUrl, type Area } from './navigation/routes';
-import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, type Artifact, type ProjectContext, type ProjectState, type UiErrorCode } from './model';
+import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type ProjectContext, type ProjectState, type UiErrorCode } from './model';
 import type { PublicProject } from './projects/registry';
 import { buildGanttProjection } from './planning/gantt';
 import './styles.css';
@@ -153,7 +153,7 @@ function App() {
     <Sidebar context={context} active={route.area} navigate={navigate} />
     <main id="main" tabIndex={-1}>
       <div className="page-heading"><p>{context.projectKey} / {context.projectName}</p><h1>{labels[route.area]}</h1></div>
-      {visibleError ? <Status title={visibleError === 'SNAPSHOT_VERTRAG_BLOCKIERT' ? 'Spectra-Snapshotvertrag blockiert' : 'Quelle nicht verfügbar'} text={uiErrorMessage(visibleError)} embedded />
+      {visibleError ? <Status title={uiErrorTitle(visibleError)} text={uiErrorMessage(visibleError)} embedded />
           : !visibleState ? <Status title="Projektstand wird geladen" text="Die commitgebundene Quellen-Momentaufnahme wird gelesen." busy embedded />
             : <ProjectArea area={route.area} state={visibleState} context={context} open={(artifact) => setSelected({ viewKey, artifact })} />}
     </main>

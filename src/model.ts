@@ -127,6 +127,20 @@ const germanDocumentTypes: Readonly<Record<string, string>> = {
   'project-plan': 'Projektplan',
   budget: 'Budget',
   worklog: 'Arbeitsprotokoll',
+  'spectra-release-evidence': 'Spectra-Release-Nachweis',
+  'spectra-portable-conformance-evidence': 'Spectra-Konformitätsnachweis',
+  'spectra-portable-project-story-schema': 'Spectra-Storyschema',
+  'spectra-portable-project-story-adapter': 'Spectra-Storyadapter',
+  'spectra-portable-project-story-validator': 'Spectra-Storyvalidator',
+  'spectra-portable-project-story-tests': 'Spectra-Storyprüfungen',
+  'spectra-project-reconciliation-schema': 'Schema für den Spectra-Projektabgleich',
+  'spectra-adapter-provenance-schema': 'Schema für die Spectra-Adapterprovenienz',
+  'spectra-project-reconciliation': 'Spectra-Projektabgleich',
+  'spectra-adapter-provenance': 'Spectra-Adapterprovenienz',
+  'twin-export-map': 'Twin-Exportvertrag',
+  'spectra09-integration-generator': 'Spectra-0.9-Integrationsgenerator',
+  'spectra09-integration-validator': 'Spectra-0.9-Integrationsvalidator',
+  'spectra09-integration-tests': 'Spectra-0.9-Integrationsprüfungen',
 };
 
 export function displayDocumentType(value: string | null) {
@@ -156,11 +170,15 @@ export const uiErrorMessages = {
   PROJEKTSTAND_NICHT_VERFUEGBAR: 'Der commitgebundene Projektstand ist derzeit nicht verfügbar.',
   PROJEKTKONTEXT_UNGUELTIG: 'Der Projektstand konnte dem ausgewählten Projekt nicht sicher zugeordnet werden.',
   QUELLE_NICHT_VERFUEGBAR: 'Die konfigurierte Projektquelle ist derzeit nicht verfügbar.',
-  SNAPSHOT_VERTRAG_BLOCKIERT: 'Der validierte Spectra-Snapshot ist noch nicht verfügbar. Die Projektansicht bleibt gesperrt, bis Manifest, Quellcommit, Digest und Produktbindung vollständig bestätigt sind.',
+  SNAPSHOT_VERTRAG_BLOCKIERT: 'Der commitgebundene Quellvertrag ist nicht vollständig bestätigt. Die Projektansicht bleibt gesperrt, bis Repository, Branch, Commit, Index, Allowlist, Referenzen und Digests sicher geprüft sind.',
   PROJEKT_NICHT_GEFUNDEN: 'Das ausgewählte Projekt ist nicht verfügbar.',
 } as const;
 
 export type UiErrorCode = keyof typeof uiErrorMessages;
+
+export function uiErrorTitle(code: UiErrorCode) {
+  return code === 'SNAPSHOT_VERTRAG_BLOCKIERT' ? 'Commitgebundener Quellvertrag blockiert' : 'Quelle nicht verfügbar';
+}
 
 export function uiErrorCodeFromBody(body: unknown, fallback: UiErrorCode): UiErrorCode {
   if (!body || typeof body !== 'object' || !('code' in body) || typeof body.code !== 'string') return fallback;

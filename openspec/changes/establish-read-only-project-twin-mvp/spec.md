@@ -34,6 +34,8 @@ Akzeptanz: Nicht im Index referenzierte Fachdaten werden für `bc-basic` nicht n
 
 Die sichtbare Provenienz besteht im Branchmodus aus Projekt-ID, erlaubtem Branch, gepinnter Commit-SHA, Indexstatus und den positivgelisteten Story-/Spectra-Evidence. Eine synthetische Simulation darf bestandene Simulationsgates anzeigen, muss aber klar als Sandbox ohne reale Kunden-, BC-, Steuer- oder Produktivaktivität gekennzeichnet werden. Eine direkte Laufzeitabhängigkeit zu Spectra oder BCProjectOS entsteht nicht.
 
+Akzeptanz: Ein blockierter Branchvertrag benennt Repository-, Branch-, Commit-, Index-, Allowlist-, Referenz- und Digestprüfung, ohne das im Branchmodus abgeschaffte Snapshotmanifest als Voraussetzung darzustellen. Positivgelistete und validierte Spectra-Dokumenttypen werden als unterstützt und natürlich deutsch bezeichnet.
+
 ## Offene Freigabe- und Archivgrenze
 
 Menschliche Freigabe und Archivierung bleiben eigenständige, noch nicht abgeschlossene Schritte. Dieser Vertrag DARF ihren Abschluss nicht aus Implementierung, Prüfungen oder einem lokalen Versionsstand ableiten.
