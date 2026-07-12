@@ -47,6 +47,18 @@ export const artifactSchema = z.object({
 
 export const evidenceItemSchema = z.object({ id: z.string().regex(/^ev_[a-f0-9]{24}$/), title: z.string().min(1) });
 
+export const storyOfferVersionSchema = z.object({ version: z.number().int().positive(), date: sourceDateSchema.nullable(), status: z.string().min(1), delta: z.string().min(1), hours: z.number().nonnegative().nullable(), cost: z.number().nonnegative().nullable() }).strict();
+export const storyPageSchema = z.object({ id: sourceTechnicalIdSchema, title: z.string().min(1), parent: sourceTechnicalIdSchema.nullable(), version: z.number().int().positive().nullable(), status: z.string().min(1).nullable(), authorRole: z.string().min(1).nullable(), time: sourceDateTimeSchema.nullable(), sourcePath: sourceRelativePathSchema, content: z.string().max(100_000).nullable(), references: z.array(z.string()).default([]) }).strict();
+export const storyAcceptanceSchema = z.object({ text: z.string().min(1), fulfilled: z.boolean().nullable() }).strict();
+export const storyCommentSchema = z.object({ id: sourceTechnicalIdSchema, type: z.string().min(1), time: sourceDateSchema.nullable(), role: z.string().min(1).nullable(), text: z.string().min(1), evidenceRef: z.string().nullable() }).strict();
+export const storyWorklogSchema = z.object({ date: sourceDateSchema.nullable(), role: z.string().min(1).nullable(), hours: z.number().nonnegative(), cost: z.number().nonnegative().nullable(), activity: z.string().min(1).nullable(), phase: z.string().min(1).nullable() }).strict();
+export const storyTicketSchema = z.object({ id: sourceTechnicalIdSchema, type: z.string().min(1), status: z.string().min(1), summary: z.string().min(1), assignee: z.string().nullable(), priority: z.string().nullable(), parent: sourceTechnicalIdSchema.nullable(), dependencies: z.array(z.string()).default([]), acceptanceCriteria: z.array(storyAcceptanceSchema).default([]), statusHistory: z.array(z.object({ status: z.string().min(1), time: sourceDateSchema }).strict()).default([]), comments: z.array(storyCommentSchema).default([]), worklogs: z.array(storyWorklogSchema).default([]), evidenceRefs: z.array(z.string()).default([]) }).strict();
+export const storyTimelineSchema = z.object({ id: sourceTechnicalIdSchema, time: sourceDateTimeSchema, phase: z.string().min(1), role: z.string().min(1), tickets: z.array(z.string()).default([]), pages: z.array(z.string()).default([]), sessions: z.array(z.string()).default([]), action: z.string().min(1), result: z.string().min(1), evidence: z.array(z.string()).default([]), decision: z.string().min(1), nextStep: z.string().min(1) }).strict();
+export const storyHypercareSchema = z.object({ day: z.number().int().positive(), dailyPage: z.string().min(1), ticket: z.string().min(1), comment: z.string().min(1), priority: z.string().min(1), diagnosis: z.string().min(1), fix: z.string().min(1), retest: z.string().min(1), status: z.string().min(1), decision: z.string().min(1), evidence: z.array(z.string()).default([]) }).strict();
+const storyRelationEndpointSchema = z.string().min(1).max(1_000).refine((value) => !value.includes('\\') && !value.startsWith('/') && !value.includes('..') && !/[\u0000-\u001f]/.test(value));
+export const storyRelationSchema = z.object({ from: storyRelationEndpointSchema, to: storyRelationEndpointSchema, kind: z.string().min(1), label: z.string().min(1).nullable() }).strict();
+export const storyProjectionSchema = z.object({ storyId: sourceTechnicalIdSchema, status: z.string().min(1), offer: z.object({ id: sourceTechnicalIdSchema, currentVersion: z.number().int().positive(), versions: z.array(storyOfferVersionSchema), plannedHours: z.number().nonnegative().nullable(), plannedCost: z.number().nonnegative().nullable(), actualHours: z.number().nonnegative().nullable(), actualCost: z.number().nonnegative().nullable() }).nullable(), pages: z.array(storyPageSchema), tickets: z.array(storyTicketSchema), timeline: z.array(storyTimelineSchema), hypercare: z.array(storyHypercareSchema), relations: z.array(storyRelationSchema), controls: z.object({ openP1: z.number().int().nonnegative(), openP2: z.number().int().nonnegative(), worklogHours: z.number().nonnegative(), worklogCost: z.number().nonnegative(), realBcExecution: z.boolean() }).nullable() }).strict();
+
 export const projectStateSchema = z.object({
   source: z.object({
     projectId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), branch: z.string().min(1).max(120), commit: z.string().regex(/^[a-f0-9]{40}$/), dirty: z.boolean(),
@@ -54,7 +66,7 @@ export const projectStateSchema = z.object({
     snapshot: z.object({ schemaVersion: z.literal(1), producerId: z.literal('blueprint'), producerCommitSha: z.string().regex(/^[a-f0-9]{40}$/), indexPath: sourceRelativePathSchema, payloadBundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), validationStatus: z.literal('validated'), spectraReleaseBinding: z.object({ productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'), releaseVersion: z.string().min(1), releaseTag: z.string().regex(/^spectra-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/), tagCommit: z.string().regex(/^[a-f0-9]{40}$/), manifestPath: sourceRelativePathSchema, manifestSourceCommit: z.string().regex(/^[a-f0-9]{40}$/), consumerMode: z.literal('INSTALLABLE_BLUEPRINT'), installableBlueprint: z.literal(true) }).strict() }).nullable().default(null),
     readAt: z.string().datetime(),
   }),
-  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
+  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), story: storyProjectionSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
   stats: z.object({ jira: z.number().int().nonnegative(), changes: z.number().int().nonnegative(), documents: z.number().int().nonnegative(), capabilities: z.number().int().nonnegative(), evidence: z.number().int().nonnegative() }),
 });
 
@@ -68,7 +80,7 @@ export type ProjectTimeContext = { readonly unsupported: true };
 const germanStatusLabels: Readonly<Record<string, string>> = {
   approved: 'Freigegeben', planned: 'Geplant', deferred: 'Zurückgestellt', passed: 'Bestanden', active: 'Aktiv', proposed: 'Vorgeschlagen',
   done: 'Erledigt', completed: 'Abgeschlossen', ready: 'Bereit', archived: 'Archiviert', documented: 'Dokumentiert', unknown: 'Unbekannt', unbekannt: 'Unbekannt',
-  backlog: 'Arbeitsvorrat', blocked: 'Blockiert', created: 'Angelegt', tested: 'Getestet', closed: 'Geschlossen', 'in progress': 'In Arbeit', 'in review': 'In Prüfung', 'nicht belegt': 'Nicht belegt',
+  backlog: 'Arbeitsvorrat', blocked: 'Blockiert', created: 'Angelegt', tested: 'Getestet', closed: 'Geschlossen', 'in progress': 'In Arbeit', 'in-progress': 'In Arbeit', 'in review': 'In Prüfung', 'nicht belegt': 'Nicht belegt',
 };
 
 export function displayStatus(value: string | null) {

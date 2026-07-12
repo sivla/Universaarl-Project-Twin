@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { artifactSchema, displayVerificationType, type Artifact, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, type ProjectState } from '../model';
+import { artifactSchema, displayVerificationType, type Artifact, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectState } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
@@ -1350,6 +1350,39 @@ function storyHistory(value: unknown, by: unknown) {
   return events;
 }
 
+function storyEvidence(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return [value];
+  return storyStrings(value);
+}
+
+function projectStoryProjection(reader: CommitBlobReader, source: IndexedProjectSource, sources: readonly IndexedProjectSource[]) {
+  const raw = schema(reader.json(source.declaration.path), projectStorySchema);
+  const allowedPaths = new Set(sources.map((item) => item.declaration.path));
+  const offerRaw = raw.offer;
+  const offer = offerRaw && typeof offerRaw.id === 'string' && Array.isArray(offerRaw.versions)
+    ? { id: offerRaw.id, currentVersion: Number(offerRaw.currentVersion ?? 0), versions: offerRaw.versions.map((item) => item && typeof item === 'object' ? { version: Number((item as RecordValue).version ?? 0), date: storyDate((item as RecordValue).date), status: storyText((item as RecordValue).status) ?? 'unbekannt', delta: storyText((item as RecordValue).delta) ?? 'Nicht belegt', hours: typeof (item as RecordValue).hours === 'number' ? (item as RecordValue).hours as number : null, cost: typeof (item as RecordValue).cost === 'number' ? (item as RecordValue).cost as number : null } : null).filter(Boolean), plannedHours: typeof offerRaw.planned_hours === 'number' ? offerRaw.planned_hours : null, plannedCost: typeof offerRaw.planned_cost === 'number' ? offerRaw.planned_cost : null, actualHours: typeof offerRaw.actual_hours === 'number' ? offerRaw.actual_hours : null, actualCost: typeof offerRaw.actual_cost === 'number' ? offerRaw.actual_cost : null }
+    : null;
+  const pages = raw.pages.map((page) => {
+    const sourcePath = typeof page.sourcePath === 'string' ? page.sourcePath : null;
+    if (!sourcePath || !allowedPaths.has(sourcePath)) sourceError('Eine Storyseite verweist auf einen nicht positivgelisteten Quellpfad.');
+    const content = reader.text(sourcePath);
+    return { id: String(page.id), title: storyText(page.title) ?? String(page.id), parent: typeof page.parent === 'string' ? page.parent : null, version: typeof page.version === 'number' ? page.version : null, status: storyText(page.status), authorRole: storyText(page.author_role), time: typeof page.time === 'string' && sourceDateTimeSchema.safeParse(page.time).success ? page.time : null, sourcePath, content, references: storyStrings(page.references) };
+  });
+  const tickets = raw.tickets.map((ticket) => {
+    const acceptance = storyAcceptance(ticket.acceptanceCriteria).map((text) => ({ text, fulfilled: true }));
+    const comments = Array.isArray(ticket.comments) ? ticket.comments.map((comment, index) => comment && typeof comment === 'object' ? { id: storyText((comment as RecordValue).id) ?? `COMMENT-${index + 1}`, type: storyText((comment as RecordValue).type) ?? 'work', time: storyDate((comment as RecordValue).time), role: storyText((comment as RecordValue).role), text: storyText((comment as RecordValue).text) ?? 'Nicht belegt', evidenceRef: storyText((comment as RecordValue).evidenceRef) } : null).filter(Boolean) : [];
+    const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs.map((worklog) => worklog && typeof worklog === 'object' ? { date: storyDate((worklog as RecordValue).date), role: storyText((worklog as RecordValue).role), hours: typeof (worklog as RecordValue).hours === 'number' ? (worklog as RecordValue).hours as number : 0, cost: typeof (worklog as RecordValue).cost === 'number' ? (worklog as RecordValue).cost as number : null, activity: storyText((worklog as RecordValue).activity), phase: storyText((worklog as RecordValue).phase) } : null).filter(Boolean) : [];
+    const statusHistory = Array.isArray(ticket.statusHistory) ? ticket.statusHistory.map((event) => event && typeof event === 'object' && typeof (event as RecordValue).status === 'string' && typeof (event as RecordValue).time === 'string' ? { status: (event as RecordValue).status as string, time: (event as RecordValue).time as string } : null).filter(Boolean) : [];
+    return { id: String(ticket.id), type: String(ticket.type ?? 'task'), status: String(ticket.status ?? 'unbekannt'), summary: storyText(ticket.summary) ?? acceptance[0]?.text ?? String(ticket.id), assignee: storyText(ticket.assignee), priority: storyText(ticket.priority), parent: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), acceptanceCriteria: acceptance, statusHistory, comments, worklogs, evidenceRefs: storyStrings(ticket.evidenceRefs) };
+  });
+  const timeline = raw.timeline.map((event) => ({ id: String(event.id), time: String(event.time), phase: String(event.phase), role: String(event.role), tickets: storyStrings(event.tickets), pages: storyStrings(event.pages), sessions: storyStrings(event.sessions), action: String(event.action), result: String(event.result), evidence: storyEvidence(event.evidence), decision: String(event.decision), nextStep: String(event.nextStep) }));
+  const hypercare = raw.hypercare.map((day) => ({ day: Number(day.day), dailyPage: String(day.dailyPage), ticket: String(day.ticket), comment: String(day.comment), priority: String(day.priority), diagnosis: String(day.diagnosis), fix: String(day.fix), retest: String(day.retest), status: String(day.status), decision: String(day.decision), evidence: storyEvidence(day.evidence) }));
+  const relations = Array.isArray((raw as RecordValue).relations) ? ((raw as RecordValue).relations as unknown[]).map((relation) => relation && typeof relation === 'object' && typeof (relation as RecordValue).from === 'string' && typeof (relation as RecordValue).to === 'string' ? { from: (relation as RecordValue).from as string, to: (relation as RecordValue).to as string, kind: String((relation as RecordValue).type ?? 'Referenz'), label: storyText((relation as RecordValue).label) } : null).filter(Boolean) : [];
+  const controlsRaw = raw.controls;
+  const controls = controlsRaw ? { openP1: Number(controlsRaw.openP1 ?? 0), openP2: Number(controlsRaw.openP2 ?? 0), worklogHours: Number(controlsRaw.worklogHours ?? 0), worklogCost: Number(controlsRaw.worklogCost ?? 0), realBcExecution: controlsRaw.realBcExecution === true } : null;
+  return storyProjectionSchema.parse({ storyId: raw.storyId, status: raw.status, offer, pages, tickets, timeline, hypercare, relations, controls });
+}
+
 function nullableTechnicalStrings(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => technicalId.safeParse(item).success) : [];
 }
@@ -1467,6 +1500,8 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
 async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {
   const { index, reader, sources, manifest } = readProjectDataSources(repo, before.commit, projectId, contract, limits);
   const artifacts = indexedArtifacts(index, reader, sources);
+  const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
+  const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
   const imageSources = sources.filter((source) => source.declaration.format === 'png');
   const evidenceItems = imageSources.map((source) => ({ id: evidenceIdFor(projectId, reader, source.entry), title: source.declaration.id }));
   const warnings = before.dirty ? ['Die Arbeitskopie enthält nicht commitgebundene Änderungen; alle dargestellten Fachdaten stammen unverändert aus dem ausgewiesenen Commit.'] : [];
@@ -1478,7 +1513,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
     snapshot: process.env.UABC_BRANCH_COMMIT_CONTRACT === '1' ? null : { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
       spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
-    artifacts, evidenceItems, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
+    artifacts, evidenceItems, story, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
       capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });
