@@ -833,6 +833,9 @@ const producerTicketTypePresentationSchema = z.object({ typeLabel: z.string().mi
 const producerTicketTypesSchema = z.object({ phase: producerTicketTypePresentationSchema, epic: producerTicketTypePresentationSchema, story: producerTicketTypePresentationSchema, bug: producerTicketTypePresentationSchema.optional(), task: producerTicketTypePresentationSchema }).strict();
 const producerTicketColumnSchema = z.object({ id: technicalId, title: z.string().min(1).max(120), order: z.number().int().nonnegative(), statuses: z.array(z.string().min(1).max(80)).min(1).max(30) }).strict();
 const producerTicketGroupSchema = z.object({ id: technicalId, type: z.literal('phase'), phaseId: technicalId, title: z.string().min(1).max(200), order: z.number().int().nonnegative(), collapsible: z.literal(true), initialState: presentationInitialStateSchema, epicIds: z.array(technicalId).min(1).max(1_000), ticketIds: z.array(technicalId).min(1).max(1_000) }).strict();
+const producerActorTypeSchema = z.enum(['human', 'simulated-customer-role', 'codex-spectra', 'playwright', 'system-automation']);
+const producerActorProfileSchema = z.object({ personId: technicalId, displayName: z.string().min(1).max(160), organization: z.string().min(1).max(160), actorType: producerActorTypeSchema,
+  activeRoles: z.array(z.string().min(1).max(160)).min(1).max(30), responsibilities: z.array(z.string().min(1).max(500)).min(1).max(100), availabilityStatus: z.string().min(1).max(160), allowedApprovalRoles: z.array(z.string().min(1).max(160)).max(30) }).strict();
 const producerTicketViewSchema = z.object({
   id: technicalId, type: z.enum(['board', 'compact-list']), title: z.string().min(1).max(120), order: z.number().int().nonnegative(), initialState: presentationInitialStateSchema,
   allowedFilters: z.array(z.enum(['status', 'type'])).min(1).max(10), visibleFields: z.array(z.enum(['id', 'type', 'summary', 'status', 'parent'])).min(1).max(20),
@@ -840,13 +843,17 @@ const producerTicketViewSchema = z.object({
 }).strict();
 const producerTicketRecordSchema = z.object({
   id: technicalId, type: z.enum(['phase', 'epic', 'story', 'bug', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'bug', 'task']),
-  typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), dependencyRefs: z.array(technicalId).max(100),
+  typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), childTicketIds: z.array(technicalId).max(1_000), dependencyRefs: z.array(technicalId).max(100),
   sourcePath: z.string().refine(validateContractPath), visibility: z.literal('twin-visible'), visibilityRole: z.enum(['customer-project-story', 'internal-traceability']), countingScope: z.enum(['active-project', 'excluded-from-story-counts']),
-  planningRef: technicalId.nullable().optional(), status: z.string().min(1).max(80), summary: z.string().min(1).max(500), description: z.string().min(1).max(4_000), deliverable: z.string().min(1).max(1_000),
+  planningRef: technicalId.nullable().optional(), status: z.string().min(1).max(80), statusReason: z.string().min(1).max(8_000), summary: z.string().min(1).max(500), description: z.string().min(1).max(4_000), deliverable: z.string().min(1).max(1_000),
+  deliverableRefs: z.array(technicalId).max(1_000), pageRefs: z.array(technicalId).max(1_000), decisionRefs: z.array(technicalId).max(1_000), meetingTranscriptRefs: z.array(technicalId).max(1_000),
   phaseId: technicalId.nullable(), phaseRefs: z.array(technicalId).nullable(), phase: z.string().min(1).max(80).nullable(), billable: z.boolean(), billingSource: z.enum(['task-rollup-only', 'task-worklogs']),
-  estimateHours: z.number().nonnegative(), actualHours: z.number().nonnegative(), remainingHours: z.number().nonnegative(), hourlyRate: z.number().nonnegative().nullable(), netAmount: z.number().nonnegative(), acceptance: z.array(z.string().min(1).max(2_000)).default([]),
-  history: z.array(z.object({ status: z.string().min(1).max(80), time: sourceDateSchema }).strict()).default([]), worklogHours: z.number().nonnegative(), evidence: z.array(z.string().min(1).max(1_000)).default([]),
-  comments: z.array(z.object({ id: technicalId, type: z.string().min(1).max(80), time: sourceDateSchema, text: z.string().min(1).max(4_000) }).strict()).default([]),
+  reporter: technicalId, reporterRole: z.string().min(1).max(160), assignee: technicalId, assigneeRole: z.string().min(1).max(160), participants: z.array(technicalId).max(1_000),
+  estimateHours: z.number().nonnegative(), actualHours: z.number().nonnegative(), remainingHours: z.number().nonnegative(), hourlyRate: z.number().nonnegative().nullable(), netAmount: z.number().nonnegative(), acceptance: z.array(z.object({ criterion: z.string().min(1).max(2_000), fulfilled: z.boolean() }).strict()).default([]),
+  history: z.array(z.object({ status: z.string().min(1).max(80), time: sourceDateSchema, actorRef: technicalId, actorType: producerActorTypeSchema, actionRole: z.string().min(1).max(160) }).strict()).default([]),
+  worklogs: z.array(z.object({ id: technicalId, taskId: technicalId, date: sourceDateSchema, role: z.string().min(1).max(160), hours: z.number().nonnegative(), activity: z.string().min(1).max(8_000), phase: z.string().min(1).max(80), billable: z.boolean(), hourlyRate: z.number().nonnegative(), netAmount: z.number().nonnegative(), actorRef: technicalId, actorType: producerActorTypeSchema, actionRole: z.string().min(1).max(160) }).strict()).default([]),
+  worklogHours: z.number().nonnegative(), evidence: z.array(z.string().min(1).max(1_000)).default([]),
+  comments: z.array(z.object({ id: technicalId, type: z.string().min(1).max(80), time: sourceDateSchema, actorRef: technicalId, actorType: producerActorTypeSchema, actionRole: z.string().min(1).max(160), evidenceRef: z.string().min(1).max(1_000), text: z.string().min(1).max(8_000) }).strict()).default([]),
 }).strict();
 const producerTraceabilityRecordSchema = z.object({ id: technicalId, type: z.enum(['phase', 'epic', 'story', 'bug', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'bug', 'task']),
   typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), dependencyRefs: z.array(technicalId).max(100), sourcePath: z.string().refine(validateContractPath),
@@ -854,7 +861,7 @@ const producerTraceabilityRecordSchema = z.object({ id: technicalId, type: z.enu
 const producerTraceabilityRelationSchema = z.object({ type: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/), from: technicalId, to: technicalId }).strict();
 const producerTicketCatalogSchema = z.object({
   schemaVersion: z.literal(1), projectId: z.literal('UABC-BC-BASIC-001'), classification: z.literal('synthetic-only'), sourceContract: z.literal('evidence/simulation/project-story.json'), generated: z.literal(true),
-  derivedFrom: z.array(z.string().refine(validateContractPath)).min(1).max(20), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'bug', 'task'])).min(4).max(5), typePresentations: producerTicketTypesSchema,
+  derivedFrom: z.array(z.string().refine(validateContractPath)).min(1).max(20), actorProfiles: z.array(producerActorProfileSchema).min(1).max(1_000), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'bug', 'task'])).min(4).max(5), typePresentations: producerTicketTypesSchema,
   liveIconPolicy: z.object({ sourceMode: z.literal('local-allowlist-only'), allowlistedAssets: z.array(z.string()).max(20), allowedOrigins: z.array(z.string()).max(20), digestAlgorithm: z.literal('SHA-256'), digestRequired: z.literal(true) }).strict(),
   views: z.array(producerTicketViewSchema).length(2), recordCount: z.number().int().positive(), customerStoryCount: z.number().int().positive(), internalTraceabilityCount: z.number().int().nonnegative(),
   countedWorklogHours: z.number().nonnegative(), historicalPlanningBaselineHours: z.number().nonnegative().optional(), ticketRecords: z.array(producerTicketRecordSchema).min(1).max(1_000),
@@ -2044,10 +2051,13 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
   const artifacts: Artifact[] = [];
   const add = (value: z.input<typeof artifactSchema>) => artifacts.push(sanitizeArtifact(artifactSchema.parse(value)));
   const spectra09Summaries = validateSpectra09Integration(index, reader, sources);
+  const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
+  const canonicalStory = storySource ? schema(reader.json(storySource.declaration.path), projectStorySchema) : null;
+  const canonicalPhaseTickets = new Map((canonicalStory?.tickets ?? []).filter((ticket) => ticket.type === 'phase' && typeof ticket.id === 'string').map((ticket) => [ticket.id as string, ticket]));
   for (const source of sources) {
     const { declaration } = source;
     if (declaration.kindId === 'project-story-core') {
-      const data = schema(reader.json(declaration.path), projectStorySchema);
+      const data = canonicalStory!;
       const offer = data.offer;
       if (offer) {
         const versions = Array.isArray(offer.versions) ? offer.versions : [];
@@ -2134,12 +2144,19 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
     }
     if (declaration.kindId === 'project-plan') {
       const data = selectedYaml(reader, source); const phases = Array.isArray(data.phases) ? data.phases : [];
-      for (const raw of phases) if (raw && typeof raw === 'object') { const item = raw as RecordValue; if (technicalId.safeParse(item.id).success) add({ id: item.id as string, kind: 'document',
-        title: typeof item.name === 'string' ? item.name : null, status: null, phase: null, wave: null, workstream: null, rationale: null, phaseId: item.id as string,
-        sourcePhase: typeof item.name === 'string' ? item.name : null, estimateHours: typeof item.plannedBillableHours === 'number' ? item.plannedBillableHours : null,
-        startDate: sourceDateSchema.safeParse(item.startDate).success ? item.startDate as string : null, dueDate: sourceDateSchema.safeParse(item.endDate).success ? item.endDate as string : null,
-        sourceType: declaration.kindId, documentType: declaration.kindId, dependencies: nullableTechnicalStrings(item.dependencies),
-        ticketRefs: technicalId.safeParse(item.jiraRef).success ? [item.jiraRef as string] : [], sourcePath: declaration.path }); }
+      for (const raw of phases) if (raw && typeof raw === 'object') { const item = raw as RecordValue; if (technicalId.safeParse(item.id).success) {
+        const id = item.id as string; const canonicalPhase = canonicalPhaseTickets.get(id);
+        if (canonicalStory) {
+          if (!canonicalPhase) sourceError('Eine Planphase besitzt kein kanonisches Phase-Ticket.');
+          validateCanonicalPlanPhase({ id: canonicalPhase.id as string, phaseId: canonicalPhase.phaseId, estimateHours: canonicalPhase.estimateHours }, { id, jiraRef: item.jiraRef, plannedHours: item.plannedBillableHours });
+          continue;
+        }
+        add({ id, kind: 'document', title: typeof item.name === 'string' ? item.name : null, status: null, phase: null, wave: null, workstream: null, rationale: null, phaseId: id,
+          sourcePhase: typeof item.name === 'string' ? item.name : null, estimateHours: typeof item.plannedBillableHours === 'number' ? item.plannedBillableHours : null,
+          startDate: sourceDateSchema.safeParse(item.startDate).success ? item.startDate as string : null, dueDate: sourceDateSchema.safeParse(item.endDate).success ? item.endDate as string : null,
+          sourceType: declaration.kindId, documentType: declaration.kindId, dependencies: nullableTechnicalStrings(item.dependencies),
+          ticketRefs: technicalId.safeParse(item.jiraRef).success ? [item.jiraRef as string] : [], sourcePath: declaration.path });
+      } }
       continue;
     }
     if (declaration.format !== 'yaml' && declaration.format !== 'json') continue;
@@ -2179,6 +2196,16 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
         sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
       continue;
     }
+    if (declaration.kindId === 'country-company-information-execution-evidence') {
+      const evidence = schema(data, z.object({
+        evidenceId: technicalId, classification: z.string().min(1).max(160), countryRegion: z.object({ code: z.string().min(1).max(20), readBackPassed: z.literal(true) }).passthrough(),
+        companyInformation: z.object({ saved: z.literal(true), readBackPassed: z.literal(true) }).passthrough(), defectRetest: z.object({ defectId: technicalId, status: z.literal('passed'), closed: z.literal(true) }).passthrough(),
+      }).passthrough());
+      add({ id: declaration.id, kind: 'evidence', title: 'Country/Region DE und Firmendaten bestätigt', status: evidence.defectRetest.status, phase: null, wave: null, workstream: 'BC-Pilot',
+        rationale: `Country/Region ${evidence.countryRegion.code} und Company Information wurden gespeichert und commitgebunden erneut gelesen.`, activity: [`Defect ${evidence.defectRetest.defectId} geschlossen und Retest bestanden.`],
+        sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
     const family = families.find(([key]) => Array.isArray(data[key]));
     if (!family) {
       add({ id: declaration.id, kind: 'document', title: storyText(data.title) ?? storyText(data.displayName) ?? declaration.kindId,
@@ -2196,6 +2223,10 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
   const duplicateIds = artifacts.map((item) => item.id).filter((id, position, all) => all.indexOf(id) !== position);
   if (duplicateIds.length) sourceError('Die indexierten Quellen erzeugen doppelte normalisierte Artefakt-IDs.');
   return artifacts;
+}
+
+export function validateCanonicalPlanPhase(canonical: { id: string; phaseId: unknown; estimateHours: unknown }, plan: { id: string; jiraRef: unknown; plannedHours: unknown }) {
+  if (canonical.id !== plan.id || canonical.phaseId !== canonical.id || plan.jiraRef !== canonical.id || typeof canonical.estimateHours !== 'number' || typeof plan.plannedHours !== 'number' || canonical.estimateHours !== plan.plannedHours) sourceError('Eine Planphase widerspricht dem kanonischen Phase-Ticket.');
 }
 
 async function createProjectDataState(projectId: string, repo: string, contract: ProjectSourceContract, options: AdapterReadOptions, before: SourceFingerprint, limits: ReaderLimits): Promise<ProjectState> {

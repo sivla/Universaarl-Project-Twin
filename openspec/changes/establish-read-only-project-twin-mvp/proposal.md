@@ -4,7 +4,7 @@
 - Status: `active`
 - Umfang: Adapter, normalisiertes Lesemodell, horizontale Benutzeroberfläche, commitgebundener Snapshotvertrag, nachrangige Projektdokumentation, Prüfungen
 
-Der finale Drei-Space-Integrationsblock bindet den Twin exakt an den validierten BC-Basic-Delivery-Commit `4557d93c4b89697c13c7345b39c167f09f441d03` mit Tree `97d29bedf15b6976cd7061ba8f28af430b2d761c`. Alle 121 Indexartefakte, 43 Dokumente, 28 Confluence-Seiten, 31 Navigationsknoten und 50 kundenlesbaren Tickets stammen aus dieser einen SHA. Der dauerhafte Runtimekanal bleibt bis zu einem kontrollierten Producermerge unverändert `codex/universaarl-projekt`.
+Der aktuelle Integrationsblock bindet den Twin exakt an den unabhängig validierten BC-Basic-Commit `85870b514ef32b80778b824924707e88dd15dc3d` mit Tree `62954236bdea4c7f2dc1517730a935bd96ab665e`. Alle 135 Indexartefakte, 43 Dokumente, 28 Confluence-Seiten, 31 Navigationsknoten und 50 kundenlesbaren Tickets stammen aus dieser einen SHA. Der Runtimekanal bleibt unverändert `codex/universaarl-projekt`; der Twin zeigt die neue Country-/Company-Evidence nur nach erfolgreicher Commit-, Index-, Digest- und Referenzvalidierung.
 
 Im laufenden Betrieb ist keine feste Commit-SHA zu pflegen. Der konfigurierte BC-Producerbranch `codex/universaarl-projekt` wird bei Start und Aktualisierung genau einmal aufgelöst; erst ein vollständig validierter Kandidat ersetzt atomar den letzten gültigen, weiterhin sichtbaren Stand. Der Delivery-Commit wird ausschließlich im temporären Integrationsmodus exakt geprüft und ändert den Runtimekanal nicht.
 

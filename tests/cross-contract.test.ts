@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import YAML from 'yaml';
 import { blueprintSourceBinding } from '../src/projects/blueprint-source';
 import { officialBcBasicSnapshotAnchor, snapshotSourceBinding } from '../src/projects/blueprint-source';
 import { productionRegistry } from '../src/projects/registry';
-import { AdapterSourceError, createTwinState, validateProjectDataIndexContract } from '../src/server/adapter';
+import { AdapterSourceError, createTwinState, validateCanonicalPlanPhase, validateProjectDataIndexContract } from '../src/server/adapter';
 import { dispatchProjectApi } from '../src/server/api';
 
 const sourceRepo = process.env.UABC_CROSS_BLUEPRINT_REPO;
@@ -16,6 +17,10 @@ const cleanGitEnvironment = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMI
 
 function git(args: string[]) {
   return execFileSync('git', ['-c', `safe.directory=${sourceRepo}`, '--no-optional-locks', '-C', sourceRepo!, ...args], { encoding: 'utf8', env: cleanGitEnvironment }).trim();
+}
+
+function gitBlob(revisionPath: string) {
+  return execFileSync('git', ['-c', `safe.directory=${sourceRepo}`, '--no-optional-locks', '-C', sourceRepo!, 'show', revisionPath], { encoding: null, env: cleanGitEnvironment });
 }
 
 describe('Konfiguration des projektübergreifenden Vertrags', () => {
@@ -30,6 +35,13 @@ describe('Konfiguration des projektübergreifenden Vertrags', () => {
     expect(() => validateProjectDataIndexContract(index)).toThrowError(AdapterSourceError);
     try { validateProjectDataIndexContract(index); } catch (error) { expect(error).toMatchObject({ code: 'QUELLVERTRAG_UNGUELTIG' }); }
   });
+  it.each([
+    ['abweichende ID', { id: 'UABC-2', jiraRef: 'UABC-1', plannedHours: 22 }],
+    ['abweichende Jira-Referenz', { id: 'UABC-1', jiraRef: 'UABC-2', plannedHours: 22 }],
+    ['abweichende Stundenbasis', { id: 'UABC-1', jiraRef: 'UABC-1', plannedHours: 23 }],
+  ])('blockiert eine Planphase mit %s', (_label, plan) => {
+    expect(() => validateCanonicalPlanPhase({ id: 'UABC-1', phaseId: 'UABC-1', estimateHours: 22 }, plan)).toThrowError(AdapterSourceError);
+  });
 });
 
 describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
@@ -40,7 +52,9 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
     expect(git(['rev-parse', `${expectedCommit}^{tree}`])).toBe(officialBcBasicSnapshotAnchor.tree);
     expect(git(['remote', 'get-url', 'origin'])).toBe(blueprintSourceBinding.remoteUrl);
     const statusBefore = git(['status', '--porcelain=v1', '--untracked-files=all']);
-    const index = YAML.parse(git(['show', `${expectedCommit}:${blueprintSourceBinding.indexPath}`]));
+    const indexBytes = gitBlob(`${expectedCommit}:${blueprintSourceBinding.indexPath}`);
+    const index = YAML.parse(indexBytes.toString('utf8'));
+    expect(createHash('sha256').update(indexBytes).digest('hex')).toBe(officialBcBasicSnapshotAnchor.sourceDigest);
     expect(index.artifacts).toHaveLength(officialBcBasicSnapshotAnchor.artifactCount);
     expect(index.documentCatalog.documentCount).toBe(officialBcBasicSnapshotAnchor.documentCount);
     expect(index.deliveryBranch).toBe(officialBcBasicSnapshotAnchor.integrationBranch);
@@ -52,6 +66,9 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
       expect(state.presentation?.spaces).toHaveLength(3); expect(state.presentation?.spaces.flatMap((space) => space.nodes)).toHaveLength(officialBcBasicSnapshotAnchor.navigationNodeCount); expect(state.presentation?.spaces.map((space) => space.nodes.filter((node) => node.kind === 'page' && node.parentId?.startsWith('UABC-NAV-NODE-')).length)).toEqual([12, 8, 8]); expect(state.presentation?.jira.tickets).toHaveLength(50); expect(state.presentation?.jira.ticketTypes.map((type) => type.type)).toEqual(['phase', 'epic', 'story', 'task']); expect(state.presentation?.jira.tickets.slice(0, 3).map((ticket) => ticket.ticketId)).toEqual(['UABC-1', 'UABC-2', 'UABC-3']); expect(state.presentation?.jira.views).toHaveLength(2);
       expect(state.artifacts.find((artifact) => artifact.id === 'UABC-1')).toMatchObject({ kind: 'phase', phaseId: 'UABC-1', sourcePhase: 'P1', estimateHours: 22, actualHours: 22, billable: false });
       expect(state.artifacts.find((artifact) => artifact.id === 'UABC-50')).toMatchObject({ kind: 'task', phaseId: 'UABC-3', sourcePhase: 'P3', estimateHours: 11, actualHours: 11, billable: true });
+      expect(state.artifacts.find((artifact) => artifact.sourceType === 'spectra-adapter-provenance')?.activity).toContain(`Projektionsdigest: ${officialBcBasicSnapshotAnchor.projectionDigest}`);
+      expect(state.artifacts.find((artifact) => artifact.id === 'UABC-SRC-BCB-COMPANY-EXEC-EVIDENCE-001')).toMatchObject({ sourceType: 'country-company-information-execution-evidence' });
+      expect(state.documents.some((document) => document.content.includes('Country/Region `DE`') && document.content.includes('Company Information'))).toBe(true);
       const api = await dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, officialBcBasicSnapshotAnchor.tree, officialBcBasicSnapshotAnchor.bootstrapBranch, false));
       expect(api).toMatchObject({ status: 200, body: { source: { commit: expectedCommit }, documents: expect.any(Array), presentation: { spaces: expect.any(Array), jira: { tickets: expect.any(Array) } } } });
       await expect(dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, '0'.repeat(40), officialBcBasicSnapshotAnchor.bootstrapBranch, false))).resolves.toEqual({ status: 503, body: { code: 'SNAPSHOT_VERTRAG_BLOCKIERT' } });
