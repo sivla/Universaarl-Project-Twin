@@ -56,7 +56,7 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
     const index = YAML.parse(indexBytes.toString('utf8'));
     expect(createHash('sha256').update(indexBytes).digest('hex')).toBe(officialBcBasicSnapshotAnchor.sourceDigest);
     expect(index.artifacts).toHaveLength(officialBcBasicSnapshotAnchor.artifactCount);
-    expect(index.artifacts.filter((artifact: { path: string }) => /(?:setup-wave-1|posting-setup-matrix|setup-parameter-baseline|solution-blueprint)/.test(artifact.path))).toEqual([]);
+    expect(index.artifacts.filter((artifact: { kindId: string }) => artifact.kindId === 'setup-wave-1-projection')).toHaveLength(1);
     expect(index.documentCatalog.documentCount).toBe(officialBcBasicSnapshotAnchor.documentCount);
     expect(index.deliveryBranch).toBe(officialBcBasicSnapshotAnchor.integrationBranch);
     const previousMode = process.env.UABC_BRANCH_COMMIT_CONTRACT; process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
@@ -69,6 +69,7 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
       expect(state.artifacts.find((artifact) => artifact.id === 'UABC-50')).toMatchObject({ kind: 'task', phaseId: 'UABC-3', sourcePhase: 'P3', estimateHours: 11, actualHours: 11, billable: true });
       expect(state.artifacts.find((artifact) => artifact.sourceType === 'spectra-adapter-provenance')?.activity).toContain(`Projektionsdigest: ${officialBcBasicSnapshotAnchor.projectionDigest}`);
       expect(state.artifacts.find((artifact) => artifact.id === 'UABC-SRC-BCB-COMPANY-EXEC-EVIDENCE-001')).toMatchObject({ sourceType: 'country-company-information-execution-evidence' });
+      expect(state.setupWave).toMatchObject({ readOnly: true, writesAuthorized: false, target: { pilotName: 'Universaarl GmbH (BC Basic Pilot)', legacyName: 'Universaarl GmbH (Legacy)' }, preflight: { resetPoint: { status: 'missing-blocker' } }, packages: [{ tables: 0, records: 0, errors: 0 }, { tables: 0, records: 0, errors: 0 }, { tables: 0, records: 0, errors: 0 }] });
       expect(state.documents.some((document) => document.content.includes('Country/Region `DE`') && document.content.includes('Company Information'))).toBe(true);
       const api = await dispatchProjectApi('GET', '/api/projects/bc-basic/state', productionRegistry(sourceRepo!, expectedCommit!, officialBcBasicSnapshotAnchor.tree, officialBcBasicSnapshotAnchor.bootstrapBranch, false));
       expect(api).toMatchObject({ status: 200, body: { source: { commit: expectedCommit }, documents: expect.any(Array), presentation: { spaces: expect.any(Array), jira: { tickets: expect.any(Array) } } } });

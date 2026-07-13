@@ -70,6 +70,15 @@ export const storyHypercareSchema = z.object({ day: z.number().int().positive(),
 const storyRelationEndpointSchema = z.string().min(1).max(1_000).refine((value) => !value.includes('\\') && !value.startsWith('/') && !value.includes('..') && !/[\u0000-\u001f]/.test(value));
 export const storyRelationSchema = z.object({ from: storyRelationEndpointSchema, to: storyRelationEndpointSchema, kind: z.string().min(1), label: z.string().min(1).nullable() }).strict();
 
+export const setupWaveProjectionSchema = z.object({
+  schemaVersion: z.literal(1), exportId: sourceTechnicalIdSchema, recordType: z.literal('setup-wave-1-projection'), readOnly: z.literal(true), writesAuthorized: z.literal(false),
+  target: z.object({ environment: z.string().min(1).max(120), companyId: sourceTechnicalIdSchema, platform: z.string().min(1).max(80), application: z.string().min(1).max(80), pilotName: z.string().min(1).max(200), legacyName: z.string().min(1).max(200) }).strict(),
+  packages: z.array(z.object({ packageId: sourceTechnicalIdSchema, status: z.string().min(1).max(120), tables: z.number().int().nonnegative(), records: z.number().int().nonnegative(), errors: z.number().int().nonnegative() }).strict()).min(1).max(50),
+  preflight: z.object({ status: z.string().min(1).max(120), workingDate: sourceDateSchema, operator: z.object({ userId: z.string().min(1).max(160), permissionSet: z.string().min(1).max(120) }).strict(), locale: z.string().min(1).max(120), resetPoint: z.object({ status: z.string().min(1).max(120), requiredBeforeAnyWrite: z.boolean() }).strict() }).strict(),
+  writeGate: z.object({ writesAuthorized: z.literal(false), noGoSteps: z.array(sourceTechnicalIdSchema).min(1).max(100), nextAllowedStep: z.string().min(1).max(500) }).strict(),
+  provenance: z.array(z.object({ path: sourceRelativePathSchema, role: z.string().min(1).max(240) }).strict()).min(1).max(50),
+}).strict();
+
 export const presentationInitialStateSchema = z.enum(['expanded', 'collapsed']);
 export const ticketTypeSchema = z.enum(['phase', 'epic', 'story', 'bug', 'task']);
 export const ticketIconKeySchema = z.enum(['phase-flag', 'epic-layers', 'story-bookmark', 'bug-mark', 'task-check', 'jira-phase', 'jira-epic', 'jira-story', 'jira-bug', 'jira-task']);
@@ -137,7 +146,7 @@ export const projectStateSchema = z.object({
     channel: z.object({ branch: z.string().min(1).max(200), status: z.enum(['current', 'stale']), lastValidatedAt: z.string().datetime(), notice: z.string().min(1).max(300).nullable() }).strict().nullable().default(null),
     readAt: z.string().datetime(),
   }),
-  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), resources: z.array(projectResourceSchema).default([]), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), presentation: presentationContractSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
+  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), resources: z.array(projectResourceSchema).default([]), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), presentation: presentationContractSchema.nullable().default(null), setupWave: setupWaveProjectionSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
   stats: z.object({ jira: z.number().int().nonnegative(), changes: z.number().int().nonnegative(), documents: z.number().int().nonnegative(), capabilities: z.number().int().nonnegative(), evidence: z.number().int().nonnegative() }),
 });
 
@@ -147,6 +156,7 @@ export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
 export type ProjectResource = z.infer<typeof projectResourceSchema>;
 export type PresentationContract = z.infer<typeof presentationContractSchema>;
 export type PresentationTicket = z.infer<typeof presentationTicketSchema>;
+export type SetupWaveProjection = z.infer<typeof setupWaveProjectionSchema>;
 
 export type ProjectContext = { projectId: string; projectKey: string; projectName: string };
 export type SourceSnapshot = ProjectState['source'];

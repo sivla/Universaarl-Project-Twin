@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { artifactSchema, displayStatus, displayVerificationType, type Artifact, presentationContractSchema, presentationInitialStateSchema, type PresentationContract, projectDocumentSchema, projectResourceSchema, projectStateSchema, resourceArtifactTypeSchema, resourcePreviewModeSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectResource, type ProjectState } from '../model';
+import { artifactSchema, displayStatus, displayVerificationType, type Artifact, presentationContractSchema, presentationInitialStateSchema, type PresentationContract, projectDocumentSchema, projectResourceSchema, projectStateSchema, resourceArtifactTypeSchema, resourcePreviewModeSchema, setupWaveProjectionSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectResource, type ProjectState, type SetupWaveProjection } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
@@ -1977,6 +1977,29 @@ function requiredSource(sources: readonly IndexedProjectSource[], kindId: string
   return matches[0];
 }
 
+export function validateSetupWaveProjectionContract(input: { projection: unknown; schemaDocument: unknown }): SetupWaveProjection {
+  const projection = schema(input.projection, setupWaveProjectionSchema);
+  if (!input.schemaDocument || typeof input.schemaDocument !== 'object' || Array.isArray(input.schemaDocument)) sourceError('Das Setup-Wave-1-Schema ist kein gültiges JSON-Schemaobjekt.');
+  try {
+    const validate = new Ajv2020({ strict: true, allErrors: true }).compile(input.schemaDocument as Record<string, unknown>);
+    if (!validate(projection)) sourceError('Die Setup-Wave-1-Projektion verletzt ihr versioniertes JSON-Schema.');
+  } catch (error) {
+    if (error instanceof AdapterSourceError) throw error;
+    sourceError('Das Setup-Wave-1-Schema kann nicht sicher kompiliert werden.');
+  }
+  if (new Set(projection.packages.map((item) => item.packageId)).size !== projection.packages.length || new Set(projection.provenance.map((item) => item.path)).size !== projection.provenance.length) sourceError('Die Setup-Wave-1-Projektion enthält doppelte Pakete oder Provenienzpfade.');
+  if (projection.writeGate.writesAuthorized !== projection.writesAuthorized) sourceError('Die Schreibsperre der Setup-Wave-1-Projektion ist widersprüchlich.');
+  return projection;
+}
+
+function setupWaveProjection(reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
+  const projectionSources = sources.filter((source) => source.declaration.kindId === 'setup-wave-1-projection');
+  const schemaSources = sources.filter((source) => source.declaration.kindId === 'setup-wave-1-projection-schema');
+  if (!projectionSources.length && !schemaSources.length) return null;
+  if (projectionSources.length !== 1 || schemaSources.length !== 1) sourceError('Setup-Wave-1-Projektion und Schema müssen eindeutig positivgelistet sein.');
+  return validateSetupWaveProjectionContract({ projection: reader.json(projectionSources[0].declaration.path), schemaDocument: reader.json(schemaSources[0].declaration.path) });
+}
+
 export function validateSpectra09ContractData(input: { release: unknown; conformance: unknown; reconciliation: unknown; provenance: unknown; exportMap: unknown; indexArtifacts: unknown; indexHash: string; projectionHash: string; catalogExtendedIndex?: boolean }) {
   const release = schema(input.release, spectraReleaseEvidenceSchema);
   const conformance = schema(input.conformance, spectra09ConformanceSchema);
@@ -2237,6 +2260,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
   const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
   const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
   const presentation = documentation && story && index.ticketCatalog ? producerPresentationProjection(index, reader, sources, documentation.catalog, story) : null;
+  const setupWave = setupWaveProjection(reader, sources);
   if (presentation && story) {
     const storyTicketById = new Map(story.tickets.map((ticket) => [ticket.id, ticket]));
     artifacts = artifacts.map((artifact) => {
@@ -2256,7 +2280,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
     snapshot: process.env.UABC_BRANCH_COMMIT_CONTRACT === '1' ? null : { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
       spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
-    artifacts, evidenceItems, resources, documents, story, presentation, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
+    artifacts, evidenceItems, resources, documents, story, presentation, setupWave, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
       capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });
