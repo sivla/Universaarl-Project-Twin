@@ -2002,6 +2002,12 @@ export function validateSetupWaveProjectionContract(input: { projection: unknown
   return projection;
 }
 
+export function validateCurrentSetupEvidenceConsistency(setupWave: SetupWaveProjection | null, artifacts: readonly Pick<Artifact, 'sourceType' | 'currentAuthority'>[]) {
+  if (!setupWave || (setupWave.configurationState.pilotConfigured && setupWave.configurationState.writesApplied)) return;
+  const currentExecutionEvidence = artifacts.filter((artifact) => artifact.sourceType === 'country-company-information-execution-evidence' && artifact.currentAuthority !== false);
+  if (currentExecutionEvidence.length) sourceError('Die aktuelle Umsetzungsevidence widerspricht dem nicht eingerichteten oder nicht beschriebenen Pilotstand.');
+}
+
 function setupWaveProjection(reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
   const projectionSources = sources.filter((source) => source.declaration.kindId === 'setup-wave-1-projection');
   const schemaSources = sources.filter((source) => source.declaration.kindId === 'setup-wave-1-projection-schema');
@@ -2238,11 +2244,13 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
     }
     if (declaration.kindId === 'country-company-information-execution-evidence') {
       const evidence = schema(data, z.object({
-        evidenceId: technicalId, classification: z.string().min(1).max(160), countryRegion: z.object({ code: z.string().min(1).max(20), readBackPassed: z.literal(true) }).passthrough(),
+        evidenceId: technicalId, classification: z.string().min(1).max(160), currentAuthority: z.boolean(), supersededForActiveReadinessBy: z.string().refine(validateContractPath).optional(), countryRegion: z.object({ code: z.string().min(1).max(20), readBackPassed: z.literal(true) }).passthrough(),
         companyInformation: z.object({ saved: z.literal(true), readBackPassed: z.literal(true) }).passthrough(), defectRetest: z.object({ defectId: technicalId, status: z.literal('passed'), closed: z.literal(true) }).passthrough(),
       }).passthrough());
+      if (evidence.currentAuthority === false && (evidence.classification !== 'historical-playthru-execution-superseded-for-active-readiness' || !evidence.supersededForActiveReadinessBy)) sourceError('Historische Company-Ausführungsevidence ist nicht eindeutig aus der aktuellen Readiness ausgeschlossen.');
       add({ id: declaration.id, kind: 'evidence', title: 'Country/Region DE und Firmendaten bestätigt', status: evidence.defectRetest.status, phase: null, wave: null, workstream: 'BC-Pilot',
         rationale: `Country/Region ${evidence.countryRegion.code} und Company Information wurden gespeichert und commitgebunden erneut gelesen.`, activity: [`Defect ${evidence.defectRetest.defectId} geschlossen und Retest bestanden.`],
+        classification: evidence.classification, currentAuthority: evidence.currentAuthority, currentRollupContribution: evidence.currentAuthority ? null : false,
         sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
       continue;
     }
@@ -2278,6 +2286,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
   const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
   const presentation = documentation && story && index.ticketCatalog ? producerPresentationProjection(index, reader, sources, documentation.catalog, story) : null;
   const setupWave = setupWaveProjection(reader, sources);
+  validateCurrentSetupEvidenceConsistency(setupWave, artifacts);
   if (presentation && story) {
     const storyTicketById = new Map(story.tickets.map((ticket) => [ticket.id, ticket]));
     artifacts = artifacts.map((artifact) => {

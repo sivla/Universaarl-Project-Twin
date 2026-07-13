@@ -35,5 +35,6 @@
 - [x] Listen und Tabellen ohne stille Kürzung vollständig oder über eine gemeinsame Disclosure-/Pagination-Regel zugänglich machen und mit 57 Datensätzen sowie Desktop-Browsernachweis prüfen
 - [x] Source-driven Projekttagebuch mit Tagesfiltern, echter Pagination, Zeitpunktssicht, Actor-Trennung und ehrlichen Historiengrenzen auf Desktop browserbelegen
 - [x] Aktuellen Pilotplanungsstand auf Standard-CRONUS-Basis mit 140/140 Artefakten, offenen Ticketstatus, 0 Iststunden und historisch nachrangiger Referenzevidence commitgebunden integrieren und browserbelegen
+- [x] Autoritätsgebundene Company-/Setup-Ausführungsevidence gegen den korrigierten Producerstand fail-closed prüfen und aktuelle Karten, Rollups sowie Tagebuch browserbelegen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
