@@ -20,8 +20,8 @@ export type SnapshotSourceBinding = Readonly<{
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: '85870b514ef32b80778b824924707e88dd15dc3d',
-  tree: '62954236bdea4c7f2dc1517730a935bd96ab665e',
+  commit: '3380c5d2383e2884baf604993e6ca0058e043327',
+  tree: '712441f32662de47270295761db06151c58379d0',
   bootstrapBranch: 'codex/universaarl-projekt',
   integrationBranch: 'codex/universaarl-projekt',
   artifactCount: 135,

@@ -30,5 +30,6 @@
 - [x] Aktuellen Stand mit Referenzsimulationsstatus, typisiertem Readiness-Blick und ehrlichen Unknown-Zuständen ohne Rohartefaktzählung browsergestützt nachweisen
 - [x] Optionalen commitgebundenen Ressourcenkatalog, sichere Preview-/Downloadrouten und den ehrlichen Producerbedarf ohne Katalog implementieren und browsergestützt nachweisen
 - [x] Validierten Producerstand mit 135 Artefakten, eindeutigen kanonischen Phase-Tickets und sichtbarer Country-/Company-Evidence in Projektstand, Dokumentation und Lieferung commitgebunden integrieren
+- [x] Validierten Producercommit `3380c5d2383e2884baf604993e6ca0058e043327` mit unveränderter 135er Allowlist integrieren und fehlende Setup-Wave-1-Indexeinträge als Producerbedarf nachweisen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

@@ -56,6 +56,7 @@ describe.runIf(enabled)('commitgebundener Twin-Blueprint-Vertrag', () => {
     const index = YAML.parse(indexBytes.toString('utf8'));
     expect(createHash('sha256').update(indexBytes).digest('hex')).toBe(officialBcBasicSnapshotAnchor.sourceDigest);
     expect(index.artifacts).toHaveLength(officialBcBasicSnapshotAnchor.artifactCount);
+    expect(index.artifacts.filter((artifact: { path: string }) => /(?:setup-wave-1|posting-setup-matrix|setup-parameter-baseline|solution-blueprint)/.test(artifact.path))).toEqual([]);
     expect(index.documentCatalog.documentCount).toBe(officialBcBasicSnapshotAnchor.documentCount);
     expect(index.deliveryBranch).toBe(officialBcBasicSnapshotAnchor.integrationBranch);
     const previousMode = process.env.UABC_BRANCH_COMMIT_CONTRACT; process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
