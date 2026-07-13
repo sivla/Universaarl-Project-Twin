@@ -32,5 +32,6 @@
 - [x] Validierten Producerstand mit 135 Artefakten, eindeutigen kanonischen Phase-Tickets und sichtbarer Country-/Company-Evidence in Projektstand, Dokumentation und Lieferung commitgebunden integrieren
 - [x] Validierten Producercommit `3380c5d2383e2884baf604993e6ca0058e043327` mit unveränderter 135er Allowlist integrieren und fehlende Setup-Wave-1-Indexeinträge als Producerbedarf nachweisen
 - [x] Setup-Wave-1-Projektion schema- und digestgebunden integrieren, im Projektcockpit fachlich anzeigen und nach konsistenter Producerprovenienz browserbelegen
+- [x] Listen und Tabellen ohne stille Kürzung vollständig oder über eine gemeinsame Disclosure-/Pagination-Regel zugänglich machen und mit 57 Datensätzen sowie Desktop-Browsernachweis prüfen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

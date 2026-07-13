@@ -340,8 +340,17 @@ export function projectListFromApiBody(body: unknown) {
 
 export function boundedList<T>(values: readonly T[], limit: number) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('Ungültige Darstellungsgrenze.');
-  const items = values.slice(0, limit);
-  return { items, total: values.length, visible: items.length, limited: items.length < values.length } as const;
+  const items = [...values];
+  return { items, total: values.length, visible: items.length, limited: false, disclosureThreshold: limit } as const;
+}
+
+export function paginateList<T>(values: readonly T[], page: number, pageSize: number) {
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw new Error('UngÃ¼ltige SeitengrÃ¶ÃŸe.');
+  const total = values.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(Math.max(Number.isSafeInteger(page) ? page : 1, 1), totalPages);
+  const start = (currentPage - 1) * pageSize;
+  return { items: values.slice(start, start + pageSize), page: currentPage, pageSize, total, totalPages } as const;
 }
 
 export function mobileMoreViewportDecision(open: boolean, viewportWidth: number, desktopMediaMatches: boolean) {

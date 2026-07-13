@@ -229,6 +229,11 @@ function SourceEmpty({ title, text }: { title: string; text: string }) {
   return <section className="source-empty"><p>QUELLDATEN NICHT VORHANDEN</p><h2>{title}</h2><p>{text}</p><small>Der Projekt-Twin erzeugt keine Beispieldaten oder Ersatzwerte.</small></section>;
 }
 
+function ExpandableList({ label, total, threshold = 24, children }: { label: string; total: number; threshold?: number; children: React.ReactNode }) {
+  if (total <= threshold) return <>{children}</>;
+  return <details className="complete-list"><summary>{label} ({total})</summary>{children}</details>;
+}
+
 function ReferenceSummary({ values }: { values: readonly string[] }) {
   const references = boundedList(values, renderLimits.rowReferences);
   if (!references.total) return <>Keine</>;
@@ -291,8 +296,8 @@ function Billing({ state, open }: { state: ProjectState; open: (artifact: Artifa
   </section>;
 }
 
-function DocumentCards({ title, artifacts, open, emptyText }: { title: string; artifacts: Readonly<{ items: Artifact[]; total: number; visible: number; limited: boolean }>; open: (artifact: Artifact) => void; emptyText: string }) {
-  return <section className="document-section"><h3>{title}</h3>{artifacts.total ? <div className="document-grid">{artifacts.items.map((artifact) => <button key={artifact.id} onClick={() => open(artifact)}><code>{artifact.id}</code><strong>{sourceText(artifact.title)}</strong><small>{displayDocumentType(artifact.documentType)} · {displayStatus(artifact.status)}</small></button>)}</div> : <p className="honest-note">{emptyText}</p>}{artifacts.limited && <p className="honest-note">Angezeigt werden die ersten {artifacts.visible} von {artifacts.total} belegten Dokumenten.</p>}</section>;
+function DocumentCards({ title, artifacts, open, emptyText }: { title: string; artifacts: Readonly<{ items: Artifact[]; total: number; visible: number; limited: boolean; disclosureThreshold?: number }>; open: (artifact: Artifact) => void; emptyText: string }) {
+  return <section className="document-section"><h3>{title}</h3>{artifacts.total ? <ExpandableList label={`Alle ${title}`} total={artifacts.total} threshold={artifacts.disclosureThreshold ?? 24}><div className="document-grid">{artifacts.items.map((artifact) => <button key={artifact.id} onClick={() => open(artifact)}><code>{artifact.id}</code><strong>{sourceText(artifact.title)}</strong><small>{displayDocumentType(artifact.documentType)} · {displayStatus(artifact.status)}</small></button>)}</div></ExpandableList> : <p className="honest-note">{emptyText}</p>}</section>;
 }
 
 type StoryTab = 'uebersicht' | 'angebot' | 'seiten' | 'tickets' | 'timeline' | 'hypercare' | 'beziehungen';
@@ -315,7 +320,7 @@ function StoryCockpit({ state, open }: { state: ProjectState; open: (artifact: A
     {tab === 'tickets' && <div className="story-ticket-board">{(['done', 'closed', 'in-progress', 'backlog'] as const).map((status) => <section key={status}><h3>{displayStatus(status)}</h3>{story.tickets.filter((ticket) => ticket.status.toLowerCase() === status).map((ticket) => <button key={ticket.id} className="story-ticket" onClick={() => artifactById(ticket.id) && open(artifactById(ticket.id) as Artifact)}><code>{ticket.id}</code><strong>{ticket.summary}</strong><span>{ticket.priority ?? 'Priorität nicht belegt'} · {ticket.worklogs.reduce((sum, log) => sum + log.hours, 0)} Std.</span></button>)}{!story.tickets.some((ticket) => ticket.status.toLowerCase() === status) && <p className="honest-note">Keine Tickets belegt.</p>}</section>)}</div>}
     {tab === 'timeline' && <div className="story-timeline">{story.timeline.map((event) => <article key={event.id}><time dateTime={event.time}>{sourceDateTimeLabel(event.time)}</time><button className="text-action" onClick={() => artifactById(event.id) && open(artifactById(event.id) as Artifact)}><code>{event.id}</code><strong>{event.phase}: {event.action}</strong></button><p>{event.result} · Entscheidung: {event.decision} · Nächster Schritt: {event.nextStep}</p><small>Tickets: <TicketReferenceList state={state} ids={event.tickets} /> · Seiten: <ReferenceSummary values={event.pages} /> · Evidence: <ReferenceSummary values={event.evidence} /></small></article>)}</div>}
     {tab === 'hypercare' && <div className="story-hypercare">{story.hypercare.map((day) => <article key={day.day}><header><h3>Tag {day.day}</h3><span>{day.priority} · {day.status}</span></header><p><strong>Diagnose:</strong> {day.diagnosis}</p><p><strong>Fix:</strong> {day.fix}</p><p><strong>Retest:</strong> {day.retest} · <strong>Entscheidung:</strong> {day.decision}</p><p>Ticket <code>{day.ticket}</code> · Seite <code>{day.dailyPage}</code> · Kommentar <code>{day.comment}</code></p><p>Evidence: <ReferenceSummary values={day.evidence} /></p></article>)}</div>}
-    {tab === 'beziehungen' && <div className="story-relations"><p className="honest-note">Die Darstellung bleibt auf die ersten 60 von {story.relations.length} positivgelisteten Beziehungen begrenzt.</p>{story.relations.slice(0, 60).map((relation, index) => <div key={`${relation.from}-${relation.to}-${index}`}><button className="text-action" onClick={() => artifactById(relation.from) && open(artifactById(relation.from) as Artifact)}><code>{relation.from}</code></button><span>→ {relation.kind} →</span><button className="text-action" onClick={() => artifactById(relation.to) && open(artifactById(relation.to) as Artifact)}><code>{relation.to}</code></button></div>)}</div>}
+    {tab === 'beziehungen' && <ExpandableList label="Alle belegten Beziehungen" total={story.relations.length} threshold={60}><div className="story-relations">{story.relations.map((relation, index) => <div key={`${relation.from}-${relation.to}-${index}`}><button className="text-action" onClick={() => artifactById(relation.from) && open(artifactById(relation.from) as Artifact)}><code>{relation.from}</code></button><span>→ {relation.kind} →</span><button className="text-action" onClick={() => artifactById(relation.to) && open(artifactById(relation.to) as Artifact)}><code>{relation.to}</code></button></div>)}</div></ExpandableList>}
   </section>;
 }
 
@@ -483,9 +488,9 @@ function LinkedReference({ value, artifactById, select }: { value: string; artif
   return target ? <button className="detail-reference-button" onClick={() => select(target)}><code>{value}</code> · öffnen</button> : <span className="honest-note">Verknüpftes Objekt nicht lesbar typisiert</span>;
 }
 
-function DetailReferences({ title, values, artifactById, select }: { title: string; values: Readonly<{ items: string[]; total: number; visible: number; limited: boolean }>; artifactById: ReadonlyMap<string, Artifact>; select: (artifact: Artifact) => void }) {
+function DetailReferences({ title, values, artifactById, select }: { title: string; values: Readonly<{ items: string[]; total: number; visible: number; limited: boolean; disclosureThreshold?: number }>; artifactById: ReadonlyMap<string, Artifact>; select: (artifact: Artifact) => void }) {
   if (!values.total) return null;
-  return <><h4>{title}</h4><ul>{values.items.map((value) => <li key={value}><LinkedReference value={value} artifactById={artifactById} select={select} /></li>)}</ul>{values.limited && <p className="honest-note">Angezeigt werden {values.visible} von {values.total} Referenzen.</p>}</>;
+  return <><h4>{title}</h4><ExpandableList label={`Alle ${title}`} total={values.total} threshold={values.disclosureThreshold ?? 24}><ul>{values.items.map((value) => <li key={value}><LinkedReference value={value} artifactById={artifactById} select={select} /></li>)}</ul></ExpandableList></>;
 }
 
 type StatusProps = { title: string; text: string; busy?: boolean; embedded?: boolean };
