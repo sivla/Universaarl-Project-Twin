@@ -21,7 +21,7 @@
 - [x] Nachrangige Projektdokumentation mit Suche, Filtern, Hierarchie, Inhalt, Querverweisen und Provenienz auf Desktop und Mobil browserbelegt bereitstellen
 - [x] Finalen V1.0-Snapshotanker mit 108/108 Indexartefakten und 32/32 katalogvalidierten Dokumenten commit- und treegebunden integrieren, negativ prüfen und browserbelegen
 - [x] Fixturebasierten Drei-Spaces-/Jira-Präsentationsvertrag mit eigener Ticketseite, Typkennzeichen, modularer Navigation, sicherem semantischem Markdown und fail-closed Negativmatrix implementieren und browserbelegen
-- [x] Jira-Interimsvertrag aus dem validierten Producercommit mit Phase → Epic → Story → Aufgabe, 50 producerdefinierten kundenlesbaren Tickets, ausschließlich auf Aufgaben fakturierbaren Worklogs sowie drei Spaces und 22 Navigationsknoten commitgebunden integrieren und browserbelegen
+- [x] Jira-Interimsvertrag aus dem validierten Producercommit mit dynamischer kundenlesbarer Ticketmenge, Phase → Epic → Story → Aufgabe, ausschließlich auf Aufgaben fakturierbaren Worklogs sowie drei Spaces und 22 Navigationsknoten commitgebunden integrieren und browserbelegen
 - [x] Laufenden Producerbranch ohne feste Runtime-SHA einmalig auflösen, Kandidaten atomar validieren und den letzten gültigen Stand bei ungültiger Aktualisierung sichtbar halten
 - [x] Finalen Drei-Space-Delivery-Commit mit 121 Artefakten, 43 Dokumenten, 28 Confluence-Seiten, 6/8/8 Hauptseiten, sechs Unterseiten und Jira commitgebunden integrieren und real browserbelegen
 - [x] Idempotenten lokalen Starter mit Health-, Status-, eigentumsgebundenem Stop- und Neustartnachweis für Port 4173 bereitstellen
