@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import YAML from 'yaml';
 import { z } from 'zod';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { artifactSchema, displayStatus, displayVerificationType, type Artifact, presentationContractSchema, presentationInitialStateSchema, type PresentationContract, projectDocumentSchema, projectStateSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectState } from '../model';
+import { artifactSchema, displayStatus, displayVerificationType, type Artifact, presentationContractSchema, presentationInitialStateSchema, type PresentationContract, projectDocumentSchema, projectResourceSchema, projectStateSchema, resourceArtifactTypeSchema, resourcePreviewModeSchema, sourceBillingStatusSchema, sourceBillingWeekSchema, sourceDateSchema, sourceDateTimeSchema, sourceEffortSchema, sourceHistoryEventSchema, storyProjectionSchema, type ProjectDocument, type ProjectResource, type ProjectState } from '../model';
 import type { ProjectSourceBinding, ProjectSourceContract } from '../projects/registry';
 
 const safeRoots = ['architecture', 'capabilities', 'openspec', 'atlassian/jira', 'atlassian/confluence', 'evidence'] as const;
@@ -60,6 +60,7 @@ export type AdapterReadOptions = {
 };
 
 export type EvidenceBlob = { contentType: 'image/png'; bytes: Buffer };
+export type ResourceBlob = { contentType: ProjectResource['mediaType']; bytes: Buffer; fileName: string; disposition: 'inline' | 'attachment' };
 
 const defaultLimits: ReaderLimits = {
   maxFiles: 5_000,
@@ -758,7 +759,7 @@ const projectDataArtifactSchema = z.object({
   kindId: technicalId,
   path: z.string().min(1).max(1_000).refine(validateContractPath),
   selector: z.string().min(1).max(1_000).optional(),
-  format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'csv', 'png', 'javascript']),
+  format: z.enum(['yaml', 'json', 'json-schema', 'markdown', 'text', 'csv', 'png', 'jpeg', 'webp', 'pdf', 'docx', 'xlsx', 'pptx', 'javascript']),
   required: z.boolean(),
 }).strict();
 
@@ -798,6 +799,22 @@ const documentCatalogIndexSchema = z.object({
   allowedExternalOrigins: z.array(z.string().refine(isSafeHttpsOrigin)).max(20), definitions: z.array(documentCatalogSharedEntrySchema).min(1).max(1_000),
   spaces: z.array(catalogSpaceSchema).length(3), navigationModules: z.array(catalogNavigationModuleSchema).length(3), navigationNodes: z.array(catalogNavigationNodeSchema).min(1).max(1_000), redirects: z.array(catalogRedirectSchema).max(1_000),
   referenceDefinitions: z.object({ ownerRefs: z.array(technicalId).max(1_000), jiraRefs: z.array(technicalId).max(10_000), projectRefs: z.array(technicalId).max(10_000) }).strict(),
+}).strict();
+
+const artifactCatalogIndexSchema = z.object({
+  catalogId: z.literal('UABC-ARTIFACT-CATALOG-V1'), path: z.string().refine(validateContractPath), schemaPath: z.string().refine(validateContractPath), resourceCount: z.number().int().positive().max(1_000),
+}).strict();
+
+const artifactCatalogResourceSchema = z.object({
+  artifactId: technicalId, title: z.string().min(1).max(500), artifactType: resourceArtifactTypeSchema, mediaType: projectResourceSchema.shape.mediaType,
+  path: z.string().refine(validateContractPath), gitMode: z.literal('100644'), sizeBytes: z.number().int().positive().max(50_000_000), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceCommitBinding: z.literal('same-pinned-commit'), status: z.string().min(1).max(120), createdAt: sourceDateTimeSchema.nullable(), actorRef: technicalId.nullable(),
+  jiraRefs: z.array(technicalId).max(200), confluenceRefs: z.array(technicalId).max(200), deliverableRefs: z.array(technicalId).max(200),
+  caption: z.string().min(1).max(1_000).nullable().default(null), processStep: z.string().min(1).max(500).nullable().default(null), precondition: z.string().min(1).max(1_000).nullable().default(null), postcondition: z.string().min(1).max(1_000).nullable().default(null),
+  previewMode: resourcePreviewModeSchema, downloadable: z.boolean(),
+}).strict();
+const artifactCatalogSchema = z.object({
+  schemaVersion: z.literal(1), catalogId: z.literal('UABC-ARTIFACT-CATALOG-V1'), projectId: z.literal('UABC-BC-BASIC-001'), commitBinding: z.literal('same-pinned-commit'), readOnly: z.literal(true), validationStatus: z.literal('validated'), resources: z.array(artifactCatalogResourceSchema).min(1).max(1_000),
 }).strict();
 
 const projectDocumentCatalogEntrySchema = documentCatalogSharedEntrySchema.extend({
@@ -870,6 +887,7 @@ const projectDataIndexSchema = z.object({
   validationStatus: z.literal('validated').optional(),
   missingValuePolicy: z.literal('leer'),
   documentCatalog: documentCatalogIndexSchema.optional(),
+  artifactCatalog: artifactCatalogIndexSchema.optional(),
   ticketCatalog: ticketCatalogIndexSchema.optional(),
   referenceDefinitions: z.object({ jiraRefs: z.array(technicalId).min(1).max(1_000) }).strict().optional(),
   consumerRules: z.array(z.string().min(1).max(2_000)).min(1).max(100),
@@ -1346,6 +1364,60 @@ function evidenceIdFor(projectId: string, reader: CommitBlobReader, entry: TreeE
   return `ev_${hash(`${projectId}\0${reader.commit}\0${entry.oid}\0${entry.path}`).slice(0, 24)}`;
 }
 
+function resourceIdFor(projectId: string, commit: string, pathValue: string, digest: string) {
+  return `rs_${hash(`${projectId}\0${commit}\0${pathValue}\0${digest}`).slice(0, 24)}`;
+}
+
+type ArtifactCatalogBlob = { id: string; path: string; format: ProjectDataArtifact['format']; mode: string; size: number; bytes: Buffer };
+const mediaContract: Readonly<Record<ProjectResource['mediaType'], { formats: ProjectDataArtifact['format'][]; preview: ProjectResource['previewMode'][] }>> = {
+  'text/markdown': { formats: ['markdown'], preview: ['markdown'] }, 'text/plain': { formats: ['text'], preview: ['text'] },
+  'image/png': { formats: ['png'], preview: ['image'] }, 'image/jpeg': { formats: ['jpeg'], preview: ['image'] }, 'image/webp': { formats: ['webp'], preview: ['image'] },
+  'application/pdf': { formats: ['pdf'], preview: ['pdf', 'download'] },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { formats: ['docx'], preview: ['download'] },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { formats: ['xlsx'], preview: ['download'] },
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { formats: ['pptx'], preview: ['download'] },
+};
+function validateResourceSignature(mediaType: ProjectResource['mediaType'], bytes: Buffer, limits: ReaderLimits) {
+  if (mediaType === 'image/png') return validatePngStructure(bytes, limits);
+  if (mediaType === 'image/jpeg' && !(bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9)) sourceError('Eine Ressource besitzt keine gueltige JPEG-Signatur.');
+  if (mediaType === 'image/webp' && !(bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP')) sourceError('Eine Ressource besitzt keine gueltige WebP-Signatur.');
+  if (mediaType === 'application/pdf' && !(bytes.subarray(0, 5).toString('ascii') === '%PDF-' && bytes.subarray(Math.max(0, bytes.length - 1024)).includes(Buffer.from('%%EOF')))) sourceError('Eine Ressource besitzt keine gueltige PDF-Signatur.');
+  if (mediaType.includes('openxmlformats') && !(bytes[0] === 0x50 && bytes[1] === 0x4b && [0x03, 0x05, 0x07].includes(bytes[2]))) sourceError('Eine Office-Ressource besitzt keine gueltige Paket-Signatur.');
+  if (mediaType.startsWith('text/')) { const text = bytes.toString('utf8'); if (text.includes('\uFFFD') || Buffer.byteLength(text, 'utf8') !== bytes.length || /<\s*(?:script|iframe|object|embed|html)\b/i.test(text)) sourceError('Eine Textressource enthaelt unzulaessigen oder ungueltigen Inhalt.'); }
+}
+
+export function validateArtifactCatalogContract(input: { catalog: unknown; schemaDocument: unknown; index: { artifactCatalog?: unknown; artifacts: unknown[] }; blobs: ArtifactCatalogBlob[]; knownRefs: string[]; projectId: string; commit: string }, limits: ReaderLimits = defaultLimits): ProjectResource[] {
+  const indexContract = artifactCatalogIndexSchema.safeParse(input.index.artifactCatalog); if (!indexContract.success) sourceError('Der Artefaktkatalog fehlt oder verletzt den Indexvertrag.');
+  if (!input.schemaDocument || typeof input.schemaDocument !== 'object' || (input.schemaDocument as Record<string, unknown>).$id !== 'urn:universaarl:schema:project-artifact-catalog:v1') sourceError('Das Ressourcenkatalogschema besitzt nicht die erwartete kanonische Identitaet.');
+  try { const validate = new Ajv2020({ allErrors: true, strict: true }).compile(input.schemaDocument); if (!validate(input.catalog)) sourceError('Der Artefaktkatalog ist gegen sein versioniertes JSON-Schema ungueltig.'); } catch (error) { if (error instanceof AdapterSourceError) throw error; sourceError('Das Ressourcenkatalogschema kann nicht sicher kompiliert werden.'); }
+  const catalog = artifactCatalogSchema.safeParse(input.catalog); if (!catalog.success) sourceError('Der Artefaktkatalog verletzt den festgelegten Datenvertrag.');
+  const declarations = schema(input.index.artifacts, z.array(projectDataArtifactSchema));
+  if (catalog.data.projectId !== 'UABC-BC-BASIC-001' || input.projectId !== 'bc-basic' || !fullSha.test(input.commit) || indexContract.data.resourceCount !== catalog.data.resources.length) sourceError('Der Artefaktkatalog stimmt nicht mit der gepinnten Projektbindung ueberein.');
+  const catalogDeclaration = declarations.find((item) => item.path === indexContract.data.path); const schemaDeclaration = declarations.find((item) => item.path === indexContract.data.schemaPath);
+  if (!catalogDeclaration || catalogDeclaration.format !== 'json' || !schemaDeclaration || schemaDeclaration.format !== 'json-schema') sourceError('Katalog und Schema sind nicht positivgelistet.');
+  const byPath = new Map(input.blobs.map((blob) => [blob.path, blob])); const ids = catalog.data.resources.map((item) => item.artifactId); const paths = catalog.data.resources.map((item) => item.path);
+  if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length) sourceError('Der Artefaktkatalog enthaelt doppelte IDs oder Pfade.');
+  const known = new Set(input.knownRefs); const resources = catalog.data.resources.map((item) => {
+    const declaration = declarations.find((value) => value.id === item.artifactId && value.path === item.path); const blob = byPath.get(item.path); const contract = mediaContract[item.mediaType];
+    if (item.sizeBytes > (item.previewMode === 'image' ? limits.maxPngBytes : item.previewMode === 'markdown' || item.previewMode === 'text' ? limits.maxTextBytes : 25_000_000)) sourceError('Eine Ressource ueberschreitet die zulaessige Groesse.');
+    if (!declaration || !blob || blob.id !== declaration.id || blob.mode !== '100644' || item.gitMode !== blob.mode || item.sizeBytes !== blob.size || item.sizeBytes !== blob.bytes.length || item.sha256 !== hash(blob.bytes) || !contract.formats.includes(declaration.format) || !contract.formats.includes(blob.format) || !contract.preview.includes(item.previewMode)) sourceError('Eine Ressource stimmt nicht mit ihrem positivgelisteten Git-Blob ueberein.');
+    if ([...item.jiraRefs, ...item.confluenceRefs, ...item.deliverableRefs].some((reference) => !known.has(reference))) sourceError('Eine Ressource enthaelt eine unbekannte Referenz.');
+    validateResourceSignature(item.mediaType, blob.bytes, limits);
+    return projectResourceSchema.parse({ id: resourceIdFor(input.projectId, input.commit, item.path, item.sha256), artifactId: item.artifactId, title: item.title, artifactType: item.artifactType, mediaType: item.mediaType, sizeBytes: item.sizeBytes, sha256: item.sha256, status: item.status, createdAt: item.createdAt, actorRef: item.actorRef, jiraRefs: item.jiraRefs, confluenceRefs: item.confluenceRefs, deliverableRefs: item.deliverableRefs, caption: item.caption, processStep: item.processStep, precondition: item.precondition, postcondition: item.postcondition, previewMode: item.previewMode, downloadable: item.downloadable });
+  });
+  return resources;
+}
+
+function indexedResources(projectId: string, commit: string, index: ProjectDataIndex, reader: CommitBlobReader, sources: readonly IndexedProjectSource[], artifacts: readonly Artifact[], documents: readonly ProjectDocument[], limits: ReaderLimits) {
+  if (!index.artifactCatalog) return [];
+  const catalogSource = sources.find((source) => source.declaration.path === index.artifactCatalog?.path); const schemaSource = sources.find((source) => source.declaration.path === index.artifactCatalog?.schemaPath);
+  if (!catalogSource || !schemaSource) sourceError('Katalog und Schema der Ressourcen fehlen in der Positivliste.');
+  const schemaDocument = reader.json(schemaSource.declaration.path);
+  if (!schemaDocument || typeof schemaDocument !== 'object' || (schemaDocument as Record<string, unknown>).$id !== 'urn:universaarl:schema:project-artifact-catalog:v1') sourceError('Das Ressourcenkatalogschema besitzt nicht die erwartete kanonische Identitaet.');
+  const knownRefs = [...artifacts.map((item) => item.id), ...documents.map((item) => item.id), ...artifacts.flatMap((item) => item.deliverables.map((deliverable) => deliverable.id))];
+  return validateArtifactCatalogContract({ catalog: reader.json(catalogSource.declaration.path), schemaDocument, index: { artifactCatalog: index.artifactCatalog, artifacts: index.artifacts }, blobs: sources.map((source) => ({ id: source.declaration.id, path: source.declaration.path, format: source.declaration.format, mode: source.entry.mode, size: source.entry.size, bytes: reader.blob(source.entry.path) })), knownRefs, projectId, commit }, limits);
+}
+
 function isEvidencePng(entry: TreeEntry) {
   return entry.path.startsWith('evidence/') && entry.path.toLowerCase().endsWith('.png');
 }
@@ -1430,8 +1502,16 @@ function assertProjectDataFormat(declaration: ProjectDataArtifact, branchMode = 
     : declaration.format === 'markdown' ? extension === '.md'
       : ['json', 'json-schema'].includes(declaration.format) ? extension === '.json'
         : declaration.format === 'javascript' ? extension === '.js' || extension === '.mjs'
+        : declaration.format === 'text' ? extension === '.txt'
         : declaration.format === 'csv' ? extension === '.csv'
-          : extension === '.png';
+        : declaration.format === 'png' ? extension === '.png'
+        : declaration.format === 'jpeg' ? ['.jpg', '.jpeg'].includes(extension)
+        : declaration.format === 'webp' ? extension === '.webp'
+        : declaration.format === 'pdf' ? extension === '.pdf'
+        : declaration.format === 'docx' ? extension === '.docx'
+        : declaration.format === 'xlsx' ? extension === '.xlsx'
+        : declaration.format === 'pptx' ? extension === '.pptx'
+        : false;
   if (!valid || (!branchMode && !csvContractValid) || declaration.path === 'exports/project-data/v1/index.yaml' || declaration.path === 'governance/consumer-bindings.yaml') sourceError('Der Projektindex enthält eine ungültige Format- oder Pfadbindung.');
 }
 
@@ -2135,7 +2215,8 @@ async function createProjectDataState(projectId: string, repo: string, contract:
   }
   const imageSources = sources.filter((source) => source.declaration.format === 'png');
   const evidenceItems = imageSources.map((source) => ({ id: evidenceIdFor(projectId, reader, source.entry), title: source.declaration.id }));
-  const warnings = before.dirty ? ['Die Arbeitskopie enthält nicht commitgebundene Änderungen; alle dargestellten Fachdaten stammen unverändert aus dem ausgewiesenen Commit.'] : [];
+  const resources = indexedResources(projectId, before.commit, index, reader, sources, artifacts, documents, limits);
+  const warnings = [...(before.dirty ? ['Die Arbeitskopie enthält nicht commitgebundene Änderungen; alle dargestellten Fachdaten stammen unverändert aus dem ausgewiesenen Commit.'] : []), ...(!index.artifactCatalog ? ['Der Producer stellt noch keinen kanonischen Ressourcenkatalog bereit. Lieferdateien, Screenshots und Schulungsunterlagen können deshalb nicht sicher geöffnet werden.'] : [])];
   options.testHookAfterRead?.();
   const after = captureSourceFingerprint(repo, options.sourceBinding);
   assertSnapshotBinding(repo, after, options.sourceBinding);
@@ -2144,7 +2225,7 @@ async function createProjectDataState(projectId: string, repo: string, contract:
     headFingerprint: before.headFingerprint, indexFingerprint: before.indexFingerprint, statusFingerprint: before.statusFingerprint,
     snapshot: process.env.UABC_BRANCH_COMMIT_CONTRACT === '1' ? null : { schemaVersion: manifest.schemaVersion, producerId: manifest.producerId, producerCommitSha: manifest.producerCommitSha, indexPath: manifest.indexPath, payloadBundleDigest: manifest.payloadBundleDigest, validationStatus: manifest.validationStatus,
       spectraReleaseBinding: { productId: manifest.spectraReleaseBinding.productId, technicalRepositoryName: manifest.spectraReleaseBinding.technicalRepositoryName, repositoryUrl: manifest.spectraReleaseBinding.repositoryUrl, releaseVersion: manifest.spectraReleaseBinding.releaseVersion, releaseTag: manifest.spectraReleaseBinding.releaseTag, tagCommit: manifest.spectraReleaseBinding.tagCommit, manifestPath: manifest.spectraReleaseBinding.manifestPath, manifestSourceCommit: manifest.spectraReleaseBinding.manifestSourceCommit, consumerMode: manifest.spectraReleaseBinding.consumerMode, installableBlueprint: manifest.spectraReleaseBinding.installableBlueprint } }, readAt: new Date().toISOString() },
-    artifacts, evidenceItems, documents, story, presentation, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
+    artifacts, evidenceItems, resources, documents, story, presentation, workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((a, b) => a.localeCompare(b, 'de')),
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
       capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });
@@ -2244,6 +2325,28 @@ export function resolveEvidenceId(projectId: string, repo: string, evidenceId: s
     return { contentType: 'image/png', bytes: Buffer.from(bytes) };
   } catch (error) {
     if (options.projectDataContract && error instanceof AdapterSourceError) throw error;
+    return null;
+  }
+}
+
+export function resolveResourceId(projectId: string, repo: string, resourceId: string, action: 'preview' | 'download', options: Pick<AdapterReadOptions, 'projectDataContract' | 'sourceBinding'> = {}): ResourceBlob | null {
+  if (!/^rs_[a-f0-9]{24}$/.test(resourceId) || !options.projectDataContract) return null;
+  try {
+    assertProjectId(projectId); prepareRepo(repo);
+    const before = captureSourceFingerprint(repo, options.sourceBinding); assertSnapshotBinding(repo, before, options.sourceBinding);
+    const limits = defaultLimits; const { index, reader, sources } = readProjectDataSources(repo, before.commit, projectId, options.projectDataContract, limits, options.sourceBinding);
+    const artifacts = indexedArtifacts(index, reader, sources); const documents = index.documentCatalog ? indexedDocuments(reader, index, sources).documents : [];
+    const resources = indexedResources(projectId, before.commit, index, reader, sources, artifacts, documents, limits); const resource = resources.find((item) => item.id === resourceId);
+    if (!resource || (action === 'download' && !resource.downloadable)) return null;
+    const catalog = artifactCatalogSchema.parse(reader.json(index.artifactCatalog!.path)); const catalogItem = catalog.resources.find((item) => item.artifactId === resource.artifactId);
+    if (!catalogItem) sourceError('Eine Ressource fehlt im validierten Katalog.');
+    const source = sources.find((item) => item.declaration.path === catalogItem.path); if (!source) sourceError('Eine Ressource fehlt in der Positivliste.');
+    const bytes = reader.blob(source.entry.path); const after = captureSourceFingerprint(repo, options.sourceBinding); assertSnapshotBinding(repo, after, options.sourceBinding);
+    evidenceReadStable(true, sameFingerprint(before, after));
+    const extension = path.posix.extname(catalogItem.path); const fileName = `${resource.artifactId}${extension}`;
+    return { contentType: resource.mediaType, bytes: Buffer.from(bytes), fileName, disposition: action === 'download' || resource.previewMode === 'download' ? 'attachment' : 'inline' };
+  } catch (error) {
+    if (error instanceof AdapterSourceError) throw error;
     return null;
   }
 }

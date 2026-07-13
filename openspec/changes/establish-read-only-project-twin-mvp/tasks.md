@@ -28,5 +28,6 @@
 - [x] Ticketübersicht und Ticketdetail ohne Geldbeträge sowie mit vollständigen belegten Jira-Feldern browsergestützt nachweisen
 - [x] Ticket-Hierarchie Phase → Epic → Story/Fehler → Aufgabe, typgerechte Details, eindeutige Suche und ehrliche Actor-/Rollenanzeige browsergestützt nachweisen
 - [x] Aktuellen Stand mit Referenzsimulationsstatus, typisiertem Readiness-Blick und ehrlichen Unknown-Zuständen ohne Rohartefaktzählung browsergestützt nachweisen
+- [x] Optionalen commitgebundenen Ressourcenkatalog, sichere Preview-/Downloadrouten und den ehrlichen Producerbedarf ohne Katalog implementieren und browsergestützt nachweisen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

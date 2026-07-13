@@ -8,6 +8,7 @@ import { TicketsPage } from './components/TicketsPage';
 import { TicketTypeIcon } from './components/TicketTypeIcon';
 import { DocumentationSpaces } from './components/DocumentationSpaces';
 import { buildCurrentOverview } from './current-overview';
+import { ArtifactViewer } from './components/ArtifactViewer';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
@@ -267,12 +268,9 @@ function Planning({ state, open }: { state: ProjectState; open: (artifact: Artif
 
 function Delivery({ state, open }: { state: ProjectState; open: (artifact: Artifact) => void }) {
   const deliverables = boundedList(state.artifacts.filter(isWorkArtifact).flatMap((artifact) => artifact.deliverables.map((deliverable) => ({ artifact, deliverable }))), renderLimits.artifacts);
-  const documents = boundedList(state.artifacts.filter((artifact) => artifact.kind === 'document'), renderLimits.artifacts);
-  if (!deliverables.total && !documents.total) return <SourceEmpty title="Keine Liefergegenstände belegt" text="Der normalisierte Quellenvertrag enthält weder Ticket-Liefergegenstände noch Dokumentationsartefakte." />;
-  return <section className="area-view"><header><div><p>QUELLLIEFERUNG</p><h2>Liefergegenstände und Dokumentation</h2></div><span>{deliverables.total} Liefergegenstände · {documents.total} Dokumente</span></header>
-    {deliverables.total > 0 && <div className="deliverable-list">{deliverables.items.map(({ artifact, deliverable }) => <article key={`${artifact.id}-${deliverable.id}`}><button className="text-action" onClick={() => open(artifact)}><code>{deliverable.id}</code><span>{displayDocumentType(deliverable.type)}</span></button><p>{deliverable.status}</p><small>Ticket <code>{artifact.id}</code> · Quelle <code>{deliverable.path}</code></small></article>)}</div>}
+  if (!state.resources.length) return <section className="area-view"><header><div><p>QUELLLIEFERUNG</p><h2>Lieferregister</h2></div><span>{deliverables.total} registrierte Lieferobjekte</span></header><SourceEmpty title="Sichere Lieferdateien noch nicht verfügbar" text="Der gebundene Producerstand enthält keinen kanonischen Ressourcenkatalog. Für Vorschau und Download werden typisierte Metadaten, positivgelistete Git-Blobs, Größen, Dateitypen und SHA-256-Prüfsummen benötigt." />{deliverables.total > 0 && <div className="deliverable-list">{deliverables.items.map(({ artifact, deliverable }) => <article key={`${artifact.id}-${deliverable.id}`}><code>{deliverable.id}</code><strong>{displayDocumentType(deliverable.type)}</strong><p>{deliverable.status}</p><small>Kontext: Ticket <code>{artifact.id}</code> · Ergebnisdatei nicht katalogisiert</small></article>)}</div>}</section>;
+  return <section className="area-view"><ArtifactViewer projectId={state.source.projectId} resources={state.resources} documents={state.documents} />
     {deliverables.limited && <p className="honest-note">Angezeigt werden die ersten {deliverables.visible} von {deliverables.total} belegten Liefergegenständen.</p>}
-    <DocumentCards title="Dokumentationsartefakte" artifacts={documents} open={open} emptyText="Keine eigenständigen Dokumentationsartefakte belegt." />
   </section>;
 }
 

@@ -6,7 +6,7 @@ import { dispatchProjectApi } from './src/server/api';
 import { execFileSync } from 'node:child_process';
 import { validatePresentationContract } from './src/server/adapter';
 import { createValidatedBranchChannel } from './src/server/branch-channel';
-import { presentationFixtureContext, presentationFixtureState, presentationFixtureVariant, type PresentationFixtureVariant } from './src/testing/presentation-fixture';
+import { artifactViewerFixtureResources, presentationFixtureContext, presentationFixtureState, presentationFixtureVariant, type PresentationFixtureVariant } from './src/testing/presentation-fixture';
 
 export default defineConfig(({ mode }) => {
   return {
@@ -29,6 +29,12 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 200; res.end(JSON.stringify(presentationFixtureState));
               } catch { res.statusCode = 503; res.end('{"code":"SNAPSHOT_VERTRAG_BLOCKIERT"}'); }
               return;
+            }
+            const resource = pathname.match(/^\/api\/projects\/bc-basic\/resources\/(rs_[a-f0-9]{24})\/(preview|download)$/);
+            if (resource) {
+              const item = artifactViewerFixtureResources.find((entry) => entry.id === resource[1]); if (!item || (resource[2] === 'preview' && item.previewMode === 'download')) { res.statusCode = 404; res.end('{"code":"NACHWEIS_NICHT_GEFUNDEN"}'); return; }
+              const bytes = item.previewMode === 'markdown' ? Buffer.from('# Klickanleitung\n\n1. Synthetischen Beleg öffnen.\n2. Kontrolle ausführen.\n', 'utf8') : item.previewMode === 'image' ? Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') : item.previewMode === 'pdf' ? Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF', 'ascii') : Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]);
+              res.statusCode = 200; res.setHeader('Content-Type', item.mediaType); res.setHeader('X-Content-Type-Options', 'nosniff'); if (resource[2] === 'download') res.setHeader('Content-Disposition', `attachment; filename="${item.artifactId}"`); res.end(bytes); return;
             }
             res.statusCode = 404; res.end('{"code":"ENDPUNKT_NICHT_GEFUNDEN"}');
           });
@@ -82,7 +88,7 @@ export default defineConfig(({ mode }) => {
               if (body.source) body.source.channel = active.channel;
             }
             res.statusCode = result.status; res.setHeader('Cache-Control', 'no-store');
-            if (result.binary) { res.setHeader('Content-Type', result.binary.contentType); res.setHeader('Content-Length', result.binary.bytes.length); res.end(result.binary.bytes); return; }
+            if (result.binary) { res.setHeader('Content-Type', result.binary.contentType); res.setHeader('Content-Length', result.binary.bytes.length); res.setHeader('X-Content-Type-Options', 'nosniff'); if ('disposition' in result.binary) res.setHeader('Content-Disposition', `${result.binary.disposition}; filename="${result.binary.fileName}"`); res.end(result.binary.bytes); return; }
             res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(result.body));
           } catch {
             if (!(req.url || '').startsWith('/api/')) return next();

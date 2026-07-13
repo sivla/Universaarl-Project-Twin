@@ -47,6 +47,17 @@ export const artifactSchema = z.object({
 
 export const evidenceItemSchema = z.object({ id: z.string().regex(/^ev_[a-f0-9]{24}$/), title: z.string().min(1) });
 
+export const resourceArtifactTypeSchema = z.enum(['deliverable', 'evidence', 'screenshot', 'click-guide', 'training', 'customer-handbook', 'transcript']);
+export const resourcePreviewModeSchema = z.enum(['markdown', 'text', 'image', 'pdf', 'download']);
+export const projectResourceSchema = z.object({
+  id: z.string().regex(/^rs_[a-f0-9]{24}$/), artifactId: sourceTechnicalIdSchema, title: z.string().min(1).max(500), artifactType: resourceArtifactTypeSchema,
+  mediaType: z.enum(['text/markdown', 'text/plain', 'image/png', 'image/jpeg', 'image/webp', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']),
+  sizeBytes: z.number().int().positive(), sha256: z.string().regex(/^[a-f0-9]{64}$/), status: z.string().min(1).max(120), createdAt: sourceDateTimeSchema.nullable(), actorRef: sourceTechnicalIdSchema.nullable(),
+  jiraRefs: z.array(sourceTechnicalIdSchema).max(200), confluenceRefs: z.array(sourceTechnicalIdSchema).max(200), deliverableRefs: z.array(sourceTechnicalIdSchema).max(200),
+  caption: z.string().min(1).max(1_000).nullable(), processStep: z.string().min(1).max(500).nullable(), precondition: z.string().min(1).max(1_000).nullable(), postcondition: z.string().min(1).max(1_000).nullable(),
+  previewMode: resourcePreviewModeSchema, downloadable: z.boolean(),
+}).strict();
+
 export const storyOfferVersionSchema = z.object({ version: z.number().int().positive(), date: sourceDateSchema.nullable(), status: z.string().min(1), delta: z.string().min(1), hours: z.number().nonnegative().nullable(), cost: z.number().nonnegative().nullable() }).strict();
 export const storyPageSchema = z.object({ id: sourceTechnicalIdSchema, title: z.string().min(1), parent: sourceTechnicalIdSchema.nullable(), version: z.number().int().positive().nullable(), status: z.string().min(1).nullable(), authorRole: z.string().min(1).nullable(), time: sourceDateTimeSchema.nullable(), sourcePath: sourceRelativePathSchema, content: z.string().max(100_000).nullable(), references: z.array(z.string()).default([]) }).strict();
 export const storyAcceptanceSchema = z.object({ text: z.string().min(1), fulfilled: z.boolean().nullable() }).strict();
@@ -126,13 +137,14 @@ export const projectStateSchema = z.object({
     channel: z.object({ branch: z.string().min(1).max(200), status: z.enum(['current', 'stale']), lastValidatedAt: z.string().datetime(), notice: z.string().min(1).max(300).nullable() }).strict().nullable().default(null),
     readAt: z.string().datetime(),
   }),
-  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), presentation: presentationContractSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
+  artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), resources: z.array(projectResourceSchema).default([]), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), presentation: presentationContractSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),
   stats: z.object({ jira: z.number().int().nonnegative(), changes: z.number().int().nonnegative(), documents: z.number().int().nonnegative(), capabilities: z.number().int().nonnegative(), evidence: z.number().int().nonnegative() }),
 });
 
 export type Artifact = z.infer<typeof artifactSchema>;
 export type ProjectState = z.infer<typeof projectStateSchema>;
 export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
+export type ProjectResource = z.infer<typeof projectResourceSchema>;
 export type PresentationContract = z.infer<typeof presentationContractSchema>;
 export type PresentationTicket = z.infer<typeof presentationTicketSchema>;
 
