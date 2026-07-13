@@ -28,6 +28,16 @@ Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anf
 - **WHEN** Typ, Iconschlüssel, Gruppe, Referenz oder Hierarchie nicht dem geschlossenen Vertrag entspricht
 - **THEN** blockiert der Twin die Ansicht fail-closed und errät keinen Ersatz aus Kennung oder Titel
 
+#### Scenario: Die source-driven Hierarchie bleibt bedienbar und eindeutig
+
+- **WHEN** der validierte Vertrag Phase, Epic, Story oder Fehler und die jeweils eigenen Aufgaben über Elternreferenzen bindet
+- **THEN** zeigt der Twin jede Aufgabe genau unter ihrer Story oder ihrem Fehler, trennt Aufklappen und Detailnavigation tastaturbedienbar und berechnet deren Stundenrollup ausschließlich aus den eigenen Aufgaben
+
+#### Scenario: Ticketdetails zeigen nur typgerechte belegte Inhalte
+
+- **WHEN** ein Phase-, Epic-, Story-, Fehler- oder Aufgabe-Ticket geöffnet wird
+- **THEN** zeigt der Twin nur die für diesen Typ belegten Fachsektionen, verknüpft Eltern und Kinder direkt und fasst fehlende Rollen- oder Inhaltsdaten als einen ehrlichen Quellenbedarf zusammen
+
 ### Requirement: Sicheres dokumentartgerechtes Markdown
 
 Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anforderung. Der Twin muss vorhandene Markdownüberschriften, interne Links, Tabellen, verschachtelte Listen, Checklisten sowie Code- und Evidence-Blöcke ohne aktives HTML rendern. Die Dokumentart darf nur die Gewichtung vorhandener Struktur beeinflussen und keine neue Fachwahrheit erzeugen.

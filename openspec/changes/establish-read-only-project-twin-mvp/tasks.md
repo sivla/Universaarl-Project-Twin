@@ -26,6 +26,7 @@
 - [x] Finalen Drei-Space-Delivery-Commit mit 121 Artefakten, 43 Dokumenten, 28 Confluence-Seiten, 6/8/8 Hauptseiten, sechs Unterseiten und Jira commitgebunden integrieren und real browserbelegen
 - [x] Idempotenten lokalen Starter mit Health-, Status-, eigentumsgebundenem Stop- und Neustartnachweis für Port 4173 bereitstellen
 - [x] Ticketübersicht und Ticketdetail ohne Geldbeträge sowie mit vollständigen belegten Jira-Feldern browsergestützt nachweisen
+- [x] Ticket-Hierarchie Phase → Epic → Story/Fehler → Aufgabe, typgerechte Details, eindeutige Suche und ehrliche Actor-/Rollenanzeige browsergestützt nachweisen
 - [x] Aktuellen Stand mit Referenzsimulationsstatus, typisiertem Readiness-Blick und ehrlichen Unknown-Zuständen ohne Rohartefaktzählung browsergestützt nachweisen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

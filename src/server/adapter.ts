@@ -220,6 +220,7 @@ const fixtureTicketTypePresentation = {
   phase: { typeLabel: 'Phase', displayIconKey: 'phase-flag', displayColorToken: 'slate' },
   epic: { typeLabel: 'Epic', displayIconKey: 'epic-layers', displayColorToken: 'violet' },
   story: { typeLabel: 'Story', displayIconKey: 'story-bookmark', displayColorToken: 'violet' },
+  bug: { typeLabel: 'Fehler', displayIconKey: 'bug-mark', displayColorToken: 'red' },
   task: { typeLabel: 'Aufgabe', displayIconKey: 'task-check', displayColorToken: 'blue' },
 } as const;
 
@@ -227,6 +228,7 @@ const producerTicketTypePresentation = {
   phase: { typeLabel: 'Phase', displayIconKey: 'jira-phase', displayColorToken: 'teal' },
   epic: { typeLabel: 'Epic', displayIconKey: 'jira-epic', displayColorToken: 'purple' },
   story: { typeLabel: 'Story', displayIconKey: 'jira-story', displayColorToken: 'green' },
+  bug: { typeLabel: 'Fehler', displayIconKey: 'jira-bug', displayColorToken: 'red' },
   task: { typeLabel: 'Aufgabe', displayIconKey: 'jira-task', displayColorToken: 'blue' },
 } as const;
 
@@ -241,12 +243,12 @@ export function validatePresentationContract(input: unknown, context: { ticketTy
   const contract = parsed.data;
   const unique = (values: readonly unknown[]) => new Set(values).size === values.length;
   if (!unique(contract.spaces.map((space) => space.id)) || !unique(contract.spaces.map((space) => space.order))) sourceError('Die Wissensräume besitzen doppelte Kennungen oder Reihenfolgen.');
-  const expectedTypes = Object.keys(fixtureTicketTypePresentation) as Array<keyof typeof fixtureTicketTypePresentation>;
-  const activeProfile = ticketTypePresentationProfiles.find((profile) => expectedTypes.every((type) => {
+  const requiredTypes = ['phase', 'epic', 'story', 'task'] as const;
+  const activeProfile = ticketTypePresentationProfiles.find((profile) => contract.jira.ticketTypes.every(({ type }) => {
     const item = contract.jira.ticketTypes.find((entry) => entry.type === type);
-    return item && JSON.stringify(profile[type]) === JSON.stringify({ typeLabel: item.typeLabel, displayIconKey: item.displayIconKey, displayColorToken: item.displayColorToken });
+    return item && type in profile && JSON.stringify(profile[type as keyof typeof profile]) === JSON.stringify({ typeLabel: item.typeLabel, displayIconKey: item.displayIconKey, displayColorToken: item.displayColorToken });
   }));
-  if (!activeProfile || !unique(contract.jira.ticketTypes.map((item) => item.type)) || expectedTypes.some((type) => !contract.jira.ticketTypes.some((item) => item.type === type))) sourceError('Die Tickettypdarstellung verletzt die geschlossene Allowlist.');
+  if (!activeProfile || !unique(contract.jira.ticketTypes.map((item) => item.type)) || requiredTypes.some((type) => !contract.jira.ticketTypes.some((item) => item.type === type))) sourceError('Die Tickettypdarstellung verletzt die geschlossene Allowlist.');
   const ticketIds = contract.jira.tickets.map((ticket) => ticket.ticketId);
   if (contract.jira.canonicalTicketCount !== ticketIds.length || !unique(ticketIds)) sourceError('Die kanonische Ticketmenge besitzt widersprüchliche Zähler oder Kennungen.');
   const ticketsById = new Map(contract.jira.tickets.map((ticket) => [ticket.ticketId, ticket]));
@@ -261,7 +263,7 @@ export function validatePresentationContract(input: unknown, context: { ticketTy
   assertAcyclic(ticketIds, (id) => ticketsById.get(id)?.parentId, 'Die Tickethierarchie enthält einen Zyklus.');
   const childrenByParent = new Map<string, PresentationContract['jira']['tickets']>();
   for (const ticket of contract.jira.tickets) if (ticket.parentId) childrenByParent.set(ticket.parentId, [...(childrenByParent.get(ticket.parentId) ?? []), ticket]);
-  const coreTypes = new Set(['phase', 'epic', 'story', 'task']);
+  const coreTypes = new Set(['phase', 'epic', 'story', 'bug', 'task']);
   if (contract.jira.tickets.some((ticket) => !coreTypes.has(ticket.type))) sourceError('Die abrechenbare Projekthierarchie enthält einen nicht freigegebenen Issue-Typ.');
   const phaseTickets = contract.jira.tickets.filter((ticket) => ticket.type === 'phase');
   const phaseTicketIds = contract.jira.tickets.slice(0, 3).map((ticket) => ticket.ticketId);
@@ -272,11 +274,11 @@ export function validatePresentationContract(input: unknown, context: { ticketTy
     if (ticket.type === 'phase') {
       if (ticket.parentId || ticket.phaseId !== ticket.ticketId || ticket.phaseRefs.length !== 1 || ticket.phaseRefs[0] !== ticket.ticketId || ticket.billingSource !== 'task-rollup-only' || ticket.billable) sourceError('Ein Phase-Ticket verletzt die Wurzel-, Phasen- oder Abrechnungsgrenze.');
     } else if (ticket.type === 'epic') {
-      if (!parent || parent.type !== 'phase' || ticket.phaseId !== parent.ticketId || ticket.phaseRefs.length !== 1 || ticket.phaseRefs[0] !== parent.ticketId || ticket.billingSource !== 'task-rollup-only' || ticket.billable || !children.length || children.some((child) => child.type !== 'story')) sourceError('Ein fachlicher Epic besitzt keine eindeutige Phase oder keinen fachlichen Story-Inhalt.');
-    } else if (ticket.type === 'story') {
-      if (!parent || parent.type !== 'epic' || !ticket.phaseId || ticket.phaseId !== parent.phaseId || ticket.phaseRefs.length || ticket.billingSource !== 'task-rollup-only' || ticket.billable || !children.length || children.some((child) => child.type !== 'task')) sourceError('Eine Story besitzt keinen eindeutigen fachlichen Epic oder keine Aufgaben.' );
+      if (!parent || parent.type !== 'phase' || ticket.phaseId !== parent.ticketId || ticket.phaseRefs.length !== 1 || ticket.phaseRefs[0] !== parent.ticketId || ticket.billingSource !== 'task-rollup-only' || ticket.billable || !children.length || children.some((child) => child.type !== 'story' && child.type !== 'bug')) sourceError('Ein fachlicher Epic besitzt keine eindeutige Phase oder keinen fachlichen Story-/Fehlerinhalt.');
+    } else if (ticket.type === 'story' || ticket.type === 'bug') {
+      if (!parent || parent.type !== 'epic' || !ticket.phaseId || ticket.phaseId !== parent.phaseId || ticket.phaseRefs.length || ticket.billingSource !== 'task-rollup-only' || ticket.billable || !children.length || children.some((child) => child.type !== 'task')) sourceError('Eine Story oder ein Fehler besitzt keinen eindeutigen fachlichen Epic oder keine Aufgaben.' );
     } else {
-      if (!parent || parent.type !== 'story' || !ticket.phaseId || ticket.phaseId !== parent.phaseId || ticket.phaseRefs.length || ticket.billingSource !== 'task-worklogs' || !ticket.billable || children.length) sourceError('Eine Aufgabe verletzt die eindeutige Story- oder Abrechnungsbindung.');
+      if (!parent || (parent.type !== 'story' && parent.type !== 'bug') || !ticket.phaseId || ticket.phaseId !== parent.phaseId || ticket.phaseRefs.length || ticket.billingSource !== 'task-worklogs' || !ticket.billable || children.length) sourceError('Eine Aufgabe verletzt die eindeutige Story-/Fehler- oder Abrechnungsbindung.');
     }
     const worklog = context.ticketWorklogs?.get(ticket.ticketId);
     if (ticket.type !== 'task' && worklog && (worklog.hours !== 0 || worklog.amountEur !== 0)) sourceError('Nur Aufgaben dürfen fakturierbare Worklogs besitzen.');
@@ -810,8 +812,8 @@ const projectDocumentCatalogSchema = z.object({
   documentCount: z.number().int().positive().max(1_000), confluenceDocumentCount: z.number().int().nonnegative().max(1_000), documents: z.array(projectDocumentCatalogEntrySchema).min(1).max(1_000),
 }).strict();
 
-const producerTicketTypePresentationSchema = z.object({ typeLabel: z.string().min(1).max(40), displayIconKey: z.enum(['jira-phase', 'jira-epic', 'jira-story', 'jira-task']), displayColorToken: z.enum(['teal', 'purple', 'green', 'blue']) }).strict();
-const producerTicketTypesSchema = z.object({ phase: producerTicketTypePresentationSchema, epic: producerTicketTypePresentationSchema, story: producerTicketTypePresentationSchema, task: producerTicketTypePresentationSchema }).strict();
+const producerTicketTypePresentationSchema = z.object({ typeLabel: z.string().min(1).max(40), displayIconKey: z.enum(['jira-phase', 'jira-epic', 'jira-story', 'jira-bug', 'jira-task']), displayColorToken: z.enum(['teal', 'purple', 'green', 'blue', 'red']) }).strict();
+const producerTicketTypesSchema = z.object({ phase: producerTicketTypePresentationSchema, epic: producerTicketTypePresentationSchema, story: producerTicketTypePresentationSchema, bug: producerTicketTypePresentationSchema.optional(), task: producerTicketTypePresentationSchema }).strict();
 const producerTicketColumnSchema = z.object({ id: technicalId, title: z.string().min(1).max(120), order: z.number().int().nonnegative(), statuses: z.array(z.string().min(1).max(80)).min(1).max(30) }).strict();
 const producerTicketGroupSchema = z.object({ id: technicalId, type: z.literal('phase'), phaseId: technicalId, title: z.string().min(1).max(200), order: z.number().int().nonnegative(), collapsible: z.literal(true), initialState: presentationInitialStateSchema, epicIds: z.array(technicalId).min(1).max(1_000), ticketIds: z.array(technicalId).min(1).max(1_000) }).strict();
 const producerTicketViewSchema = z.object({
@@ -820,7 +822,7 @@ const producerTicketViewSchema = z.object({
   columns: z.array(producerTicketColumnSchema).default([]), groups: z.array(producerTicketGroupSchema).min(1).max(100),
 }).strict();
 const producerTicketRecordSchema = z.object({
-  id: technicalId, type: z.enum(['phase', 'epic', 'story', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'task']),
+  id: technicalId, type: z.enum(['phase', 'epic', 'story', 'bug', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'bug', 'task']),
   typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), dependencyRefs: z.array(technicalId).max(100),
   sourcePath: z.string().refine(validateContractPath), visibility: z.literal('twin-visible'), visibilityRole: z.enum(['customer-project-story', 'internal-traceability']), countingScope: z.enum(['active-project', 'excluded-from-story-counts']),
   planningRef: technicalId.nullable().optional(), status: z.string().min(1).max(80), summary: z.string().min(1).max(500), description: z.string().min(1).max(4_000), deliverable: z.string().min(1).max(1_000),
@@ -829,13 +831,13 @@ const producerTicketRecordSchema = z.object({
   history: z.array(z.object({ status: z.string().min(1).max(80), time: sourceDateSchema }).strict()).default([]), worklogHours: z.number().nonnegative(), evidence: z.array(z.string().min(1).max(1_000)).default([]),
   comments: z.array(z.object({ id: technicalId, type: z.string().min(1).max(80), time: sourceDateSchema, text: z.string().min(1).max(4_000) }).strict()).default([]),
 }).strict();
-const producerTraceabilityRecordSchema = z.object({ id: technicalId, type: z.enum(['phase', 'epic', 'story', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'task']),
+const producerTraceabilityRecordSchema = z.object({ id: technicalId, type: z.enum(['phase', 'epic', 'story', 'bug', 'task']), sourceType: z.string().min(1).max(80), canonicalType: z.enum(['phase', 'epic', 'story', 'bug', 'task']),
   typeLabel: z.string().min(1).max(40), displayIconKey: z.string().min(1).max(80), displayColorToken: z.string().min(1).max(40), parent: technicalId.nullable(), dependencyRefs: z.array(technicalId).max(100), sourcePath: z.string().refine(validateContractPath),
   visibility: z.literal('twin-visible'), visibilityRole: z.literal('internal-traceability'), countingScope: z.literal('excluded-from-story-counts'), status: z.string().min(1).max(80), summary: z.string().min(1).max(500) }).strict();
 const producerTraceabilityRelationSchema = z.object({ type: z.string().regex(/^[a-z][a-z0-9-]{1,79}$/), from: technicalId, to: technicalId }).strict();
 const producerTicketCatalogSchema = z.object({
   schemaVersion: z.literal(1), projectId: z.literal('UABC-BC-BASIC-001'), classification: z.literal('synthetic-only'), sourceContract: z.literal('evidence/simulation/project-story.json'), generated: z.literal(true),
-  derivedFrom: z.array(z.string().refine(validateContractPath)).min(1).max(20), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'task'])).length(4), typePresentations: producerTicketTypesSchema,
+  derivedFrom: z.array(z.string().refine(validateContractPath)).min(1).max(20), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'bug', 'task'])).min(4).max(5), typePresentations: producerTicketTypesSchema,
   liveIconPolicy: z.object({ sourceMode: z.literal('local-allowlist-only'), allowlistedAssets: z.array(z.string()).max(20), allowedOrigins: z.array(z.string()).max(20), digestAlgorithm: z.literal('SHA-256'), digestRequired: z.literal(true) }).strict(),
   views: z.array(producerTicketViewSchema).length(2), recordCount: z.number().int().positive(), customerStoryCount: z.number().int().positive(), internalTraceabilityCount: z.number().int().nonnegative(),
   countedWorklogHours: z.number().nonnegative(), historicalPlanningBaselineHours: z.number().nonnegative().optional(), ticketRecords: z.array(producerTicketRecordSchema).min(1).max(1_000),
@@ -843,10 +845,10 @@ const producerTicketCatalogSchema = z.object({
 }).strict();
 const ticketCatalogIndexSchema = z.object({
   path: z.literal('atlassian/jira/issues/bc-basic-story-tickets.yaml'), sourceContract: z.literal('evidence/simulation/project-story.json'), migrationMatrix: z.literal('project/bc-basic/ticket-migration.yaml'),
-  recordCount: z.number().int().positive(), customerStoryCount: z.number().int().positive(), internalTraceabilityCount: z.number().int().nonnegative(), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'task'])).length(4),
+  recordCount: z.number().int().positive(), customerStoryCount: z.number().int().positive(), internalTraceabilityCount: z.number().int().nonnegative(), canonicalTypes: z.array(z.enum(['phase', 'epic', 'story', 'bug', 'task'])).min(4).max(5),
   typeField: z.literal('type'), canonicalTypeField: z.literal('canonicalType'), parentField: z.literal('parent'), visibilityRoleField: z.literal('visibilityRole'), countingScopeField: z.literal('countingScope'), typePresentationsField: z.literal('typePresentations'),
   typeLabelField: z.literal('typeLabel'), displayIconKeyField: z.literal('displayIconKey'), displayColorTokenField: z.literal('displayColorToken'), liveIconPolicyField: z.literal('liveIconPolicy'), viewsField: z.literal('views'),
-  presentationTypes: z.array(z.enum(['phase', 'epic', 'story', 'task'])).length(4), viewIds: z.array(technicalId).length(2), viewTypes: z.array(z.enum(['board', 'compact-list'])).length(2), inferTypeFromKeyOrTitle: z.literal(false),
+  presentationTypes: z.array(z.enum(['phase', 'epic', 'story', 'bug', 'task'])).min(4).max(5), viewIds: z.array(technicalId).length(2), viewTypes: z.array(z.enum(['board', 'compact-list'])).length(2), inferTypeFromKeyOrTitle: z.literal(false),
 }).strict();
 
 const projectDataIndexSchema = z.object({
@@ -1671,15 +1673,16 @@ function producerPresentationProjection(index: ProjectDataIndex, reader: CommitB
   const ticketSource = sources.find((source) => source.declaration.kindId === 'project-story-ticket-catalog');
   if (!ticketSource || ticketSource.declaration.path !== index.ticketCatalog.path || ticketSource.declaration.format !== 'yaml') sourceError('Der kanonische Ticketkatalog ist nicht eindeutig positivgelistet.');
   const ticketCatalog = schema(selectedYaml(reader, ticketSource), producerTicketCatalogSchema);
-  const rawTypes = ['phase', 'epic', 'story', 'task'] as const;
-  if (new Set(ticketCatalog.canonicalTypes).size !== rawTypes.length || rawTypes.some((type) => !ticketCatalog.canonicalTypes.includes(type)) || JSON.stringify(index.ticketCatalog.canonicalTypes) !== JSON.stringify(ticketCatalog.canonicalTypes)) sourceError('Der Ticketkatalog besitzt keine eindeutige kanonische Typmenge.');
+  const requiredTypes = ['phase', 'epic', 'story', 'task'] as const;
+  const rawTypes = ticketCatalog.canonicalTypes;
+  if (new Set(rawTypes).size !== rawTypes.length || requiredTypes.some((type) => !rawTypes.includes(type)) || JSON.stringify(index.ticketCatalog.canonicalTypes) !== JSON.stringify(rawTypes)) sourceError('Der Ticketkatalog besitzt keine eindeutige kanonische Typmenge.');
   if (ticketCatalog.recordCount !== ticketCatalog.ticketRecords.length + ticketCatalog.traceabilityRecords.length || ticketCatalog.customerStoryCount !== ticketCatalog.ticketRecords.length || ticketCatalog.internalTraceabilityCount !== ticketCatalog.traceabilityRecords.length || ticketCatalog.customerStoryCount + ticketCatalog.internalTraceabilityCount !== ticketCatalog.recordCount
     || index.ticketCatalog.recordCount !== ticketCatalog.recordCount || index.ticketCatalog.customerStoryCount !== ticketCatalog.customerStoryCount || index.ticketCatalog.internalTraceabilityCount !== ticketCatalog.internalTraceabilityCount) sourceError('Index und Ticketkatalog besitzen widersprüchliche Ticketzähler.');
   const allIds = [...ticketCatalog.ticketRecords, ...ticketCatalog.traceabilityRecords].map((ticket) => ticket.id);
   if (new Set(allIds).size !== allIds.length) sourceError('Der Ticketkatalog besitzt doppelte Ticketkennungen.');
   for (const ticket of [...ticketCatalog.ticketRecords, ...ticketCatalog.traceabilityRecords]) {
     const typePresentation = ticketCatalog.typePresentations[ticket.type];
-    if (ticket.canonicalType !== ticket.type || ticket.typeLabel !== typePresentation.typeLabel || ticket.displayIconKey !== typePresentation.displayIconKey || ticket.displayColorToken !== typePresentation.displayColorToken) sourceError('Ein Ticket widerspricht seiner producerdefinierten Typdarstellung.');
+    if (!typePresentation || ticket.canonicalType !== ticket.type || ticket.typeLabel !== typePresentation.typeLabel || ticket.displayIconKey !== typePresentation.displayIconKey || ticket.displayColorToken !== typePresentation.displayColorToken) sourceError('Ein Ticket widerspricht seiner producerdefinierten Typdarstellung.');
   }
   const canonicalRecords = ticketCatalog.ticketRecords.filter((ticket) => ticket.visibilityRole === 'customer-project-story' && ticket.countingScope === 'active-project');
   const internalRecords = ticketCatalog.traceabilityRecords;
@@ -1767,6 +1770,14 @@ function storyEvidence(value: unknown) {
   return storyStrings(value);
 }
 
+function storyActor(value: unknown) {
+  if (!value || typeof value !== 'object') return null;
+  const actor = value as RecordValue;
+  const type = actor.type;
+  if (typeof actor.displayName !== 'string' || typeof actor.role !== 'string' || !['human', 'spectra-codex', 'playwright', 'system-automation', 'unconfirmed-customer'].includes(String(type))) return null;
+  return { displayName: actor.displayName, role: actor.role, type: type as 'human' | 'spectra-codex' | 'playwright' | 'system-automation' | 'unconfirmed-customer' };
+}
+
 function projectStoryProjection(reader: CommitBlobReader, source: IndexedProjectSource, sources: readonly IndexedProjectSource[]) {
   const raw = schema(reader.json(source.declaration.path), projectStorySchema);
   const allowedPaths = new Set(sources.map((item) => item.declaration.path));
@@ -1782,9 +1793,9 @@ function projectStoryProjection(reader: CommitBlobReader, source: IndexedProject
   });
   const tickets = raw.tickets.map((ticket) => {
     const acceptance = storyAcceptance(ticket.acceptanceCriteria).map((text) => ({ text, fulfilled: true }));
-    const comments = Array.isArray(ticket.comments) ? ticket.comments.map((comment, index) => comment && typeof comment === 'object' ? { id: storyText((comment as RecordValue).id) ?? `COMMENT-${index + 1}`, type: storyText((comment as RecordValue).type) ?? 'work', time: storyDate((comment as RecordValue).time), role: storyText((comment as RecordValue).role), text: storyText((comment as RecordValue).text) ?? 'Nicht belegt', evidenceRef: storyText((comment as RecordValue).evidenceRef) } : null).filter(Boolean) : [];
-    const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs.map((worklog) => worklog && typeof worklog === 'object' ? { date: storyDate((worklog as RecordValue).date), role: storyText((worklog as RecordValue).role), hours: typeof (worklog as RecordValue).hours === 'number' ? (worklog as RecordValue).hours as number : 0, cost: typeof (worklog as RecordValue).netAmount === 'number' ? (worklog as RecordValue).netAmount as number : typeof (worklog as RecordValue).cost === 'number' ? (worklog as RecordValue).cost as number : null, activity: storyText((worklog as RecordValue).activity), phase: storyText((worklog as RecordValue).phase) } : null).filter(Boolean) : [];
-    const statusHistory = Array.isArray(ticket.statusHistory) ? ticket.statusHistory.map((event) => event && typeof event === 'object' && typeof (event as RecordValue).status === 'string' && typeof (event as RecordValue).time === 'string' ? { status: (event as RecordValue).status as string, time: (event as RecordValue).time as string } : null).filter(Boolean) : [];
+    const comments = Array.isArray(ticket.comments) ? ticket.comments.map((comment, index) => comment && typeof comment === 'object' ? { id: storyText((comment as RecordValue).id) ?? `COMMENT-${index + 1}`, type: storyText((comment as RecordValue).type) ?? 'work', time: storyDate((comment as RecordValue).time), role: storyText((comment as RecordValue).role), actor: storyActor((comment as RecordValue).actor), text: storyText((comment as RecordValue).text) ?? 'Nicht belegt', evidenceRef: storyText((comment as RecordValue).evidenceRef) } : null).filter(Boolean) : [];
+    const worklogs = Array.isArray(ticket.worklogs) ? ticket.worklogs.map((worklog) => worklog && typeof worklog === 'object' ? { date: storyDate((worklog as RecordValue).date), role: storyText((worklog as RecordValue).role), actor: storyActor((worklog as RecordValue).actor), hours: typeof (worklog as RecordValue).hours === 'number' ? (worklog as RecordValue).hours as number : 0, cost: typeof (worklog as RecordValue).netAmount === 'number' ? (worklog as RecordValue).netAmount as number : typeof (worklog as RecordValue).cost === 'number' ? (worklog as RecordValue).cost as number : null, activity: storyText((worklog as RecordValue).activity), phase: storyText((worklog as RecordValue).phase) } : null).filter(Boolean) : [];
+    const statusHistory = Array.isArray(ticket.statusHistory) ? ticket.statusHistory.map((event) => event && typeof event === 'object' && typeof (event as RecordValue).status === 'string' && typeof (event as RecordValue).time === 'string' ? { status: (event as RecordValue).status as string, time: (event as RecordValue).time as string, actor: storyActor((event as RecordValue).actor) } : null).filter(Boolean) : [];
     return { id: String(ticket.id), type: String(ticket.type ?? 'task'), status: String(ticket.status ?? 'unbekannt'), summary: storyText(ticket.summary) ?? acceptance[0]?.text ?? String(ticket.id), assignee: storyText(ticket.assignee), priority: storyText(ticket.priority), parent: typeof ticket.parent === 'string' ? ticket.parent : null, dependencies: storyStrings(ticket.dependencies), acceptanceCriteria: acceptance, statusHistory, comments, worklogs, evidenceRefs: storyStrings(ticket.evidenceRefs),
       phaseId: storyText(ticket.phaseId), phaseRefs: storyStrings(ticket.phaseRefs), billingSource: ticket.billingSource === 'task-rollup-only' || ticket.billingSource === 'task-worklogs' ? ticket.billingSource : null,
       estimateHours: typeof ticket.estimateHours === 'number' ? ticket.estimateHours : null, remainingHours: typeof ticket.remainingHours === 'number' ? ticket.remainingHours : null, netAmount: typeof ticket.netAmount === 'number' ? ticket.netAmount : null, billable: typeof ticket.billable === 'boolean' ? ticket.billable : null };

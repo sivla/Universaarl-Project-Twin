@@ -1,7 +1,7 @@
 import { artifactSchema, projectDocumentSchema, projectStateSchema, type PresentationContract, type ProjectState } from '../model';
 import { validatePresentationContract } from '../server/adapter';
 
-const ticket = (id: string, type: 'phase' | 'epic' | 'story' | 'task', status: string, summary: string, parent: string | null, priority: string, phaseId: string | null, phaseRefs: string[], estimateHours: number, actualHours: number, billable: boolean, worklogPhase: string | null = null) => ({ story: {
+const ticket = (id: string, type: 'phase' | 'epic' | 'story' | 'bug' | 'task', status: string, summary: string, parent: string | null, priority: string, phaseId: string | null, phaseRefs: string[], estimateHours: number, actualHours: number, billable: boolean, worklogPhase: string | null = null) => ({ story: {
   id, type, status, summary, assignee: 'Projektteam', priority, parent, dependencies: [], phaseId, phaseRefs, billingSource: billable ? 'task-worklogs' : 'task-rollup-only', estimateHours, remainingHours: 0, netAmount: actualHours * 120, billable,
   acceptanceCriteria: [{ text: `${summary} ist in der Simulation nachvollziehbar.`, fulfilled: status === 'done' }],
   statusHistory: [{ status: 'backlog', time: '2026-08-01' }, ...(status === 'backlog' ? [] : [{ status, time: '2026-08-10' }])],
@@ -23,11 +23,13 @@ const fixtureTicketDefinitions = [
   ticket('UABC-11', 'story', 'done', 'Steuerlogik prüfen', 'UABC-6', 'Hoch', 'UABC-2', [], 12, 12, false),
   ticket('UABC-12', 'story', 'done', 'Verkaufsprozess durchgängig abbilden', 'UABC-7', 'Mittel', 'UABC-2', [], 18, 18, false),
   ticket('UABC-13', 'story', 'done', 'Betriebsübergang absichern', 'UABC-8', 'Hoch', 'UABC-3', [], 20, 20, false),
+  ticket('UABC-19', 'bug', 'done', 'Buchungsabweichung korrigieren', 'UABC-4', 'Hoch', 'UABC-1', [], 0, 0, false),
   ticket('UABC-14', 'task', 'done', 'Buchungsmatrix einrichten', 'UABC-9', 'Mittel', 'UABC-1', [], 20, 20, true, 'Phase 1'),
   ticket('UABC-15', 'task', 'done', 'Bestellprozess konfigurieren', 'UABC-10', 'Mittel', 'UABC-1', [], 10, 10, true, 'Phase 1'),
   ticket('UABC-16', 'task', 'done', 'Steuerlogik retesten', 'UABC-11', 'Mittel', 'UABC-2', [], 12, 12, true, 'Phase 2'),
   ticket('UABC-17', 'task', 'done', 'Verkaufsprozess konfigurieren', 'UABC-12', 'Mittel', 'UABC-2', [], 18, 18, true, 'Phase 2'),
   ticket('UABC-18', 'task', 'done', 'Handover abschließen', 'UABC-13', 'Mittel', 'UABC-3', [], 20, 20, true, 'Phase 3'),
+  ticket('UABC-20', 'task', 'done', 'Buchungsabweichung retesten', 'UABC-19', 'Hoch', 'UABC-1', [], 0, 0, true, 'Phase 1'),
 ] as const;
 export const fixtureStoryTickets = fixtureTicketDefinitions.map((item) => item.story);
 
@@ -35,6 +37,7 @@ const ticketTypes = [
   { type: 'phase', typeLabel: 'Phase', displayIconKey: 'phase-flag', displayColorToken: 'slate' },
   { type: 'epic', typeLabel: 'Epic', displayIconKey: 'epic-layers', displayColorToken: 'violet' },
   { type: 'story', typeLabel: 'Story', displayIconKey: 'story-bookmark', displayColorToken: 'violet' },
+  { type: 'bug', typeLabel: 'Fehler', displayIconKey: 'bug-mark', displayColorToken: 'red' },
   { type: 'task', typeLabel: 'Aufgabe', displayIconKey: 'task-check', displayColorToken: 'blue' },
 ] as const;
 
@@ -102,7 +105,7 @@ export const presentationFixtureState: ProjectState = projectStateSchema.parse({
   presentation: presentationFixture, workstreams: ['Umsetzung'], gaps: [], warnings: ['Lokale Consumerfixture; keine BC-Basic-Fachwahrheit.'], stats: { jira: fixtureStoryTickets.length, changes: 0, documents: fixtureDocuments.length, capabilities: 0, evidence: 0 },
 });
 
-export type PresentationFixtureVariant = 'valid' | 'cycle' | 'duplicate-id' | 'duplicate-order' | 'unknown-reference' | 'invalid-initial-state' | 'unknown-icon' | 'invalid-parent' | 'nonbillable-task' | 'rollup-mismatch' | 'phase-ref-mismatch' | 'phase-container' | 'wrong-phase-order' | 'phase-billable' | 'epic-without-phase' | 'duplicate-epic-reference';
+export type PresentationFixtureVariant = 'valid' | 'cycle' | 'duplicate-id' | 'duplicate-order' | 'unknown-reference' | 'invalid-initial-state' | 'unknown-icon' | 'unknown-ticket-type' | 'invalid-parent' | 'bug-invalid-parent' | 'nonbillable-task' | 'rollup-mismatch' | 'phase-ref-mismatch' | 'phase-container' | 'wrong-phase-order' | 'phase-billable' | 'epic-without-phase' | 'duplicate-epic-reference' | 'duplicate-task-reference';
 export function presentationFixtureVariant(variant: PresentationFixtureVariant): unknown {
   const value = structuredClone(presentationFixtureInput) as any;
   if (variant === 'cycle') { value.spaces[0].nodes[0].parentId = value.spaces[0].nodes[1].id; }
@@ -111,7 +114,9 @@ export function presentationFixtureVariant(variant: PresentationFixtureVariant):
   if (variant === 'unknown-reference') { value.jira.views[0].groups[0].phaseTicketId = 'UABC-999'; }
   if (variant === 'invalid-initial-state') { value.jira.views[0].initialState = 'open'; }
   if (variant === 'unknown-icon') { value.jira.ticketTypes[0].displayIconKey = 'external-jira-icon'; }
+  if (variant === 'unknown-ticket-type') { value.jira.tickets.find((ticket: any) => ticket.type === 'bug').type = 'incident'; }
   if (variant === 'invalid-parent') { value.jira.tickets.find((ticket: any) => ticket.type === 'task').parentId = 'UABC-4'; }
+  if (variant === 'bug-invalid-parent') { value.jira.tickets.find((ticket: any) => ticket.type === 'bug').parentId = 'UABC-1'; }
   if (variant === 'nonbillable-task') { value.jira.tickets.find((ticket: any) => ticket.type === 'task').billable = false; }
   if (variant === 'rollup-mismatch') { value.jira.tickets[0].actualHours += 1; }
   if (variant === 'phase-ref-mismatch') { value.jira.tickets.find((ticket: any) => ticket.ticketId === 'UABC-10').phaseId = 'UABC-2'; }
@@ -120,5 +125,6 @@ export function presentationFixtureVariant(variant: PresentationFixtureVariant):
   if (variant === 'phase-billable') { value.jira.tickets[0].billable = true; }
   if (variant === 'epic-without-phase') { value.jira.tickets.find((ticket: any) => ticket.type === 'epic').parentId = null; }
   if (variant === 'duplicate-epic-reference') { value.jira.views[0].groups[0].epicIds.push(value.jira.views[0].groups[0].epicIds[0]); }
+  if (variant === 'duplicate-task-reference') { value.jira.views[0].groups[1].ticketIds.push('UABC-14'); }
   return value;
 }

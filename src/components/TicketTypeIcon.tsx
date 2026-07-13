@@ -4,10 +4,12 @@ const ticketGlyphs: Readonly<Record<PresentationTicket['displayIconKey'], string
   'phase-flag': '⚑',
   'epic-layers': '▰',
   'story-bookmark': '◆',
+  'bug-mark': '●',
   'task-check': '✓',
   'jira-phase': '⚑',
   'jira-epic': '▰',
   'jira-story': '◆',
+  'jira-bug': '●',
   'jira-task': '✓',
 };
 
