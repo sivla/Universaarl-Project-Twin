@@ -35,10 +35,11 @@ describe('ticketfokussierte Aufwandsdarstellung', () => {
   });
 
   it('behält Stunden, belegte Jira-Felder und Referenznavigation im Ticketdetail', () => {
-    for (const label of ['Typ', 'Status', 'Priorität', 'Verantwortung', 'Beschreibung', 'Akzeptanzkriterien', 'Abhängigkeiten', 'Statushistorie', 'Typisierte Kommentare', 'Einzelne Worklogs', 'Positivgelistete Evidence', 'Übergeordnetes Ticket', 'Stories und Fehler', 'Technische Provenienz']) {
+    for (const label of ['Typ', 'Status', 'Priorität', 'Ersteller', 'Erstellt', 'Abgeschlossen', 'Verantwortung', 'Beschreibung', 'Akzeptanzkriterien', 'Abhängigkeiten', 'Statushistorie', 'Typisierte Kommentare', 'Einzelne Worklogs', 'Positivgelistete Evidence', 'Übergeordnetes Ticket', 'Stories und Fehler', 'Technische Provenienz']) {
       expect(detailSource).toContain(label);
     }
     expect(detailSource).toContain('LinkedReference');
+    expect(detailSource).toContain('safeTicketText');
     expect(ticketsPageSource).toContain('Schätzung {presentation.estimateHours} Std.');
     expect(ticketsPageSource).toContain('{presentation.remainingHours} Std. Rest');
   });
