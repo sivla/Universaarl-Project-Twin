@@ -20,14 +20,14 @@ export type SnapshotSourceBinding = Readonly<{
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: 'e3b2fb7f13d2e2ba722a5f841edf659a3e731933',
-  tree: '0c330f03d50cc5b65bd21977318747712d4782e7',
+  commit: '8f50573bc6105991a74363d6e3ed672abc0eaeef',
+  tree: '24b6f4107cef22b7b0cd34ad0982a1b7be2330eb',
   bootstrapBranch: 'codex/universaarl-projekt',
   integrationBranch: 'codex/universaarl-projekt',
   artifactCount: 139,
   sourceDigest: 'c2ca21a8faace5fbda0946a89aff25b6d045b9219183505080bc9d9da2598a2d',
   projectionDigest: '867f9132a18488a1389edb02f30a8171078e777c31123263d9addc3c4d78ab06',
-  setupProjectionDigest: '39c32f99eecb7dbd1dead63fea4c637f6e176748dd06ab66afbcd1413a42abe4',
+  setupProjectionDigest: 'f181cef8af469fadb1b3085b67650f7c8b1f1c4986f459e89e40d25ed515602d',
   nativeRelationCount: 1040,
   portableEdgeCount: 362,
   documentCount: 43,

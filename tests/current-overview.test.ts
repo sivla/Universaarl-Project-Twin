@@ -70,6 +70,10 @@ describe('fachlicher aktueller Projektstand', () => {
     expect(ui).toContain("'Nicht verifiziert'");
     expect(ui).toContain('Übernommener Repositorywert');
     expect(ui).toContain('nicht als BC-Feldwert bestätigt');
+    expect(ui).toContain('Entstehungsweg');
+    expect(ui).toContain('Kopie oder Umbenennung');
+    expect(ui).toContain('Kundenziel realisiert');
+    expect(ui).toContain('Nutzerhinweis, noch nicht bestätigt');
     expect(ui).toContain('Aktueller W0-01-Nur-Lese-Versuch');
     expect(ui).toContain('BC-Readback-Autorität');
     expect(ui).not.toContain('<dt>Beobachteter Name</dt>');
