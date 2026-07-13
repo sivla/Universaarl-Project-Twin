@@ -6,7 +6,7 @@ import { directTicketChildren, ticketHierarchyContext } from '../src/navigation/
 const ticketsPageSource = readFileSync(new URL('../src/components/TicketsPage.tsx', import.meta.url), 'utf8');
 const mainSource = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const detailSource = mainSource.slice(mainSource.indexOf('function Detail('), mainSource.indexOf('function LinkedReference('));
-const billingSource = mainSource.slice(mainSource.indexOf('function Billing('), mainSource.indexOf('function Documentation('));
+const billingSource = mainSource.slice(mainSource.indexOf('function Billing('), mainSource.indexOf('function DocumentCards('));
 
 describe('ticketfokussierte Aufwandsdarstellung', () => {
   it('ordnet jede Aufgabe exakt ihrer Story oder ihrem Fehler zu und liefert den vollständigen Kontext', () => {
@@ -45,6 +45,11 @@ describe('ticketfokussierte Aufwandsdarstellung', () => {
 
   it('erhält die validierten Finanzdaten und ihre separate Abrechnungsansicht', () => {
     expect(presentationFixtureState.story?.controls).toMatchObject({ worklogHours: 80, worklogCost: 9600 });
+    expect(billingSource).toContain('Geplantes Budget');
+    expect(billingSource).toContain('Erfasster Betrag');
+    expect(billingSource).toContain('<th>Betrag</th>');
+    expect(billingSource).toContain('numberFormatter.format(financial.amountEur)');
+    expect(billingSource).toContain("' · Rollup'");
     expect(billingSource).toMatch(/\bEUR\b/);
   });
 });
