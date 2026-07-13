@@ -111,7 +111,7 @@ export const presentationFixtureState: ProjectState = projectStateSchema.parse({
   presentation: presentationFixture, workstreams: ['Umsetzung'], gaps: [], warnings: ['Lokale Consumerfixture; keine BC-Basic-Fachwahrheit.'], stats: { jira: fixtureStoryTickets.length, changes: 0, documents: fixtureDocuments.length, capabilities: 0, evidence: 0 },
 });
 
-export type PresentationFixtureVariant = 'valid' | 'cycle' | 'duplicate-id' | 'duplicate-order' | 'unknown-reference' | 'invalid-initial-state' | 'unknown-icon' | 'unknown-ticket-type' | 'invalid-parent' | 'bug-invalid-parent' | 'nonbillable-task' | 'rollup-mismatch' | 'phase-ref-mismatch' | 'phase-container' | 'wrong-phase-order' | 'phase-billable' | 'epic-without-phase' | 'duplicate-epic-reference' | 'duplicate-task-reference';
+export type PresentationFixtureVariant = 'valid' | 'cycle' | 'duplicate-id' | 'duplicate-order' | 'unknown-reference' | 'invalid-initial-state' | 'unknown-icon' | 'unknown-ticket-type' | 'invalid-parent' | 'bug-invalid-parent' | 'nonbillable-task' | 'rollup-mismatch' | 'phase-ref-mismatch' | 'phase-container' | 'wrong-phase-order' | 'phase-billable' | 'epic-without-phase' | 'duplicate-epic-reference' | 'duplicate-task-reference' | 'missing-board-status' | 'duplicate-board-status';
 export function presentationFixtureVariant(variant: PresentationFixtureVariant): unknown {
   const value = structuredClone(presentationFixtureInput) as any;
   if (variant === 'cycle') { value.spaces[0].nodes[0].parentId = value.spaces[0].nodes[1].id; }
@@ -132,5 +132,7 @@ export function presentationFixtureVariant(variant: PresentationFixtureVariant):
   if (variant === 'epic-without-phase') { value.jira.tickets.find((ticket: any) => ticket.type === 'epic').parentId = null; }
   if (variant === 'duplicate-epic-reference') { value.jira.views[0].groups[0].epicIds.push(value.jira.views[0].groups[0].epicIds[0]); }
   if (variant === 'duplicate-task-reference') { value.jira.views[0].groups[1].ticketIds.push('UABC-14'); }
+  if (variant === 'missing-board-status') { value.jira.views[0].columns[2].statuses = []; }
+  if (variant === 'duplicate-board-status') { value.jira.views[0].columns[1].statuses.push('done'); }
   return value;
 }

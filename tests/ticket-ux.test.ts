@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { presentationFixtureState } from '../src/testing/presentation-fixture';
-import { directTicketChildren, ticketHierarchyContext } from '../src/navigation/ticket-hierarchy';
+import { directTicketChildren, ticketBoardStatusSummary, ticketHierarchyContext } from '../src/navigation/ticket-hierarchy';
 
 const ticketsPageSource = readFileSync(new URL('../src/components/TicketsPage.tsx', import.meta.url), 'utf8');
 const mainSource = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
@@ -25,6 +25,17 @@ describe('ticketfokussierte Aufwandsdarstellung', () => {
     expect(ticketsPageSource).toContain('im Detail öffnen');
     expect(ticketsPageSource).toContain('query.trim() ? <section className="ticket-search-results"');
     expect(ticketsPageSource).toContain("ticketHierarchyContext(story.tickets, contract.jira.tickets, ticketId)");
+  });
+
+  it('zählt die producerdefinierte Boardpartition vollständig und ohne Statusumdeutung', () => {
+    const story = structuredClone(presentationFixtureState.story!);
+    story.tickets[0].status = 'in-progress';
+    const summary = ticketBoardStatusSummary(presentationFixtureState.presentation!, story.tickets);
+    expect(summary.map(({ label, count }) => [label, count])).toEqual([
+      ['Arbeitsvorrat', 0],
+      ['In Arbeit', 1],
+      ['Erledigt', story.tickets.length - 1],
+    ]);
   });
 
   it('gibt in Ticketübersicht und Ticketdetail keine EUR-Beträge aus', () => {

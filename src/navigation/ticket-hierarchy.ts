@@ -1,9 +1,20 @@
-import type { PresentationTicket, ProjectState } from '../model';
+import type { PresentationContract, PresentationTicket, ProjectState } from '../model';
 
 type StoryTicket = NonNullable<ProjectState['story']>['tickets'][number];
 
 export function directTicketChildren(tickets: readonly StoryTicket[], parentId: string) {
   return tickets.filter((ticket) => ticket.parent === parentId);
+}
+
+export function ticketBoardStatusSummary(contract: PresentationContract, tickets: readonly StoryTicket[]) {
+  const board = contract.jira.views.find((view) => view.kind === 'board');
+  if (!board) return [];
+  return [...board.columns].sort((left, right) => left.order - right.order).map((column) => ({
+    id: column.id,
+    label: column.label,
+    count: tickets.filter((ticket) => column.statuses.includes(ticket.status)).length,
+    blockedCount: column.statuses.includes('blocked') ? tickets.filter((ticket) => ticket.status === 'blocked').length : 0,
+  }));
 }
 
 export function ticketHierarchyContext(tickets: readonly StoryTicket[], presentations: readonly PresentationTicket[], ticketId: string) {

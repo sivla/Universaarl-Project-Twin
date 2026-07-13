@@ -17,10 +17,16 @@ describe('producerdefinierter Präsentationsvertrag', () => {
     expect(presentationFixtureState.story?.controls).toMatchObject({ worklogHours: 80, worklogCost: 9600 });
   });
 
-  it.each<PresentationFixtureVariant>(['cycle', 'duplicate-id', 'duplicate-order', 'unknown-reference', 'invalid-initial-state', 'unknown-icon', 'unknown-ticket-type', 'invalid-parent', 'bug-invalid-parent', 'nonbillable-task', 'rollup-mismatch', 'phase-ref-mismatch', 'phase-container', 'wrong-phase-order', 'phase-billable', 'epic-without-phase', 'duplicate-epic-reference', 'duplicate-task-reference'])(
+  it.each<PresentationFixtureVariant>(['cycle', 'duplicate-id', 'duplicate-order', 'unknown-reference', 'invalid-initial-state', 'unknown-icon', 'unknown-ticket-type', 'invalid-parent', 'bug-invalid-parent', 'nonbillable-task', 'rollup-mismatch', 'phase-ref-mismatch', 'phase-container', 'wrong-phase-order', 'phase-billable', 'epic-without-phase', 'duplicate-epic-reference', 'duplicate-task-reference', 'missing-board-status', 'duplicate-board-status'])(
     'blockiert die isolierte Mutation %s fail-closed',
     (variant) => expect(() => validatePresentationContract(presentationFixtureVariant(variant), presentationFixtureContext)).toThrow(AdapterSourceError),
   );
+
+  it('blockiert einen aktiven Ticketstatus ohne Boardzuordnung fail-closed', () => {
+    const ticketStatuses = new Map(presentationFixtureContext.ticketStatuses);
+    ticketStatuses.set('UABC-1', 'wartet-extern');
+    expect(() => validatePresentationContract(presentationFixtureInput, { ...presentationFixtureContext, ticketStatuses })).toThrow(AdapterSourceError);
+  });
 
   it('blockiert fakturierbare Worklogs auf einem Elternvorgang und zählt die Tasksumme nur einmal', () => {
     const ticketWorklogs = new Map(presentationFixtureContext.ticketWorklogs);

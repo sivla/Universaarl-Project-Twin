@@ -20,13 +20,13 @@ export type SnapshotSourceBinding = Readonly<{
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: 'd3d04ee8c4f87e0badc0e92bb95e9c5f676d1435',
-  tree: '9c36dc246996afd50dce7a225211df1e36b76082',
+  commit: '700e897f883c5e286f26629c077110290511dbff',
+  tree: '9d940e970162c7743413fa4b38828ee24a9f4e81',
   bootstrapBranch: 'codex/universaarl-projekt',
   integrationBranch: 'codex/universaarl-projekt',
   artifactCount: 140,
-  sourceDigest: '19cb00ae7c17dda0e54298d3e41f67e6a6367848c0a42232ac0d727e1d9f3903',
-  projectionDigest: '2927797fc64d0c94bf02afac0fb7a51d6bbc6af34fb0a9e776552f32552554c2',
+  sourceDigest: '4804f1b0fcac789ba396d206bb80caec9bf6d5c64c1da3faf8832f36d9ab640f',
+  projectionDigest: 'cf71fc5c57773bfea08caa0c5f852cb1170a68b1201e8bddc6e2d3bd43ff6c19',
   documentCount: 43,
   confluenceDocumentCount: 28,
   navigationNodeCount: 31,

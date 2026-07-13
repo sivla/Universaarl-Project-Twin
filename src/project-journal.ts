@@ -127,6 +127,7 @@ export function buildProjectJournal(state: ProjectState) {
   const ticketIds = new Set(state.story?.tickets.map((ticket) => ticket.id) ?? []);
   for (const artifact of state.artifacts) {
     if (ticketIds.has(artifact.id)) continue;
+    if (artifact.currentAuthority === false || artifact.currentRollupContribution === false) continue;
     if (artifact.documentType === 'meeting-transcript') {
       if (!validTime(artifact.meetingDate)) { missingTime(artifact.id); continue; }
       add({ id: `meeting:${artifact.id}:${artifact.meetingDate}`, occurredAt: artifact.meetingDate, type: 'meeting', title: journalVisibleText(artifact.title) ?? artifact.id, detail: journalVisibleText(artifact.rationale), actor: actor(null, artifact.owner), objectId: artifact.id, objectType: 'meeting', before: null, after: artifact.status, references: [artifact.id, ...artifact.documents, ...artifact.evidence], evidenceStatus: artifact.evidence.length ? 'belegt' : 'ohne-evidence', approvalStatus: 'keine-freigabeaussage' });

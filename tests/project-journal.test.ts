@@ -32,6 +32,8 @@ function stateFixture(): ProjectState {
     artifacts: [
       { id: 'UABC-1', kind: 'story', title: 'Pilot vorbereiten', status: 'done', history: [], deliverables: [], documents: [], evidence: ['UABC-EV-1'] },
       { id: 'UABC-EV-1', kind: 'evidence', title: 'Retest', status: 'passed', history: [], deliverables: [], documents: [], evidence: [] },
+      { id: 'MTG-CURRENT', kind: 'document', title: 'Aktuelle Pilotbesprechung', status: 'planned', documentType: 'meeting-transcript', meetingDate: '2026-08-22', currentAuthority: true, currentRollupContribution: true, history: [], deliverables: [], documents: [], evidence: [] },
+      { id: 'MTG-HISTORICAL', kind: 'document', title: 'Historische Referenzbesprechung', status: 'simulated-complete', documentType: 'meeting-transcript', meetingDate: '2026-05-04', classification: 'historical-reference-simulation', currentAuthority: false, currentRollupContribution: false, history: [], deliverables: [], documents: [], evidence: [] },
     ],
     evidenceItems: [],
     documents: [
@@ -91,6 +93,8 @@ describe('commitgebundenes Projekttagebuch', () => {
     expect(humanApproval.approvalStatus).toBe('menschlich-belegt');
     expect(documentEvent.before).toBeNull();
     expect(documentEvent.after).toBe('approved');
+    expect(journal.events.some((item) => item.objectId === 'MTG-CURRENT')).toBe(true);
+    expect(journal.events.some((item) => item.objectId === 'MTG-HISTORICAL')).toBe(false);
     expect(journal.events.some((item) => item.objectId === 'DOC-INVALID')).toBe(false);
     expect(journal.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'ZEIT_FEHLT', objectId: 'UABC-1:C-2' }),
