@@ -24,6 +24,14 @@ Fehlende Quellenfamilien, ungelöste strukturierte Referenzen und bekannte Daten
 
 Akzeptanz: Jira-Typ, Status, Phase, Arbeitsstrom, Aufwand, Abhängigkeiten, explizite Historie, Termine, Liefergegenstände und Abrechnungskennzeichen erscheinen nur, wenn sie strukturiert im positivgelisteten Quellenvertrag belegt sind. Fehlende Werte bleiben `null`, leere Listen oder ein ehrlicher Leerzustand. Die Auswahl einer commitgebundenen Momentaufnahme durch die betreibende Person gilt nicht als menschliche Freigabe.
 
+## Source-driven Projekttagebuch und Zeitpunktssicht
+
+Der Twin MUSS fachliche Ereignisse aus explizit datierten Ticketstatushistorien, Kommentaren, Worklogs, Besprechungen, Entscheidungen, Lieferobjekten, Evidence, Dokumentmetadaten und der Project-Story-Timeline zu einem lesbaren Projekttagebuch projizieren. Git-Commits oder Dateibewegungen DÜRFEN nicht als fachliche Ereignisse erscheinen. Ereignisse ohne gültige Quellzeit werden aus der Zeitpunktprojektion ausgeschlossen und mit einer sicheren Diagnose ausgewiesen. Akteur und Rolle bleiben unbekannt, wenn die Quelle sie nicht typisiert.
+
+Die Tagesansicht MUSS stabil chronologisch sortieren und nach Zeitraum, Ereignistyp, Person oder Rolle sowie Objektart filterbar sein. Alle Treffer MÜSSEN vollständig oder über echte Pagination erreichbar bleiben. Eine Zeitpunktssicht DARF einen Objektstatus nur aus expliziten Statusübergängen bis zum gewählten Stichtag ableiten. Frühere Dokument- oder Seiteninhalte und Vorher-/Nachher-Werte DÜRFEN ohne versionierten Quellwert nicht rekonstruiert werden.
+
+Akzeptanz: Vor Projektbeginn bleibt der Zeitpunktstand leer, zwischen zwei Statusübergängen gilt der letzte bis dahin belegte Status und nach dem letzten Ereignis der letzte explizite Status. Gleichzeitige Ereignisse besitzen eine deterministische Reihenfolge. Systemautomation wird von Menschen getrennt; eine systemische Freigabeaussage wird ausdrücklich nicht als menschliche Freigabe dargestellt. Ticketbezogene Tagebuchtexte zeigen keine Geldbeträge und verweisen für Budgetdetails ausschließlich auf den getrennten Budgetbereich.
+
 ## Commitgebundener Branchvertrag
 
 Die produktive Registry MUSS das Kundenprojekt `bc-basic`, das Repository und den Branch `codex/universaarl-projekt` ausdrücklich binden. Der Branch wird bei jedem Serverstart automatisch und genau einmal zu einer vollständigen 40-stelligen Commit-SHA aufgelöst; eine manuelle Commitfreigabe ist nicht erforderlich. Danach liest der Twin ausschließlich Git-Blobs dieser SHA; ein beweglicher Branch-HEAD, Arbeitsbaum, generischer Tree-Scan oder Rückfall auf zuletzt bekannte Werte ist unzulässig.

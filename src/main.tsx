@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { areas, parseRoute, projectUrl, type Area } from './navigation/routes';
-import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type PresentationTicket, type ProjectContext, type ProjectDocument, type ProjectState, type UiErrorCode } from './model';
+import { boundedList, createProjectRequestGate, displayArtifactType, displayBillingStatus, displayDocumentType, displayPhase, displayStatus, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, paginateList, projectListFromApiBody, projectStateSchema, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, uiErrorTitle, type Artifact, type PresentationTicket, type ProjectContext, type ProjectDocument, type ProjectState, type UiErrorCode } from './model';
 import type { PublicProject } from './projects/registry';
 import { buildGanttProjection } from './planning/gantt';
 import { TicketsPage } from './components/TicketsPage';
@@ -9,6 +9,7 @@ import { TicketTypeIcon } from './components/TicketTypeIcon';
 import { DocumentationSpaces } from './components/DocumentationSpaces';
 import { buildCurrentOverview } from './current-overview';
 import { ArtifactViewer } from './components/ArtifactViewer';
+import { buildProjectJournal, filterJournalEvents, groupJournalEventsByDay, journalAsOf, journalEventCountSentence, journalSince, journalVisibleText, type JournalEvent, type JournalEventType, type JournalFilters, type JournalObjectType } from './project-journal';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
@@ -19,6 +20,7 @@ import './theme/tickets.css';
 const labels: Record<Area, string> = {
   'aktueller-stand': 'Aktueller Stand',
   tickets: 'Tickets',
+  projekttagebuch: 'Projekttagebuch',
   projektverlauf: 'Projektverlauf',
   arbeit: 'Arbeit',
   planung: 'Planung',
@@ -216,6 +218,7 @@ const sourceDateTimeLabel = (value: string) => new Date(value).toLocaleString('d
 function ProjectArea({ area, state, context, open }: { area: Area; state: ProjectState; context: ProjectContext; open: (artifact: Artifact) => void }) {
   if (area === 'aktueller-stand') return <Current state={state} context={context} open={open} />;
   if (area === 'tickets') return <TicketsPage state={state} open={open} />;
+  if (area === 'projekttagebuch') return <ProjectJournal state={state} open={open} />;
   if (area === 'arbeit') return <Work state={state} open={open} />;
   if (area === 'projektverlauf') return <ProjectHistory state={state} open={open} />;
   if (area === 'planung') return <Planning state={state} open={open} />;
@@ -238,6 +241,94 @@ function ReferenceSummary({ values }: { values: readonly string[] }) {
   const references = boundedList(values, renderLimits.rowReferences);
   if (!references.total) return <>Keine</>;
   return <span className="reference-summary">{references.items.map((value) => <code key={value}>{value}</code>)}{references.limited && <small>+{references.total - references.visible}</small>}</span>;
+}
+
+const journalTypeLabels: Record<JournalEventType, string> = {
+  status: 'Statusänderung',
+  comment: 'Kommentar',
+  worklog: 'Arbeitsnachweis',
+  meeting: 'Besprechung',
+  decision: 'Entscheidung',
+  deliverable: 'Lieferobjekt',
+  document: 'Dokumentstand',
+  timeline: 'Projektmeilenstein',
+};
+
+const journalObjectLabels: Record<JournalObjectType, string> = {
+  ticket: 'Ticket',
+  meeting: 'Besprechung',
+  decision: 'Entscheidung',
+  deliverable: 'Lieferobjekt',
+  document: 'Dokument',
+  project: 'Projekt',
+};
+
+function journalDocumentUrl(state: ProjectState, documentId: string) {
+  for (const space of state.presentation?.spaces ?? []) {
+    const node = space.nodes.find((item) => item.documentId === documentId);
+    if (node) return `${projectUrl(state.source.projectId, 'projektdokumentation')}?space=${encodeURIComponent(space.id)}&node=${encodeURIComponent(node.id)}`;
+  }
+  return projectUrl(state.source.projectId, 'projektdokumentation');
+}
+
+function JournalReference({ reference, state, artifactById, open }: { reference: string; state: ProjectState; artifactById: ReadonlyMap<string, Artifact>; open: (artifact: Artifact) => void }) {
+  const artifact = artifactById.get(reference);
+  if (artifact) return <button className="journal-reference" onClick={() => open(artifact)}><code>{reference}</code><span>Detail öffnen</span></button>;
+  if (state.documents.some((document) => document.id === reference)) return <a className="journal-reference" href={journalDocumentUrl(state, reference)}><code>{reference}</code><span>Dokument öffnen</span></a>;
+  const evidence = state.evidenceItems.find((item) => item.id === reference);
+  if (evidence) return <a className="journal-reference" href={`/api/projects/${encodeURIComponent(state.source.projectId)}/evidence/${encodeURIComponent(reference)}`}><code>{reference}</code><span>Evidence öffnen</span></a>;
+  return <span className="journal-reference unresolved"><code>{reference}</code><span>Referenz im Zeitpunktstand nicht auflösbar</span></span>;
+}
+
+function JournalEventCard({ event, state, artifactById, open }: { event: JournalEvent; state: ProjectState; artifactById: ReadonlyMap<string, Artifact>; open: (artifact: Artifact) => void }) {
+  const actorText = event.actor.displayName
+    ? `${event.actor.displayName}${event.actor.role ? ` · ${event.actor.role}` : ''}`
+    : event.actor.role ? `Rolle: ${event.actor.role} · Person nicht typisiert` : 'Akteur und Rolle nicht typisiert';
+  const actorTypeLabels = { human: 'Mensch', 'spectra-codex': 'Spectra/Codex', playwright: 'Playwright', 'system-automation': 'Systemautomation', 'unconfirmed-customer': 'Kundenteilnahme zu bestätigen', unknown: 'Quellseitig unvollständig' } as const;
+  return <article className="journal-event" data-event-id={event.id}>
+    <header><time dateTime={event.occurredAt}>{sourceDateTimeLabel(event.occurredAt)}</time><span>{journalTypeLabels[event.type]}</span></header>
+    <h4>{journalVisibleText(event.title)}</h4>
+    {event.detail && <p>{event.detail}</p>}
+    <dl><dt>Gegenstand</dt><dd>{journalObjectLabels[event.objectType]} · <code>{event.objectId}</code></dd><dt>Akteur</dt><dd>{actorText} · {actorTypeLabels[event.actor.type]}</dd><dt>Evidence</dt><dd>{event.evidenceStatus === 'belegt' ? 'Commitgebunden belegt' : 'Keine zugeordnete Evidence belegt'}</dd></dl>
+    {(event.before !== null || event.after !== null) && <p className="journal-change"><strong>Explizit belegte Änderung:</strong> {event.before ?? 'Kein Vorwert belegt'} → {event.after ?? 'Kein Nachwert belegt'}</p>}
+    {event.approvalStatus === 'systemische-aussage' && <p className="journal-warning">Eine Systemautomation ist kein Beleg für eine menschliche Freigabe.</p>}
+    {event.references.length > 0 && <div className="journal-references" aria-label={`Referenzen für ${event.objectId}`}>{event.references.map((reference) => <JournalReference key={reference} reference={reference} state={state} artifactById={artifactById} open={open} />)}</div>}
+  </article>;
+}
+
+function ProjectJournal({ state, open }: { state: ProjectState; open: (artifact: Artifact) => void }) {
+  const journal = buildProjectJournal(state);
+  const [filters, setFilters] = useState<JournalFilters>({ from: '', to: '', type: '', actor: '', objectType: '' });
+  const [page, setPage] = useState(1);
+  const [since, setSince] = useState(() => journal.events.at(-1)?.occurredAt.slice(0, 10) ?? '');
+  const [asOf, setAsOf] = useState(() => journal.events.at(-1)?.occurredAt.slice(0, 10) ?? '');
+  const updateFilter = <Key extends keyof JournalFilters>(key: Key, value: JournalFilters[Key]) => { setFilters((current) => ({ ...current, [key]: value })); setPage(1); };
+  const filtered = filterJournalEvents(journal.events, filters);
+  const pageData = paginateList(filtered, page, 20);
+  const dayGroups = groupJournalEventsByDay(pageData.items);
+  const sinceEvents = journalSince(journal.events, since);
+  const sinceGroups = new Map<JournalEventType, JournalEvent[]>();
+  for (const event of sinceEvents) sinceGroups.set(event.type, [...(sinceGroups.get(event.type) ?? []), event]);
+  const sinceByType = [...sinceGroups.entries()].sort(([left], [right]) => left.localeCompare(right, 'de'));
+  const asOfState = journalAsOf(journal.events, asOf);
+  const artifactById = new Map(state.artifacts.map((artifact) => [artifact.id, artifact]));
+  return <section className="area-view project-journal">
+    <header><div><p>COMMITGEBUNDENE PROJEKTCHRONIK</p><h2>Projekttagebuch</h2></div><span>{journal.events.length} belegte Ereignisse · {journal.diagnostics.length} Quellenhinweise</span></header>
+    <p className="honest-note">Das Tagebuch ordnet ausschließlich belegte fachliche Ereignisse des validierten Projektstands. Git-Änderungen werden nicht als Projektarbeit ausgegeben.</p>
+    <section className="journal-summary" aria-labelledby="journal-since-title"><div><h3 id="journal-since-title">Seit … passiert</h3><label>Auswertungsbeginn<input type="date" value={since} onChange={(event) => setSince(event.target.value)} /></label></div><strong>{sinceEvents.length} Ereignisse</strong>{sinceByType.length ? <ul>{sinceByType.map(([type, values]) => <li key={type}>{journalTypeLabels[type]}: {values.length}</li>)}</ul> : <p>Seit diesem Zeitpunkt ist kein belegtes Ereignis vorhanden.</p>}</section>
+    <section className="journal-as-of" aria-labelledby="journal-as-of-title"><div><h3 id="journal-as-of-title">Stand am …</h3><label>Stichtag<input type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label></div>{asOfState.eventCount === 0 ? <p>Zum gewählten Zeitpunkt ist noch kein belegtes Ereignis vorhanden.</p> : <><p>{journalEventCountSentence(asOfState.eventCount)}</p>{asOfState.statuses.length ? <ul>{asOfState.statuses.map((status) => <li key={status.objectId}><code>{status.objectId}</code>: {displayStatus(status.status)}</li>)}</ul> : <p>Bis zu diesem Zeitpunkt ist kein expliziter Statusübergang belegt.</p>}</>}<p className="honest-note">Dokument- und Seiteninhalte werden ohne versionierte Inhaltshistorie nicht rückwirkend rekonstruiert. Vorher/Nachher erscheint nur bei ausdrücklich gelieferten Quellwerten.</p></section>
+    <div className="journal-filters" aria-label="Tagebuch filtern">
+      <label>Von<input type="date" value={filters.from} onChange={(event) => updateFilter('from', event.target.value)} /></label>
+      <label>Bis<input type="date" value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} /></label>
+      <label>Ereignistyp<select value={filters.type} onChange={(event) => updateFilter('type', event.target.value as JournalEventType | '')}><option value="">Alle Ereignistypen</option>{Object.entries(journalTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>Person oder Rolle<input value={filters.actor} onChange={(event) => updateFilter('actor', event.target.value)} placeholder="Name oder Rolle" /></label>
+      <label>Objektart<select value={filters.objectType} onChange={(event) => updateFilter('objectType', event.target.value as JournalObjectType | '')}><option value="">Alle Objektarten</option>{Object.entries(journalObjectLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+    </div>
+    <div className="journal-results-heading"><h3>Tagesansicht</h3><span>{filtered.length} Treffer · Seite {pageData.page} von {pageData.totalPages}</span></div>
+    {!filtered.length ? <p className="honest-note">Für die gewählten Filter ist kein belegtes Ereignis vorhanden.</p> : dayGroups.map((group) => <section className="journal-day" key={group.day}><h3>{sourceDateLabel(group.day)}</h3><div>{group.events.map((event) => <JournalEventCard key={event.id} event={event} state={state} artifactById={artifactById} open={open} />)}</div></section>)}
+    {pageData.totalPages > 1 && <nav className="journal-pagination" aria-label="Tagebuchseiten"><button disabled={pageData.page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Vorherige Seite</button><span>Seite {pageData.page} von {pageData.totalPages} · {pageData.total} Ereignisse</span><button disabled={pageData.page === pageData.totalPages} onClick={() => setPage((current) => Math.min(pageData.totalPages, current + 1))}>Nächste Seite</button></nav>}
+    {journal.diagnostics.length > 0 && <details className="journal-diagnostics"><summary>Quellseitig unvollständige Ereignisse ({journal.diagnostics.length})</summary><ul>{journal.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${diagnostic.objectId}-${index}`}><code>{diagnostic.objectId}</code> · {diagnostic.message}</li>)}</ul></details>}
+  </section>;
 }
 
 function Work({ state, open }: { state: ProjectState; open: (artifact: Artifact) => void }) {

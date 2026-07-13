@@ -345,7 +345,7 @@ export function boundedList<T>(values: readonly T[], limit: number) {
 }
 
 export function paginateList<T>(values: readonly T[], page: number, pageSize: number) {
-  if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw new Error('UngÃ¼ltige SeitengrÃ¶ÃŸe.');
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw new Error('Ungültige Seitengröße.');
   const total = values.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(Math.max(Number.isSafeInteger(page) ? page : 1, 1), totalPages);
