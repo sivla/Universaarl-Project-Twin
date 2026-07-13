@@ -31,7 +31,7 @@ function stateFixture(): ProjectState {
     source: { projectId: 'bc-basic', branch: 'codex/universaarl-projekt', commit: 'd3d04ee8c4f87e0badc0e92bb95e9c5f676d1435', dirty: false, readAt: '2026-08-20T08:00:00Z' },
     artifacts: [
       { id: 'UABC-1', kind: 'story', title: 'Pilot vorbereiten', status: 'done', history: [], deliverables: [], documents: [], evidence: ['UABC-EV-1'] },
-      { id: 'UABC-EV-1', kind: 'evidence', title: 'Retest', status: 'passed', history: [], deliverables: [], documents: [], evidence: [] },
+      { id: 'UABC-EV-1', kind: 'evidence', title: 'Retest', status: 'passed', sourcePath: 'evidence/readback.yaml', history: [], deliverables: [], documents: [], evidence: [] },
       { id: 'MTG-CURRENT', kind: 'document', title: 'Aktuelle Pilotbesprechung', status: 'planned', documentType: 'meeting-transcript', meetingDate: '2026-08-22', currentAuthority: true, currentRollupContribution: true, history: [], deliverables: [], documents: [], evidence: [] },
       { id: 'MTG-HISTORICAL', kind: 'document', title: 'Historische Referenzbesprechung', status: 'simulated-complete', documentType: 'meeting-transcript', meetingDate: '2026-05-04', classification: 'historical-reference-simulation', currentAuthority: false, currentRollupContribution: false, history: [], deliverables: [], documents: [], evidence: [] },
     ],
@@ -51,7 +51,7 @@ function stateFixture(): ProjectState {
           { status: 'Kundenfreigabe entschieden', time: '2026-08-23', actor: { displayName: 'Workflow', role: 'Prüfautomation', type: 'system-automation' } },
         ],
         comments: [
-          { id: 'C-1', time: '2026-08-21', role: 'Fachbereich', actor: null, text: '9.600 EUR geprüft', evidenceRef: 'UABC-EV-1' },
+          { id: 'C-1', time: '2026-08-21', role: 'Fachbereich', actor: null, text: '9.600 EUR geprüft', evidenceRef: 'evidence/readback.yaml' },
           { id: 'C-2', time: null, role: null, actor: null, text: 'Ohne Datum', evidenceRef: null },
           { id: 'C-3', time: '2026-08-22', role: null, actor: null, text: 'Unbekannte Referenz', evidenceRef: 'UABC-UNBEKANNT' },
           { id: 'C-4', time: '2026-08-22', role: 'Fachbereich', actor: { displayName: 'Kim Beispiel', role: 'Fachbereich', type: 'human' }, text: 'Simulationsabnahme bestätigt', evidenceRef: 'UABC-UNBEKANNT' },
@@ -86,6 +86,7 @@ describe('commitgebundenes Projekttagebuch', () => {
     expect(comment.before).toBeNull();
     expect(comment.after).toBeNull();
     expect(comment.detail).toBe('Budgetänderung – Details in Abrechnung');
+    expect(comment.referenceStatus).toBe('resolved');
     expect(unknownActorEvent.actor.type).toBe('unknown');
     expect(firstStatus.approvalStatus).toBe('keine-freigabeaussage');
     expect(normalAutomation.approvalStatus).toBe('keine-freigabeaussage');

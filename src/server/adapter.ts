@@ -2002,10 +2002,43 @@ export function validateSetupWaveProjectionContract(input: { projection: unknown
   return projection;
 }
 
-export function validateCurrentSetupEvidenceConsistency(setupWave: SetupWaveProjection | null, artifacts: readonly Pick<Artifact, 'sourceType' | 'currentAuthority'>[]) {
-  if (!setupWave || (setupWave.configurationState.pilotConfigured && setupWave.configurationState.writesApplied)) return;
+const blockedReadbackValueSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), value: z.null(), page: z.null(), screenshotPath: z.null() }).strict();
+const blockedReadbackValuesSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), values: z.null(), page: z.null(), screenshotPath: z.null() }).strict();
+const blockedReadbackIndicatorsSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), indicators: z.array(z.never()).length(0), page: z.null(), screenshotPath: z.null() }).strict();
+const blockedReadbackCompaniesSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), companies: z.array(z.never()).length(0), page: z.null(), screenshotPath: z.null() }).strict();
+const sourceTimestamp = z.string().min(1).max(120).refine((value) => !Number.isNaN(Date.parse(value)));
+const currentReadOnlyAttemptSchema = z.object({
+  schemaVersion: z.literal(1), evidenceId: technicalId, stepId: z.literal('W0-01-read-company-identity'), classification: z.literal('current-read-only-attempt'), authorityScope: z.literal('browser-access-attempt-only'), currentAuthority: z.literal(true), bcReadbackAuthority: z.literal(false), status: z.literal('blocked-before-dom-readback'),
+  time: z.object({ exactBrowserAttemptStartCaptured: z.literal(false), visibleTabLastOpenedAt: sourceTimestamp, firstPersistentlyCapturedLocalTime: sourceTimestamp, recordedAt: sourceTimestamp, note: z.string().min(1).max(1_000) }).strict(),
+  responsibility: z.object({ operationActorRef: technicalId, operationActorType: z.literal('browser-automation'), operationRole: z.string().min(1).max(200), accountableActorRef: technicalId, accountableRole: z.string().min(1).max(200) }).strict(),
+  worklog: z.object({ id: technicalId, taskId: z.literal('UABC-39'), date: sourceDateSchema, role: z.string().min(1).max(160), actorRef: technicalId, actorType: z.literal('human'), actionRole: z.string().min(1).max(200), hours: z.literal(0.25), activity: z.string().min(1).max(2_000), phase: z.literal('P2'), billable: z.literal(true), hourlyRate: z.literal(120), netAmount: z.literal(30) }).strict(),
+  visibleTabMetadata: z.object({ title: z.string().min(1).max(160), sanitizedUrl: z.string().min(1).max(500).refine((value) => value.startsWith('https://')), environmentParameter: z.string().min(1).max(120), companyParameter: technicalId, truthBoundary: z.string().min(1).max(1_000) }).strict(),
+  userProvidedProjectInformation: z.object({ truthClass: z.literal('user-provided-project-information'), selectedTechnicalCompanyName: technicalId, contentBaseline: z.literal('standard-cronus-demo'), pilotConfigured: z.literal(false), writesApplied: z.literal(false), browserReadbackConfirmed: z.literal(false), boundary: z.string().min(1).max(1_000) }).strict(),
+  accessResult: z.object({ policy: z.string().min(1).max(160), blockedBeforeDomRead: z.literal(true), blockedBeforeScreenshot: z.literal(true), blockedBeforeBcFieldRead: z.literal(true), authenticationStateRead: z.literal(false), domReadPerformed: z.literal(false), screenshotPerformed: z.literal(false), screenshots: z.array(z.never()).length(0) }).strict(),
+  readbacks: z.object({ environment: blockedReadbackValueSchema, visibleCompanyName: blockedReadbackValueSchema, internalCompanyId: blockedReadbackValueSchema, companyInformation: blockedReadbackValuesSchema, countryRegion: blockedReadbackValueSchema, cronusProvenance: blockedReadbackIndicatorsSchema, companyList: blockedReadbackCompaniesSchema }).strict(),
+  effects: z.object({ writesPerformed: z.literal(false), saveActionPerformed: z.literal(false), companyChanged: z.literal(false), companyCreated: z.literal(false), companyCopied: z.literal(false), companyRenamed: z.literal(false), companyDeleted: z.literal(false), setupChanged: z.literal(false), packageChanged: z.literal(false), postingPerformed: z.literal(false) }).strict(),
+  decision: z.object({ status: z.literal('offen-unzureichende-nur-lese-evidence'), selectedOption: z.null(), forbiddenInferences: z.array(z.enum(['interne-company-id-aus-url', 'cronus-provenienz-aus-titel-oder-url', 'zielstrategie-aus-titel-oder-url', 'pilotkonfiguration-aus-company-query'])).length(4), remainingEvidence: z.array(z.string().min(1).max(200)).length(6) }).strict(),
+  nextAction: z.object({ stepId: z.literal('W0-01-read-company-identity'), mode: z.string().min(1).max(160), instruction: z.string().min(1).max(2_000), requiredVisibleValues: z.array(z.string().min(1).max(200)).min(1).max(30), writesAuthorized: z.literal(false) }).strict(),
+}).strict();
+
+export function validateWave0ReadbackAttemptContract(value: unknown) {
+  return schema(value, currentReadOnlyAttemptSchema);
+}
+
+type CurrentSetupEvidenceArtifact = Pick<Artifact, 'id' | 'sourceType' | 'sourcePath' | 'status' | 'classification' | 'currentAuthority' | 'currentRollupContribution'>;
+
+export function validateCurrentSetupEvidenceConsistency(setupWave: SetupWaveProjection | null, artifacts: readonly CurrentSetupEvidenceArtifact[]) {
+  const readbackAttempts = artifacts.filter((artifact) => artifact.sourceType === 'current-read-only-attempt');
+  if (!setupWave) {
+    if (readbackAttempts.length) sourceError('Ein W0-01-Readbackversuch besitzt keine gebundene Setup-Projektion.');
+    return;
+  }
   const currentExecutionEvidence = artifacts.filter((artifact) => artifact.sourceType === 'country-company-information-execution-evidence' && artifact.currentAuthority !== false);
   if (currentExecutionEvidence.length) sourceError('Die aktuelle Umsetzungsevidence widerspricht dem nicht eingerichteten oder nicht beschriebenen Pilotstand.');
+  const expected = setupWave.configurationState.wave0ReadbackAttempt;
+  if (readbackAttempts.length !== 1) sourceError('Der Setup-Vertrag benötigt genau einen positivgelisteten W0-01-Readbackversuch.');
+  const attempt = readbackAttempts[0];
+  if (attempt.sourcePath !== expected.evidencePath || attempt.status !== expected.status || attempt.classification !== 'current-read-only-attempt' || attempt.currentAuthority !== true || attempt.currentRollupContribution !== true) sourceError('Der W0-01-Readbackversuch widerspricht der Setup-Projektion.');
 }
 
 function setupWaveProjection(reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
@@ -2240,6 +2273,15 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
       const activity = data.templatePairs.flatMap((raw) => raw && typeof raw === 'object' && typeof (raw as RecordValue).source === 'string' ? [(raw as RecordValue).source as string] : []);
       add({ id: declaration.id, kind: 'document', title: declaration.kindId, status: storyText(data.status), phase: null, wave: null, workstream: 'Datenvorbereitung', rationale: `${activity.length} positivgelistete Datenlieferungen sind beschrieben.`, activity,
         sourceType: declaration.kindId, documentType: declaration.kindId, sourcePath: declaration.path });
+      continue;
+    }
+    if (declaration.kindId === 'current-read-only-attempt') {
+      const attempt = validateWave0ReadbackAttemptContract(data);
+      add({ id: declaration.id, kind: 'evidence', title: 'W0-01 · Firmenidentität nicht aus BC gelesen', status: attempt.status, phase: null, wave: 'W0', workstream: 'BC-Pilot',
+        rationale: 'Der nur-lesende Versuch wurde vor DOM, Screenshot und BC-Feldreadback blockiert. Browsername und URL-Parameter sind ausdrücklich kein Nachweis für interne Company-ID, Firmendaten, Country/Region oder CRONUS-Inhalte.',
+        activity: ['BC-Readback-Autorität: Nein.', 'Interne Company-ID, Firmendaten, Country/Region, CRONUS-Feldindizien und Gesellschaftsliste: nicht gelesen.', 'Screenshot und Authentifizierungszustand: nicht gelesen.', 'BC-Writes: nicht ausgeführt.', 'W0-01 bleibt der nächste nur-lesende Schritt.'],
+        ticketRefs: [attempt.worklog.taskId], owner: attempt.responsibility.accountableRole, classification: attempt.classification, currentAuthority: attempt.currentAuthority, currentRollupContribution: true,
+        sourceType: declaration.kindId, documentType: declaration.kindId, startDate: attempt.worklog.date, sourcePath: declaration.path });
       continue;
     }
     if (declaration.kindId === 'country-company-information-execution-evidence') {

@@ -66,6 +66,13 @@ describe('fachlicher aktueller Projektstand', () => {
     expect(overviewSource).not.toContain('EUR`');
     expect(overviewSource).toContain('Verantwortung nicht typisiert');
     expect(overviewSource).not.toContain('Rolle {latest.role}');
+    expect(ui).toContain('Firmenname aus BC');
+    expect(ui).toContain("'Nicht verifiziert'");
+    expect(ui).toContain('Übernommener Repositorywert');
+    expect(ui).toContain('nicht als BC-Feldwert bestätigt');
+    expect(ui).toContain('Aktueller W0-01-Nur-Lese-Versuch');
+    expect(ui).toContain('BC-Readback-Autorität');
+    expect(ui).not.toContain('<dt>Beobachteter Name</dt>');
   });
 });
 

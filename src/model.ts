@@ -80,6 +80,10 @@ export const setupWaveProjectionSchema = z.object({
     targetDecision: z.string().min(1).max(160), resetDecision: z.string().min(1).max(160),
     targetState: z.object({ classification: z.literal('bc-basic-target-not-applied'), displayName: z.string().min(1).max(200), configurationScope: z.string().min(40).max(1_000), laterLockedWaves: z.tuple([z.literal('UABC-02-TRADE-MASTER'), z.literal('UABC-03-OPENING-DATA')]) }).strict(),
     appliedDifference: z.object({ status: z.literal('none-evidenced'), readbackStatus: z.literal('pending'), readbackEvidenceCount: z.literal(0) }).strict(),
+    wave0ReadbackAttempt: z.object({
+      status: z.literal('blocked-before-dom-readback'), evidencePath: sourceRelativePathSchema, bcReadbackAuthority: z.literal(false), bcFieldValuesRead: z.literal(false), screenshotCaptured: z.literal(false), writesPerformed: z.literal(false),
+      visibleTabTarget: z.object({ title: z.string().min(1).max(160), environmentParameter: z.string().min(1).max(120), companyParameter: sourceTechnicalIdSchema }).strict(),
+    }).strict(),
     companyStrategyGate: z.object({ status: z.literal('blocked-pending-wave0-and-reset-evidence'), selectedOption: z.null(), allowedOptions: z.tuple([z.literal('controlled-reuse-of-dedicated-cronus-copy'), z.literal('clean-new-company-or-copy')]), requiredEvidence: z.array(z.string().min(8).max(200)).length(6), decisionEvidenceCount: z.literal(0), decisionAuthority: z.literal('project/bc-basic/pilot-setup-baseline.yaml#/companyInformation/companyStrategyDecision'), nextExecutableStep: z.literal('W0-01-read-company-identity'), writesAuthorized: z.literal(false) }).strict(),
   }).strict(),
   packages: z.array(z.object({ packageId: sourceTechnicalIdSchema, status: z.string().min(1).max(120), tables: z.number().int().nonnegative(), records: z.number().int().nonnegative(), errors: z.number().int().nonnegative() }).strict()).min(1).max(50),

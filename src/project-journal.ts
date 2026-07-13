@@ -69,6 +69,7 @@ export function buildProjectJournal(state: ProjectState) {
   const diagnosticKeys = new Set<string>();
   const knownIds = new Set([
     ...state.artifacts.map((item) => item.id),
+    ...state.artifacts.map((item) => item.sourcePath),
     ...state.documents.map((item) => item.id),
     ...(state.story?.tickets.map((item) => item.id) ?? []),
     ...(state.story?.pages.map((item) => item.id) ?? []),
