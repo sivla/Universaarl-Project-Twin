@@ -31,13 +31,14 @@ export function dispatchProjectApi(method: string, pathname: string, catalogs: r
     const payload = catalog.payloads.get(payloadId);
     const expectedRole = match[3] ? 'evidence' : 'resource';
     if (!payload || payload.metadata.role !== expectedRole) return safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
+    if (match[5] === 'download' && !payload.metadata.downloadable) return safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
     return {
       status: 200,
       body: null,
       binary: {
         contentType: payload.metadata.mediaType,
         bytes: payload.bytes,
-        ...(match[5] === 'download' ? { fileName: payload.metadata.id, disposition: 'attachment' as const } : { disposition: 'inline' as const }),
+        ...(match[5] === 'download' ? { fileName: payload.metadata.fileName, disposition: 'attachment' as const } : { disposition: 'inline' as const }),
       },
     };
   } catch {

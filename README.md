@@ -4,9 +4,9 @@ Project Twin ist eine strikt read-only arbeitende deutsche Projektansicht. Der T
 
 ## Snapshot-Katalog
 
-Jeder konfigurierte Katalog besitzt genau einen Einstieg `current.json`. Dieser Zeiger nennt ein unveränderliches Release-Manifest unter `releases/<releaseId>/manifest.json`. Das Manifest bindet Kunden-ID, Projekt-ID, Validierungsstatus sowie die vollständige positive Dateiliste mit Größe, Medientyp und SHA-256-Digest. Die lokale Ordnerquelle und HTTPS verwenden exakt denselben Byte- und Digestvertrag.
+Jeder konfigurierte Katalog besitzt genau einen Einstieg `exports/project-data/v1/snapshots/current.json`. Dieser Zeiger nennt ein unveränderliches Release-Manifest unter `exports/project-data/v1/snapshots/releases/<releaseId>/manifest.json`. Das Manifest bindet Kunden-ID, Projekt-ID, Validierungsstatus, die echte Spectra-Release-Evidence sowie den kanonischen Projektindex und alle darin positivgelisteten Quellbytes mit Größe und SHA-256-Digest. Die lokale Ordnerquelle und HTTPS verwenden exakt denselben Byte- und Digestvertrag.
 
-Eine optionale Commit-SHA im Manifest ist ausschließlich sichtbare Provenienz. Sie wird weder als Leseadresse noch als Laufzeitbindung verwendet. Ohne tatsächlich veröffentlichten Spectra-Release bleibt die Bindung ehrlich `PENDING_BCPROJECTOS_RELEASE`.
+Die Producer-Commit-SHA im Manifest ist ausschließlich sichtbare Provenienz. Sie wird weder als Leseadresse noch als Laufzeitbindung verwendet. Ein Katalog wird nur geladen, wenn seine unveränderliche Spectra-Bindung tatsächlich verbraucherfähig und durch die verlangte Plattform-Evidence bestätigt ist.
 
 Die lokale Konfiguration enthält nur:
 
@@ -42,7 +42,7 @@ Einen separat bereitgestellten lokalen Snapshot-Katalog konfigurieren:
 npm run twin:configure -- \
   --catalog-id mein-projekt \
   --catalog-type filesystem \
-  --catalog-address "/absoluter/pfad/zum/snapshot-katalog" \
+  --catalog-address "/absoluter/pfad/zur/kundeninstanz" \
   --customer-id MEIN-KUNDE \
   --project-id MEIN-PROJEKT \
   --display-name "Mein Projekt"
@@ -54,7 +54,7 @@ Für einen veröffentlichten HTTPS-Katalog wird ausschließlich Typ und Adresse 
 npm run twin:configure -- \
   --catalog-id mein-projekt \
   --catalog-type https \
-  --catalog-address "https://beispiel.invalid/snapshots/mein-projekt/" \
+  --catalog-address "https://beispiel.invalid/kundeninstanz/" \
   --customer-id MEIN-KUNDE \
   --project-id MEIN-PROJEKT
 ```
@@ -74,15 +74,6 @@ npm run twin:stop
 ```
 
 Start und Status sind idempotent. Stop beendet ausschließlich einen durch PID und Laufzeitkennung nachgewiesenen eigenen Prozess. Ein fremder oder ungesunder Dienst auf Port 4173 wird niemals beendet.
-
-## Synthetische Demo
-
-Die Demo enthält zwei vollständig synthetische Kundenkataloge und keine realen Kundeninhalte:
-
-```sh
-npm run twin:demo-catalog
-npm run twin:start -- --config ".runtime/synthetischer-katalog/config.json"
-```
 
 ## Plattformnachweis
 

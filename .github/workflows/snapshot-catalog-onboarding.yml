@@ -14,25 +14,36 @@ jobs:
         os: [windows-latest, macos-14]
     env:
       XDG_CONFIG_HOME: ${{ runner.temp }}/xdg
+      UABC_PORTABLE_PRODUCER_ROOT: ${{ github.workspace }}/producer
+      UABC_REQUIRE_PORTABLE_PRODUCER: '1'
+    defaults:
+      run:
+        working-directory: twin
     steps:
-      - name: Frischen Stand auschecken
+      - name: Project Twin frisch auschecken
         uses: actions/checkout@v4
+        with:
+          path: twin
+      - name: Freigegebenen BC-Basic-Producer auschecken
+        uses: actions/checkout@v4
+        with:
+          repository: sivla/FiBu
+          ref: codex/universaarl-projekt
+          path: producer
       - name: Node.js bereitstellen
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: twin/package-lock.json
       - name: Abhängigkeiten installieren
         run: npm ci
       - name: Bootstrap ohne lokale Quelle prüfen
         run: npm run twin:bootstrap
-      - name: Synthetische Zwei-Kunden-Kataloge erzeugen
-        run: npm run twin:demo-catalog -- "${{ runner.temp }}/twin-katalog"
       - name: Externe XDG-Konfiguration erzeugen
         shell: bash
         run: |
-          npm run twin:configure -- --catalog-id projekt-a --catalog-type filesystem --catalog-address "${RUNNER_TEMP}/twin-katalog/kunde-a" --customer-id DEMO-KUNDE-A --project-id DEMO-PROJEKT-A --display-name "Synthetisches Pilotprojekt"
-          npm run twin:configure -- --catalog-id projekt-b --catalog-type filesystem --catalog-address "${RUNNER_TEMP}/twin-katalog/kunde-b" --customer-id DEMO-KUNDE-B --project-id DEMO-PROJEKT-B --display-name "Synthetisches Vergleichsprojekt"
+          npm run twin:configure -- --catalog-id bc-basic --catalog-type filesystem --catalog-address "${UABC_PORTABLE_PRODUCER_ROOT}" --customer-id UABC-CUSTOMER-001 --project-id UABC-BC-BASIC-001 --display-name "Universaarl BC Basic"
       - name: Doctor und Vertragsmatrix
         shell: bash
         run: |
@@ -44,7 +55,7 @@ jobs:
           npm run twin:start -- --port 4173 --timeout 60
           npm run twin:status -- --port 4173
       - name: Echter Browser-Smoke
-        run: node scripts/browser-smoke.mjs http://127.0.0.1:4173/ http://127.0.0.1:4173/projekte/projekt-a/aktueller-stand
+        run: node scripts/browser-smoke.mjs http://127.0.0.1:4173/ http://127.0.0.1:4173/projekte/bc-basic/aktueller-stand
       - name: Twin sicher beenden
         if: always()
         run: npm run twin:stop -- --port 4173

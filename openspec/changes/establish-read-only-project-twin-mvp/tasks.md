@@ -28,6 +28,9 @@
 - [x] Plattformneutralen npm-ci-Bootstrap, Doctor sowie Node-basierten Start/Status/Stop mit Windows-Nachweis und offen ausgewiesenem macOS-Runnergate bereitstellen
 - [x] Snapshot-Katalog mit identischem Filesystem-/HTTPS-Bytevertrag, unveränderlichen Releases und fail-closed Identitäts-/Digestprüfung als einzigen produktiven Ladepfad nachweisen
 - [x] Produktiven Vite-, API- und Praesentations-Importgraph vom Legacy-Git-Adapter trennen und ohne Repository- oder Arbeitsbaum-Fallback negativ pruefen
+- [x] Reales BC-Basic-Release `UABC-PORTABLE-PILOT-0003` mit Projektindex und 158 Projektquellen über Filesystem und HTTPS vollständig digestgebunden normalisieren
+- [x] Produktiven Snapshotpfad ohne Git-Aufruf, Repositoryfallback oder Twin-spezifischen vorkompilierten `project-state` nachweisen
+- [x] Reale Ressourcen aus den manifestgeprüften Releasebytes über opake Twin-IDs sicher bereitstellen
 - [x] Extern gespeicherte XDG-Konfiguration, Configure-Befehl und expliziten Kunden-/Projektwechsel ohne Secrets nachweisen
 - [x] Zwei synthetische Kundenfixtures einschließlich Cross-Customer-Leakage, Traversal, Symlink/Junction, Pointerwechsel, No-Writes und fehlendem Git-Fallback negativ prüfen
 - [ ] macOS-Evidence als bereinigtes JSON erzeugen; ohne echten macOS-Runner bleibt das Gate ausdrücklich offen
@@ -46,7 +49,7 @@
 - [x] Autoritätsgebundene Company-/Setup-Ausführungsevidence gegen den korrigierten Producerstand fail-closed prüfen und aktuelle Karten, Rollups sowie Tagebuch browserbelegen
 - [x] W0-01-Readbackversuch aus dem 139-Artefakte-Snapshot strikt validieren, ohne BC-Feldbeobachtung anzeigen und in Projektstand, Ticket, Tagebuch, Dokumentation sowie Budget browserbelegen
 - [x] Producerstand `8f50573bc6105991a74363d6e3ed672abc0eaeef` mit unbestätigtem Kopie-/Umbenennungshinweis, unbekanntem Entstehungsweg und nicht realisiertem Kundenziel commitgebunden integrieren und repräsentativ browserbelegen
-- [ ] CORE-FINANCE-Vorbereitung aus dem 145-Artefakte-Snapshot commit- und digestgebunden integrieren, Ausführungs- und Abnahmebehauptungen fail-closed blockieren und repräsentativ browserbelegen
+- [x] CORE-FINANCE-Vorbereitung aus dem Release `UABC-PORTABLE-PILOT-0003` digestgebunden integrieren, Ausführungs- und Abnahmebehauptungen fail-closed blockieren und repräsentativ browserbelegen
 - [x] Alle primären Oberflächen aus PM-Sicht nach ihrer konkreten Steuerungsfrage ordnen, die gute Ticket- und Dokumentationsführung bewahren und doppelte Arbeitsansichten nachrangig machen
 - [x] Kanonische Ticketreferenzen in allen fachlichen Oberflächen und Dokumentinhalten zugänglich mit dem typgerechten Ticketdetail verknüpfen und im Browser nachweisen
 - [x] Projektplan mit belegten Phasen, Aufwandsfortschritt und ehrlicher Terminlücke sowie einem echten Gantt nur bei vollständigen Datumswerten browserbelegen

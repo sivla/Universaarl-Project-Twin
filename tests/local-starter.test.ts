@@ -83,13 +83,11 @@ describe('lokaler Twin-Starter', () => {
   it('bindet Health, Laufzeitkennung und npm-Bedienwege explizit', () => {
     const vite = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
     const script = fs.readFileSync(starter, 'utf8');
-    const launcher = fs.readFileSync(path.resolve('scripts/run-twin-server.ps1'), 'utf8');
     const packageJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')) as { scripts: Record<string, string> };
     expect(vite).toContain("pathname === '/api/health'");
     expect(vite).toContain("'X-Universaarl-Service', 'project-twin'");
-    expect(script).toContain('Test-OwnedProcess');
-    expect(script).toContain('run-twin-server.ps1');
-    expect(launcher).toContain("$env:UABC_STABLE_BRANCH = $StableBranch");
+    expect(script).toContain("Join-Path $PSScriptRoot 'twin-local.mjs'");
+    expect(script).not.toMatch(/SourceRepo|StableBranch|UABC_SOURCE_REPO|UABC_STABLE_BRANCH/);
     expect(packageJson.scripts).toMatchObject({ 'twin:start': expect.any(String), 'twin:status': expect.any(String), 'twin:stop': expect.any(String) });
   });
 });

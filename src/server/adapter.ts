@@ -2014,7 +2014,12 @@ const coreFinanceManifestContractSchema = z.object({
 }).passthrough();
 
 export function validateSetupWaveProjectionContract(input: { projection: unknown; schemaDocument: unknown }): SetupWaveProjection {
-  const projection = schema(input.projection, setupWaveProjectionSchema);
+  const parsedProjection = setupWaveProjectionSchema.safeParse(input.projection);
+  if (!parsedProjection.success) {
+    const issue = parsedProjection.error.issues[0];
+    sourceError(`Die Setup-Wave-1-Projektion verletzt den Twin-Vertrag im Feld ${issue?.path.map(String).join('.') || 'Wurzel'} (${issue?.message || 'ungültiger Wert'}).`);
+  }
+  const projection = parsedProjection.data;
   if (!input.schemaDocument || typeof input.schemaDocument !== 'object' || Array.isArray(input.schemaDocument)) sourceError('Das Setup-Wave-1-Schema ist kein gültiges JSON-Schemaobjekt.');
   try {
     const validate = new Ajv2020({ strict: true, allErrors: true }).compile(input.schemaDocument as Record<string, unknown>);
@@ -2026,6 +2031,28 @@ export function validateSetupWaveProjectionContract(input: { projection: unknown
   if (new Set(projection.packages.map((item) => item.packageId)).size !== projection.packages.length || new Set(projection.provenance.map((item) => item.path)).size !== projection.provenance.length) sourceError('Die Setup-Wave-1-Projektion enthält doppelte Pakete oder Provenienzpfade.');
   if (projection.writeGate.writesAuthorized !== projection.writesAuthorized) sourceError('Die Schreibsperre der Setup-Wave-1-Projektion ist widersprüchlich.');
   return projection;
+}
+
+class MemoryBlobReader extends CommitBlobReader {
+  private readonly memoryBlobs: ReadonlyMap<string, Buffer>;
+
+  constructor(commit: string, limits: ReaderLimits, blobs: ReadonlyMap<string, Buffer>) {
+    const entries = [...blobs.entries()].map(([relative, bytes]): TreeEntry => ({
+      mode: '100644',
+      oid: createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`, 'utf8')).update(bytes).digest('hex'),
+      path: relative,
+      size: bytes.length,
+    }));
+    super('snapshot-memory', commit, limits, entries, validateContractPath);
+    this.memoryBlobs = new Map([...blobs.entries()].map(([relative, bytes]) => [relative, Buffer.from(bytes)]));
+  }
+
+  override blob(relative: string) {
+    const entry = this.entry(relative);
+    const bytes = this.memoryBlobs.get(entry.path);
+    if (!bytes || bytes.length !== entry.size) sourceError('Ein Snapshot-Quellblob wurde nicht vollständig bereitgestellt.');
+    return Buffer.from(bytes);
+  }
 }
 
 export function validateCoreFinancePreparationContract(input: { setupWave: SetupWaveProjection; payload: unknown; payloadBytes: Buffer; payloadSchema: unknown; manifest: unknown }) {
@@ -2150,7 +2177,9 @@ export function validateSpectra09ContractData(input: { release: unknown; conform
 function validateSpectra09Integration(index: ProjectDataIndex, reader: CommitBlobReader, sources: readonly IndexedProjectSource[]) {
   const hasSpectra09 = sources.some((source) => ['spectra-project-reconciliation', 'spectra-adapter-provenance', 'twin-export-map'].includes(source.declaration.kindId));
   if (!hasSpectra09) return new Map<string, SpectraSummary>();
-  const releaseSource = requiredSource(sources, 'spectra-release-evidence');
+  const releaseCandidates = sources.filter((source) => source.declaration.kindId === 'spectra-release-evidence' && source.declaration.path === 'evidence/spectra-release-0.10.0-alpha.1.yaml');
+  if (releaseCandidates.length !== 1) sourceError('Die historische Spectra-0.10-Projektbindung ist nicht vollständig und eindeutig positivgelistet.');
+  const releaseSource = releaseCandidates[0];
   const conformanceSource = requiredSource(sources, 'spectra-portable-conformance-evidence');
   const reconciliationSource = requiredSource(sources, 'spectra-project-reconciliation');
   const provenanceSource = requiredSource(sources, 'spectra-adapter-provenance');
@@ -2414,6 +2443,153 @@ async function createProjectDataState(projectId: string, repo: string, contract:
     gaps: [], warnings, stats: { jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
       changes: artifacts.filter((item) => item.kind === 'change').length, documents: artifacts.filter((item) => item.kind === 'document').length,
       capabilities: artifacts.filter((item) => item.kind === 'capability').length, evidence: artifacts.filter((item) => item.kind === 'evidence').length } });
+}
+
+export type SnapshotSpectraBinding = Readonly<{
+  productId: 'spectra';
+  technicalRepositoryName: 'BCProjectOS';
+  repositoryUrl: 'https://github.com/sivla/BCProjectOS.git';
+  releaseVersion: string;
+  releaseTag: string;
+  peeledCommit: string;
+  manifestPath: string;
+  manifestSourceCommit: string;
+  consumerMode: 'INSTALLABLE_BLUEPRINT';
+  installableBlueprint: true;
+}>;
+
+export type SnapshotProjectDataInput = Readonly<{
+  routeProjectId: string;
+  producerProjectId: string;
+  producerCommit: string;
+  indexPath: 'exports/project-data/v1/index.yaml';
+  sourceInventoryDigest: string;
+  files: ReadonlyMap<string, Buffer>;
+  spectra: SnapshotSpectraBinding;
+  catalog: Readonly<{ customerId: string; projectId: string; releaseId: string; sourceType: 'filesystem' | 'https'; manifestDigest: string; updatedAt: string }>;
+}>;
+
+export type SnapshotProjectDataAsset = Readonly<{
+  id: string;
+  role: 'evidence' | 'resource';
+  mediaType: string;
+  bytes: Buffer;
+  fileName: string;
+  downloadable: boolean;
+}>;
+
+export type SnapshotProjectDataResult = Readonly<{
+  state: ProjectState;
+  assets: ReadonlyMap<string, SnapshotProjectDataAsset>;
+}>;
+
+/**
+ * Normalisiert ausschließlich bereits manifest- und digestgeprüfte Snapshotbytes.
+ * Diese Funktion löst weder Repository, Branch noch Git-Objekte auf.
+ */
+export function createProjectDataStateFromSnapshot(input: SnapshotProjectDataInput): SnapshotProjectDataResult {
+  const projectId = assertProjectId(input.routeProjectId);
+  if (input.producerProjectId !== 'UABC-BC-BASIC-001' || !fullSha.test(input.producerCommit) || input.indexPath !== 'exports/project-data/v1/index.yaml' || !/^[a-f0-9]{64}$/.test(input.sourceInventoryDigest)) sourceError('Die portable Snapshotbindung ist unvollständig.', 'QUELLKONFIGURATION_UNGUELTIG');
+  const limits = defaultLimits;
+  const reader = new MemoryBlobReader(input.producerCommit, limits, input.files);
+  if (!reader.has(input.indexPath)) sourceError('Der portable Snapshot enthält keinen Projektindex.');
+  const index = validateProjectDataIndexContract(reader.yaml(input.indexPath));
+  if (!index.documentCatalog || !index.referenceDefinitions || index.validationStatus !== 'validated' || index.projectId !== input.producerProjectId || index.routeKey !== projectId) sourceError('Der Projektindex stimmt nicht mit der portablen Snapshotbindung überein.');
+  const ids = index.artifacts.map((item) => item.id);
+  const paths = index.artifacts.map((item) => item.path);
+  if (new Set(ids).size !== ids.length || new Set(paths).size !== paths.length || input.files.size !== index.artifacts.length + 1) sourceError('Der portable Snapshot enthält eine abweichende Projektquellenmenge.');
+  index.artifacts.forEach((artifact) => assertProjectDataFormat(artifact, true));
+  const sources = index.artifacts.map((declaration): IndexedProjectSource => ({ declaration, entry: reader.entry(declaration.path) }));
+  reader.preflight();
+
+  let artifacts = indexedArtifacts(index, reader, sources);
+  const documentation = index.documentCatalog ? indexedDocuments(reader, index, sources) : null;
+  const documents = documentation?.documents ?? [];
+  const storySource = sources.find((source) => source.declaration.kindId === 'project-story-core');
+  const story = storySource ? projectStoryProjection(reader, storySource, sources) : null;
+  const presentation = documentation && story && index.ticketCatalog ? producerPresentationProjection(index, reader, sources, documentation.catalog, story) : null;
+  const setupWave = setupWaveProjection(reader, sources);
+  if (!setupWave?.readinessPath) sourceError('Der portable Snapshot enthält keinen typisierten BC-Basic-Readiness-Pfad.');
+  validateCurrentSetupEvidenceConsistency(setupWave, artifacts);
+  if (presentation && story) {
+    const storyTicketById = new Map(story.tickets.map((ticket) => [ticket.id, ticket]));
+    artifacts = artifacts.map((artifact) => {
+      const ticket = storyTicketById.get(artifact.id);
+      return ticket ? { ...artifact, dependencies: [...ticket.dependencies] } : artifact;
+    });
+  }
+  const imageSources = sources.filter((source) => source.declaration.format === 'png');
+  const evidenceItems = imageSources.map((source) => ({ id: evidenceIdFor(projectId, reader, source.entry), title: source.declaration.id }));
+  const resources = indexedResources(projectId, input.producerCommit, index, reader, sources, artifacts, documents, limits);
+  const warnings = !index.artifactCatalog ? ['Der Producer stellt keinen kanonischen Ressourcenkatalog bereit. Lieferdateien, Screenshots und Schulungsunterlagen können deshalb nicht sicher geöffnet werden.'] : [];
+  const spectra = input.spectra;
+  const state = projectStateSchema.parse({
+    source: {
+      projectId,
+      branch: null,
+      commit: input.producerCommit,
+      dirty: false,
+      headFingerprint: hash(`portable-snapshot\0${input.producerCommit}`),
+      indexFingerprint: hash(reader.blob(input.indexPath)),
+      statusFingerprint: hash('portable-snapshot-read-only-clean'),
+      snapshot: {
+        schemaVersion: 1,
+        producerId: 'blueprint',
+        producerCommitSha: input.producerCommit,
+        indexPath: input.indexPath,
+        payloadBundleDigest: `sha256:${input.sourceInventoryDigest}`,
+        validationStatus: 'validated',
+        spectraReleaseBinding: {
+          productId: spectra.productId,
+          technicalRepositoryName: spectra.technicalRepositoryName,
+          repositoryUrl: spectra.repositoryUrl,
+          releaseVersion: spectra.releaseVersion,
+          releaseTag: spectra.releaseTag,
+          tagCommit: spectra.peeledCommit,
+          manifestPath: spectra.manifestPath,
+          manifestSourceCommit: spectra.manifestSourceCommit,
+          consumerMode: spectra.consumerMode,
+          installableBlueprint: spectra.installableBlueprint,
+        },
+      },
+      channel: null,
+      catalog: input.catalog,
+      readAt: new Date().toISOString(),
+    },
+    artifacts,
+    evidenceItems,
+    resources,
+    documents,
+    story,
+    presentation,
+    setupWave,
+    workstreams: [...new Set(artifacts.flatMap((item) => item.workstream ? [item.workstream] : []))].sort((left, right) => left.localeCompare(right, 'de')),
+    gaps: [],
+    warnings,
+    stats: {
+      jira: artifacts.filter((item) => ['epic', 'story', 'task', 'bug'].includes(item.kind)).length,
+      changes: artifacts.filter((item) => item.kind === 'change').length,
+      documents: artifacts.filter((item) => item.kind === 'document').length,
+      capabilities: artifacts.filter((item) => item.kind === 'capability').length,
+      evidence: artifacts.filter((item) => item.kind === 'evidence').length,
+    },
+  });
+
+  const assets = new Map<string, SnapshotProjectDataAsset>();
+  for (const source of imageSources) {
+    const id = evidenceIdFor(projectId, reader, source.entry);
+    assets.set(id, Object.freeze({ id, role: 'evidence', mediaType: 'image/png', bytes: Buffer.from(reader.png(source.entry.path)), fileName: `${source.declaration.id}.png`, downloadable: false }));
+  }
+  if (index.artifactCatalog) {
+    const catalog = artifactCatalogSchema.parse(reader.json(index.artifactCatalog.path));
+    for (const resource of resources) {
+      const item = catalog.resources.find((candidate) => candidate.artifactId === resource.artifactId);
+      const source = item && sources.find((candidate) => candidate.declaration.path === item.path);
+      if (!item || !source) sourceError('Eine Snapshotressource fehlt in der Positivliste.');
+      assets.set(resource.id, Object.freeze({ id: resource.id, role: 'resource', mediaType: resource.mediaType, bytes: Buffer.from(reader.blob(source.entry.path)), fileName: `${resource.artifactId}${path.posix.extname(item.path)}`, downloadable: resource.downloadable }));
+    }
+  }
+  return Object.freeze({ state, assets });
 }
 
 export async function createTwinState(projectId: string, repo: string, options: AdapterReadOptions = {}): Promise<ProjectState> {

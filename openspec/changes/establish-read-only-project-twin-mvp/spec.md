@@ -2,27 +2,27 @@
 
 ## Strikte Nur-Lesen-Grenze
 
-Der Projektzwilling MUSS seine Fachdaten ausschließlich aus einem vorhandenen Git-Versionsstand lesen. Er DARF weder Quelldateien noch Git-Referenzen, Index, Arbeitskopie oder externe Systeme verändern.
+Der Projektzwilling MUSS seine Fachdaten ausschließlich aus einem validierten, unveränderlichen Snapshot-Release über Filesystem oder HTTPS lesen. Er DARF weder Quelldateien, Pointer, Release, Git-Referenzen, Index, Arbeitskopie noch externe Systeme verändern.
 
 Akzeptanz: Es existiert keine schreibende Programmierschnittstelle. Nicht unterstützte Methoden werden abgelehnt, und ein Lesevorgang verändert weder Quellenstatus noch Indexfingerabdruck.
 
-## Projekt- und commitgebundene Momentaufnahme
+## Projekt- und releasegebundene Momentaufnahme
 
-`ProjectContext` MUSS das ausgewählte Projekt eindeutig bestimmen. `SourceSnapshot` MUSS die vollständige 40-stellige Commit-SHA, den Zweig, den Änderungszustand und die Einlesezeit enthalten. Jede dargestellte Momentaufnahme und jede Nachweis-ID MUSS an Projekt, Commit, Quellblob und sicheren internen Pfad gebunden sein.
+`ProjectContext` MUSS das ausgewählte Projekt eindeutig bestimmen. `SourceSnapshot` MUSS Kunden-ID, Projekt-ID, Release-ID, Manifestdigest, Einlesezeit und die optionale vollständige 40-stellige Producer-Commit-SHA enthalten. Jede dargestellte Momentaufnahme und jede Nachweis-ID MUSS an Projekt, Release, manifestgeprüfte Quellbytes und eine opake interne Ressourcen-ID gebunden sein.
 
 Akzeptanz: Ein Nachweis eines Projekts oder Versionsstands ist unter einem anderen Projekt oder Versionsstand nicht auflösbar. Verzögerte Antworten eines vorherigen Projektkontexts werden nicht angezeigt.
 
 ## Sichere Provenienz und Nachweise
 
-Repository-relative Provenienz MUSS auf ausdrücklich erlaubte Quellwurzeln und Einzelpfade begrenzt sein. Absolute Pfade, URI-Werte, Pfadüberschreitungen, sensible Namen, symbolische Verknüpfungen und nicht reguläre Git-Einträge MÜSSEN abgelehnt werden. Die Benutzeroberfläche DARF keine internen Nachweisdateipfade erhalten.
+Release-relative Provenienz MUSS auf die im Manifest ausdrücklich erlaubten Einzelpfade begrenzt sein. Absolute Pfade, unzulässige URI-Werte, Pfadüberschreitungen, sensible Namen, symbolische Verknüpfungen, Junctions und nicht reguläre Dateien MÜSSEN abgelehnt werden. Die Benutzeroberfläche DARF keine internen Nachweisdateipfade erhalten.
 
-Akzeptanz: Nur reguläre PNG-Blobs unter `evidence/` werden als Bildnachweise adressiert. Andere unterstützte Blobs werden sicher vorgeprüft, erzeugen jedoch keine Nachweis-ID.
+Akzeptanz: Nur manifestgeprüfte, unterstützte Ressourcen erhalten opake Twin-IDs. Vorschau und Download lösen niemals einen vom Client gelieferten Dateipfad auf.
 
 ## Sichtbare Lücken ohne erfundene Fachdaten
 
 Fehlende Quellenfamilien, ungelöste strukturierte Referenzen und bekannte Datenlücken MÜSSEN sichtbar bleiben. Der MVP DARF aus freier Prosa keine Chronologie, Manifestbeziehung, Freigabe oder fachliche Wahrheit erfinden.
 
-Akzeptanz: Jira-Typ, Status, Phase, Arbeitsstrom, Aufwand, Abhängigkeiten, explizite Historie, Termine, Liefergegenstände und Abrechnungskennzeichen erscheinen nur, wenn sie strukturiert im positivgelisteten Quellenvertrag belegt sind. Fehlende Werte bleiben `null`, leere Listen oder ein ehrlicher Leerzustand. Die Auswahl einer commitgebundenen Momentaufnahme durch die betreibende Person gilt nicht als menschliche Freigabe.
+Akzeptanz: Jira-Typ, Status, Phase, Arbeitsstrom, Aufwand, Abhängigkeiten, explizite Historie, Termine, Liefergegenstände und Abrechnungskennzeichen erscheinen nur, wenn sie strukturiert im positivgelisteten Quellenvertrag belegt sind. Fehlende Werte bleiben `null`, leere Listen oder ein ehrlicher Leerzustand. Die Auswahl einer releasegebundenen Momentaufnahme durch die betreibende Person gilt nicht als menschliche Freigabe.
 
 ## Source-driven Projekttagebuch und Zeitpunktssicht
 
@@ -44,6 +44,10 @@ Die sichtbare Provenienz besteht aus Kunden-ID, Projekt-ID, Release-ID, Katalogt
 
 Akzeptanz: Filesystem und HTTPS liefern für identische Bytes denselben Projektzustand. Cross-Customer-Leakage, Traversal, Symlink oder Junction, falsche Groß-/Kleinschreibung auf einem case-sensitiven Dateisystem, fehlende Releases, Digestabweichung, Pointerwechsel, Verzeichnisscan, Git-Fallback und Writeversuch werden deterministisch blockiert.
 
+Der Producer DARF die Fachprojektion nicht als Twin-spezifischen `project-state` vorkompilieren müssen. Für den Vertrag `uabc-portable-snapshot-release-v1` MUSS das Release genau den kanonischen Projektindex sowie alle dort positivgelisteten Projektquellen als unveränderte Bytes enthalten. Der Twin MUSS Pointer, Release- und Spectra-Eignung, Manifest, Projektindex, vollständige Quellenmenge, Pfadabbildung, Größen und SHA-256-Digests validieren, bevor er daraus ausschließlich im Arbeitsspeicher den Projektzustand normalisiert.
+
+Akzeptanz: `UABC-PORTABLE-PILOT-0003` aus der Kundeninstanz wird über Filesystem und denselben simulierten HTTPS-Bytevertrag identisch dargestellt. Ein fehlender Indexeintrag, eine zusätzliche oder fehlende Projektquelle, eine abweichende `sourcePath`/`path`-Abbildung, ein manipuliertes Quellbyte, eine nicht freigegebene Spectra-Bindung oder ein nicht verbraucherfähiger Pointer blockiert deterministisch. Der produktive Aufruf bleibt auch ohne verfügbares Git-Programm grün und ruft keinen Git-Befehl auf.
+
 ## Offene Freigabe- und Archivgrenze
 
 Menschliche Freigabe und Archivierung bleiben eigenständige, noch nicht abgeschlossene Schritte. Dieser Vertrag DARF ihren Abschluss nicht aus Implementierung, Prüfungen oder einem lokalen Versionsstand ableiten.
@@ -52,7 +56,7 @@ Akzeptanz: Die Aufgaben für menschliche Freigabe und Archivierung bleiben offen
 
 ## Spectra-Projektabgleich und Twin-Export
 
-Wenn der Projektindex die Spectra-0.9- oder Spectra-0.10-Artefakte positivlistet, MUSS der Twin Projektabgleich, Adapterprovenienz, Twin-Export, Release-Evidence und Konformität gemeinsam und fail-closed validieren. Für Spectra `0.10.0-alpha.1` MÜSSEN Tag, Releasebindung und genau 110 bestätigte Releasepayloads übereinstimmen. Quellhash vor und nach der Projektion MÜSSEN dem commitgebundenen Indexblob entsprechen. Projektionsdigest, Mappingkennung, Mappingversion und sämtliche Exportartefakte MÜSSEN mit den positivgelisteten Git-Blobs und dem Index übereinstimmen. Unsichere Pfade, fehlende oder zusätzliche Artefakte, Hash- oder Digestabweichungen, Schreibvorgänge, Overwriterechte und eine widersprüchliche Releasebindung MÜSSEN die gesamte Ansicht blockieren.
+Wenn der Projektindex die historischen Spectra-0.9- oder Spectra-0.10-Artefakte positivlistet, MUSS der Twin Projektabgleich, Adapterprovenienz, Twin-Export, Release-Evidence und Konformität gemeinsam und fail-closed validieren. Für Spectra `0.10.0-alpha.1` MÜSSEN Tag, Releasebindung und genau 110 bestätigte Releasepayloads übereinstimmen. Quellhash vor und nach der Projektion MÜSSEN den manifestgeprüften Indexbytes entsprechen. Projektionsdigest, Mappingkennung, Mappingversion und sämtliche Exportartefakte MÜSSEN mit den positivgelisteten Releasebytes und dem Index übereinstimmen. Unsichere Pfade, fehlende oder zusätzliche Artefakte, Hash- oder Digestabweichungen, Schreibvorgänge, Overwriterechte und eine widersprüchliche Releasebindung MÜSSEN die gesamte Ansicht blockieren.
 
 Akzeptanz: Die deutsche Oberfläche zeigt die historische Baseline, das ausdrücklich synthetische Angebot und Ist, die begründete Abweichung, die Exportanzahl sowie die bestätigte Spectra-Releasebindung. Sie kennzeichnet, dass keine echte Rechnung, Buchung, Zahlung oder produktive Leistung stattgefunden hat. Die Kundeninstanz bleibt Source of Truth; der Twin liest ausschließlich und speichert keine zweite fachliche Wahrheit.
 
@@ -64,19 +68,19 @@ Akzeptanz: Fehlen `currentScope`, eine bestätigte `projectControlCoverage`, vol
 
 Akzeptanz: Eine betreibende Person erkennt in der Hauptansicht ohne Öffnen der Prüfinfo Simulationsgrenze, letzten belegten Meilenstein, ausdrücklich offene oder unbekannte Steuerungsfelder und den Status nächster Handlungen. Desktop und Mobil zeigen die Managementsicht ohne horizontales Abschneiden; Tastaturfokus und Sprunglink bleiben nutzbar.
 
-Das commitgebundene Startklar-Paket MUSS innerhalb derselben fünf Fragen auffindbar sein. Verbindliches Angebot und historische Baseline, minimale Kundenvorbereitung, Workshops, Entscheidungsumfang, Datenlieferungen, Entry-Gate, rollenbasierter Lern- und Handoverpfad sowie die nächste Handlung MÜSSEN aus den positivgelisteten Quellen abgeleitet werden. Rein technische Dokumentstatus DÜRFEN dabei nicht als fachlich offene Kundenaufgaben erscheinen.
+Das releasegebundene Startklar-Paket MUSS innerhalb derselben fünf Fragen auffindbar sein. Verbindliches Angebot und historische Baseline, minimale Kundenvorbereitung, Workshops, Entscheidungsumfang, Datenlieferungen, Entry-Gate, rollenbasierter Lern- und Handoverpfad sowie die nächste Handlung MÜSSEN aus den positivgelisteten Quellen abgeleitet werden. Rein technische Dokumentstatus DÜRFEN dabei nicht als fachlich offene Kundenaufgaben erscheinen.
 
-Der Operator- und Kompetenzstand MUSS ebenfalls innerhalb der fünf Leitfragen verständlich werden. Rollenroutinen, positiver Fall, Fehler, Retest, Kompetenzpass, Eskalationsausgänge, Operator-Smoke-Test und Support-Diagnosepaket MÜSSEN commitgebunden aus Trainings- und Handover-Evidence stammen. Simulierte Kompetenz DARF NICHT als reale Kundensandboxfreigabe erscheinen; Rollen ohne belegte Operatorroutine DÜRFEN kein künstliches Training erhalten.
+Der Operator- und Kompetenzstand MUSS ebenfalls innerhalb der fünf Leitfragen verständlich werden. Rollenroutinen, positiver Fall, Fehler, Retest, Kompetenzpass, Eskalationsausgänge, Operator-Smoke-Test und Support-Diagnosepaket MÜSSEN releasegebunden aus Trainings- und Handover-Evidence stammen. Simulierte Kompetenz DARF NICHT als reale Kundensandboxfreigabe erscheinen; Rollen ohne belegte Operatorroutine DÜRFEN kein künstliches Training erhalten.
 
 Der V1-Abschluss MUSS die versionierte Abnahme-Evidence vollständig und fail-closed auswerten. Bei `V1_STANDARDPRODUCT_READY` MÜSSEN Angebot, Entscheidungen, Datenwellen, UAT, Operatorpfade, Cutover, Restart, Hypercare, Lieferobjekte und offene P1/P2 widerspruchsfrei bestätigt sein. Wiederverwendbare Jira-Vorlagen im Status `Backlog` DÜRFEN dann nicht als offene Handlung der abgeschlossenen Referenzsimulation erscheinen; der reale Kundeneinstieg bleibt als separater nächster Schritt am belegten Entry-Gate sichtbar.
 
 ## Nachrangige Projektdokumentation
 
-Für Project Twin V1.0 MUSS der kanonische Katalog unter exports/project-data/v1/document-catalog.json aus demselben Commit wie Cockpit, Index und Dokumentblobs gelesen und gegen sein positivgelistetes Draft-2020-12-Schema validiert werden. Indexdefinitionen, Katalogmetadaten, SHA-256-Inhaltswerte, Git-Modus 100644, Hierarchie und Referenzmengen MÜSSEN vollständig übereinstimmen. Fehlende oder manipulierte Katalog-, Schema- oder Dokumentblobs blockieren den Zustand mit HTTP 503 fail-closed.
+Für Project Twin V1.0 MUSS der kanonische Katalog unter `exports/project-data/v1/document-catalog.json` aus demselben unveränderlichen Release wie Cockpit, Index und Dokumentbytes gelesen und gegen sein positivgelistetes Draft-2020-12-Schema validiert werden. Indexdefinitionen, Katalogmetadaten, SHA-256-Inhaltswerte, Hierarchie und Referenzmengen MÜSSEN vollständig übereinstimmen. Fehlende oder manipulierte Katalog-, Schema- oder Dokumentbytes blockieren den Zustand mit HTTP 503 fail-closed.
 
-Der Bereich `projektdokumentation` MUSS alle im Branch-Index positivgelisteten Markdown-Dokumente direkt aus Git-Blobs der einmalig gepinnten Commit-SHA lesbar machen. Suche und Filter nach belegtem Dokumenttyp, Status, Phase und Prozess, Seitenhierarchie, Breadcrumb, Inhaltsverzeichnis, interne Querverweise und Provenienz MÜSSEN ohne eigene Fachinterpretation entstehen. Fehlende Phasen-, Prozess- oder Aktualisierungswerte bleiben ehrlich „Nicht belegt“. Das Cockpit und seine fünf Leitfragen bleiben die primäre Hauptansicht.
+Der Bereich `projektdokumentation` MUSS alle im Projektindex positivgelisteten Markdown-Dokumente direkt aus den manifestgeprüften Releasebytes lesbar machen. Suche und Filter nach belegtem Dokumenttyp, Status, Phase und Prozess, Seitenhierarchie, Breadcrumb, Inhaltsverzeichnis, interne Querverweise und Provenienz MÜSSEN ohne eigene Fachinterpretation entstehen. Fehlende Phasen-, Prozess- oder Aktualisierungswerte bleiben ehrlich „Nicht belegt“. Das Cockpit und seine fünf Leitfragen bleiben die primäre Hauptansicht.
 
-Markdown MUSS ohne aktives HTML, Skripte oder unkontrollierte Navigation gerendert werden. Unsichere Links, nicht positivgelistete relative Dokumentziele, fehlende Blobs, ungültige Elternbeziehungen und Commitbewegungen blockieren fail-closed oder bleiben nachweislich nicht klickbar. „In Confluence öffnen“ DARF nur für eine strukturierte kanonische HTTPS-URL innerhalb einer im Snapshot erlaubten Origin und mit stabiler Seitenidentität aktiv sein. Fehlt dieser Producervertrag, zeigt der Twin den Link deaktiviert und benennt die Lücke.
+Markdown MUSS ohne aktives HTML, Skripte oder unkontrollierte Navigation gerendert werden. Unsichere Links, nicht positivgelistete relative Dokumentziele, fehlende Releasebytes, ungültige Elternbeziehungen und Pointerbewegungen blockieren fail-closed oder bleiben nachweislich nicht klickbar. „In Confluence öffnen“ DARF nur für eine strukturierte kanonische HTTPS-URL innerhalb einer im Snapshot erlaubten Origin und mit stabiler Seitenidentität aktiv sein. Fehlt dieser Producervertrag, zeigt der Twin den Link deaktiviert und benennt die Lücke.
 
 Akzeptanz: Desktop und Mobil zeigen Dokumentnavigation und Inhalt ohne horizontalen Seitenüberlauf; Tastatur, Fokus, Inhaltsverzeichnis, Verlauf, Leerzustand und deaktivierter Confluence-Link sind verständlich deutsch. Commit, Quelldatei, Aktualisierungsstand und Validierungsstatus sind pro Seite nachgelagert sichtbar. Der Twin speichert keine Dokumentkopie und bietet keinen schreibenden oder kommentierenden Pfad.
 
@@ -84,7 +88,7 @@ Akzeptanz: Desktop und Mobil zeigen Dokumentnavigation und Inhalt ohne horizonta
 
 Der Twin MUSS Wissensräume, Module, Abschnitte, Seitenbäume, Reihenfolgen und initiale Aufklappzustände ausschließlich aus einer streng validierten Präsentationsstruktur übernehmen. Der Consumer DARF weder Space-Reihenfolge noch Kapitel, Elternbeziehungen oder Standardzustände aus Pfaden, Nummern, Titeln oder Kennungen ableiten. Drei getrennte Räume für Kundenprojekt, BC-Basic-Standardprodukt und Consultant-Handbuch MÜSSEN als eigenständige, deutsch bezeichnete Navigation erscheinen. Direkte Links MÜSSEN den notwendigen eingeklappten Pfad öffnen, ohne den producerdefinierten Standard dauerhaft zu verändern.
 
-Akzeptanz: Doppelte Knoten- oder Reihenfolgenkennungen, Zyklen, unbekannte Knotentypen, ungültige Eltern, Referenzen oder Aufklappzustände blockieren mit HTTP 503. Der sitzungsbezogene Zustand ist an Projekt und Commit gebunden, wird beim Quellenwechsel verworfen und erzeugt keinen Schreibpfad. Module und Unterbäume sind mit Tastatur, sichtbarem Fokus, `aria-expanded` sowie deutschen Auf- und Einklappbezeichnungen bedienbar.
+Akzeptanz: Doppelte Knoten- oder Reihenfolgenkennungen, Zyklen, unbekannte Knotentypen, ungültige Eltern, Referenzen oder Aufklappzustände blockieren mit HTTP 503. Der sitzungsbezogene Zustand ist an Projekt und Release gebunden, wird beim Quellenwechsel verworfen und erzeugt keinen Schreibpfad. Module und Unterbäume sind mit Tastatur, sichtbarem Fokus, `aria-expanded` sowie deutschen Auf- und Einklappbezeichnungen bedienbar.
 
 ## Kanonische Ticketseite und Typkennzeichnung
 
