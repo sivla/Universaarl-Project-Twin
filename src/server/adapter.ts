@@ -928,7 +928,7 @@ const snapshotManifestSchema = z.object({
   producerCommitSha: z.string().regex(fullSha),
   schemaPath: z.literal('governance/schemas/project-snapshot-manifest.schema.json'),
   indexPath: z.literal('exports/project-data/v1/index.yaml'),
-  consumer: z.object({ consumerId: z.literal('project-twin'), repositoryUrl: z.literal('https://github.com/sivla/FiBu.git'), branch: z.literal('codex/universaarl-projekt-twin'), access: z.literal('nur-lesend') }).strict(),
+  consumer: z.object({ consumerId: z.literal('project-twin'), repositoryUrl: z.literal('https://github.com/sivla/Universaarl-Project-Twin.git'), branch: z.literal('codex/universaarl-projekt-twin'), access: z.literal('nur-lesend') }).strict(),
   spectraReleaseBinding: z.object({
     bindingStatus: z.literal('BOUND'), productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'),
     releaseVersion: z.string().regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),

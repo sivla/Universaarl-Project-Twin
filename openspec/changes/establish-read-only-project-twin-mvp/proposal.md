@@ -21,8 +21,8 @@ Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängen
 
 ## Nicht-Ziele
 Keine Statusänderungen oder anderen Rückschreibungen, keine erfundene Historie, keine Rekonstruktion früherer Dokumentinhalte ohne versionierte Quelle, keine eigene Abrechnung, keine Authentifizierungszustände der Quelle, Ablaufspuren, Videos, Mandantenkennungen oder Geheimnisse.
-## Vorbereitung der Repository-Trennung
+## Repository-Trennung
 
-Der bestehende technische Stand bleibt unverändert. Für die spätere Migration aus dem gemeinsam genutzten Repository sivla/FiBu.git wird ausschließlich der folgende Zielvertrag vorgemerkt: Zielrepository Universaarl-Project-Twin, Zielzweig main, Arbeitszweige codex/.... Erhalten werden die aktuelle Commit-SHA 28e9abe6f16a189ba24c6b1a328f1f5726c9ae66, der Parent f7d45dd45b2726aa64602fd74183c41586865f8f und die Tree-SHA 8743e8595841eaa75376b63ba59fd589b2192015.
+Der Projektstand wird ohne History-Rewrite aus dem gemeinsam genutzten Repository `sivla/FiBu.git` in das eigene öffentliche Repository `sivla/Universaarl-Project-Twin.git` migriert. Der Ausgangscommit `0e6f7c931a073955fd4920247f6ffc49eff6e0f4` und sein Tree `9991b193c0a50eb668ccc1d5519a47968a811e35` bleiben bytegenau in der Historie erhalten. `main` ist der stabile Standardzweig; `codex/universaarl-projekt-twin` bleibt der Arbeitszweig für den laufenden Portfolioabschluss.
 
-Der Projekt-Agent darf später ausschließlich den eigenen Arbeitszweig pushen und einen Pull Request eröffnen. Merge, Tag und Release bleiben beim externen Freigabeprozess. In diesem Auftrag werden weder Remote noch GitHub-Repository angelegt oder verändert.
+Die kanonische Kundeninstanz wird nach ihrer eigenen kontrollierten Migration unter `sivla/Universaarl-BC-Basic` erwartet. Bis dieses externe Repository tatsächlich bereitsteht, bleibt der Plattformworkflow ehrlich blockiert; der Twin fällt nicht auf `FiBu`, einen Arbeitsbaum oder eine andere Quelle zurück. Merge, Tag und Release bleiben beim externen Freigabeprozess.

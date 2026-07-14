@@ -55,4 +55,4 @@
 - [x] Projektplan mit belegten Phasen, Aufwandsfortschritt und ehrlicher Terminlücke sowie einem echten Gantt nur bei vollständigen Datumswerten browserbelegen
 - [x] Budgetdashboard mit Gesamtverbrauch, Monatsverlauf und Summen aus untergeordneten Aufgaben nach Phase und Epic ausschließlich aus Angebot und Aufgaben-Worklogs browserbelegen
 - [ ] Menschliche Freigabe und Archivierung
-- [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.
+- [x] Repository-Trennung aus `sivla/FiBu.git` in das öffentliche Repository `sivla/Universaarl-Project-Twin.git` ohne History-Rewrite ausführen, `main` als Standardzweig setzen und den Arbeitszweig `codex/universaarl-projekt-twin` erhalten; Merge, Tag und Release bleiben extern.

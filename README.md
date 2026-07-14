@@ -1,5 +1,7 @@
 # Universaarl Project Twin
 
+Kanonisches Repository: <https://github.com/sivla/Universaarl-Project-Twin>
+
 Project Twin ist eine strikt read-only arbeitende deutsche Projektansicht. Der Twin liest fachliche Daten ausschließlich aus einem validierten Snapshot-Katalog. Er scannt kein Kundenrepository, startet kein Git, schreibt nicht in die Quelle zurück und speichert keine fachlichen Payloads dauerhaft.
 
 ## Snapshot-Katalog
@@ -30,7 +32,7 @@ npm --version
 Repository klonen und Abhängigkeiten deterministisch installieren:
 
 ```sh
-git clone <OEFFENTLICHE-REPOSITORY-ADRESSE> Universaarl-Project-Twin
+git clone https://github.com/sivla/Universaarl-Project-Twin.git Universaarl-Project-Twin
 cd Universaarl-Project-Twin
 npm ci
 npm run twin:bootstrap
@@ -96,3 +98,7 @@ Die bisherigen PowerShell-Aliase bleiben als Windows-Fallback vorhanden. Der nor
 - `GET /api/projects/:projectId/resources/:resourceId/download`
 
 Andere Methoden sind nicht erlaubt. Fremde Kunden-/Projektidentitäten, unsichere Pfade, Symlinks oder Junctions, fehlende Releases, falsche Digests, unbekannte Referenzen und ein während des Lesens verändertes `current.json` blockieren fail-closed mit HTTP 503.
+
+## Mitwirken und Sicherheit
+
+Beiträge folgen [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitsrelevante Befunde werden nicht als öffentliches Issue veröffentlicht, sondern nach [SECURITY.md](SECURITY.md) vertraulich gemeldet. Das Repository enthält derzeit keinen Lizenztext; die öffentliche Lesbarkeit erteilt daher keine weitergehenden Nutzungsrechte.

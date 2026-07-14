@@ -27,7 +27,7 @@ jobs:
       - name: Freigegebenen BC-Basic-Producer auschecken
         uses: actions/checkout@v4
         with:
-          repository: sivla/FiBu
+          repository: sivla/Universaarl-BC-Basic
           ref: codex/universaarl-projekt
           path: producer
       - name: Node.js bereitstellen

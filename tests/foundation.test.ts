@@ -109,7 +109,7 @@ describe('Projektregistry', () => {
 describe('dauerhafte Blueprint-Quellenbindung', () => {
   it('bindet lokalen Geschwisterpfad, Remote, Branch und Datenvertrag an genau eine typisierte Quelle', () => {
     expect(blueprintSourceBinding).toEqual({
-      localRelativePath: '..\\Universaarl Projekt BC Basic', remoteUrl: 'https://github.com/sivla/FiBu.git', branch: 'codex/universaarl-projekt',
+      localRelativePath: '..\\Universaarl Projekt BC Basic', remoteUrl: 'https://github.com/sivla/Universaarl-BC-Basic.git', branch: 'codex/universaarl-projekt',
       manifestPath: 'exports/project-data/v1/snapshot-manifest.json', schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json', indexPath: 'exports/project-data/v1/index.yaml', expectedProjectId: 'UABC-BC-BASIC-001', producerProjectId: 'blueprint',
     });
     expect(Object.isFrozen(blueprintSourceBinding)).toBe(true);

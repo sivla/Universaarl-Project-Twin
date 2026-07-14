@@ -19,6 +19,7 @@ Dieses Projekt ist ausschließlich die lesende Visualisierung eines validierten,
 
 ## Arbeitsort und Git-Grenzen
 
+- Das kanonische Repository dieses Projekts ist `https://github.com/sivla/Universaarl-Project-Twin.git`. Die Kundeninstanz wird nach ihrer separat kontrollierten Migration unter `https://github.com/sivla/Universaarl-BC-Basic.git` erwartet.
 - Schreibarbeit für dieses Projekt erfolgt ausschließlich in `C:\Users\kkali\Documents\Universaarl-Project-Twin` auf `codex/universaarl-projekt-twin`. Diese Pfadnennung beschreibt nur die aktuelle lokale Arbeitsraumzuordnung und ist keine Laufzeitbindung.
 - Keine zusätzlichen Arbeits-Worktrees, Ausweichordner, technischen Nebencheckouts oder temporären Schreibkopien für Universaarl-Arbeit anlegen. Bereinigte commitgebundene Prüfkopien bleiben reine Wegwerf-Prüfquellen und werden nie bearbeitet.
 - Vor Beginn jeder Änderung tatsächlichen Projektpfad, Zweig, volle HEAD-SHA und `git status --short` prüfen. Lesende Git-Abfragen verwenden `GIT_OPTIONAL_LOCKS=0`.

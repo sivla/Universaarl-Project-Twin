@@ -2,7 +2,7 @@ import path from 'node:path';
 
 export type BlueprintSourceBinding = Readonly<{
   localRelativePath: '..\\Universaarl Projekt BC Basic';
-  remoteUrl: 'https://github.com/sivla/FiBu.git';
+  remoteUrl: 'https://github.com/sivla/Universaarl-BC-Basic.git';
   branch: string;
   manifestPath: 'exports/project-data/v1/snapshot-manifest.json';
   schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json';
@@ -41,7 +41,7 @@ export const officialBcBasicSnapshotAnchor = Object.freeze({
 
 export const blueprintSourceBinding: BlueprintSourceBinding = Object.freeze({
   localRelativePath: '..\\Universaarl Projekt BC Basic',
-  remoteUrl: 'https://github.com/sivla/FiBu.git',
+  remoteUrl: 'https://github.com/sivla/Universaarl-BC-Basic.git',
   branch: 'codex/universaarl-projekt',
   manifestPath: 'exports/project-data/v1/snapshot-manifest.json',
   schemaPath: 'governance/schemas/project-snapshot-manifest.schema.json',
