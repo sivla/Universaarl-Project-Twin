@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
