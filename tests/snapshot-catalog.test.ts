@@ -67,13 +67,13 @@ describe('Konfiguration des portablen Snapshot-Katalogs', () => {
 });
 
 describe.runIf(producerAvailable)('reales BC-Basic-Snapshot-Release', () => {
-  it('normalisiert Release 0004 mit Index und 158 Projektquellen ohne Git-Laufzeit', async () => {
+  it('normalisiert Release 0005 mit Index und 170 Projektquellen ohne Git-Laufzeit', async () => {
     const previousPath = process.env.PATH;
     process.env.PATH = '';
     try {
       const loaded = await loadSnapshotCatalog(entry);
-      expect(loaded.releaseId).toBe('UABC-PORTABLE-PILOT-0004');
-      expect(loaded.state.source).toMatchObject({ projectId: 'bc-basic', branch: null, commit: '83a63c0af8775001e4c7f909a46c5b227f3cce3d', dirty: false, catalog: { customerId: 'UABC-CUSTOMER-001', projectId: 'UABC-BC-BASIC-001', releaseId: 'UABC-PORTABLE-PILOT-0004', sourceType: 'filesystem', manifestDigest: 'sha256:38fcef85b101c05aee075a0692e08956a5090796aa2015affd5c687a2503daf3' } });
+      expect(loaded.releaseId).toBe('UABC-PORTABLE-PILOT-0005');
+      expect(loaded.state.source).toMatchObject({ projectId: 'bc-basic', branch: null, commit: '27d7fc19da7259705b556d03d0090c53632a68fb', dirty: false, catalog: { customerId: 'UABC-CUSTOMER-001', projectId: 'UABC-BC-BASIC-001', releaseId: 'UABC-PORTABLE-PILOT-0005', sourceType: 'filesystem', manifestDigest: 'sha256:b0202e3969958aca151121ef53338d5b489a0876250c2b5322ce0dfbbf3b7305' } });
       expect(loaded.state.source.snapshot?.spectraReleaseBinding).toMatchObject({ releaseTag: 'spectra-v1.2.0-alpha.12', tagCommit: '6b3d9a1bfaf6cd806218a802fdde8f1a4cfa55a1', installableBlueprint: true });
       expect(loaded.state.presentation?.spaces).toHaveLength(3);
       expect(loaded.state.story?.tickets.length).toBeGreaterThan(0);

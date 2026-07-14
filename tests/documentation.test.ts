@@ -62,6 +62,10 @@ describe('commitgebundene Projektdokumentation', () => {
       ],
     });
     expect(validateProjectDocumentCatalogContract(base()).documents).toHaveLength(1);
+    const withAdditionalOpenSpec = base();
+    withAdditionalOpenSpec.indexArtifacts.push({ id: 'UABC-SRC-OPENSPEC-001', kindId: 'openspec-spec', path: 'openspec/changes/onboarding/spec.md', format: 'markdown', required: true });
+    withAdditionalOpenSpec.files.push({ artifactId: 'UABC-SRC-OPENSPEC-001', path: 'openspec/changes/onboarding/spec.md', format: 'markdown', mode: '100644', sha256: 'e'.repeat(64) });
+    expect(validateProjectDocumentCatalogContract(withAdditionalOpenSpec).documents).toHaveLength(1);
     const mutations = [
       (value: ReturnType<typeof base>) => { value.catalog.documents[0].contentSha256 = 'd'.repeat(64); },
       (value: ReturnType<typeof base>) => { value.files[2].mode = '100755'; },

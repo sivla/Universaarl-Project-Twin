@@ -1702,8 +1702,7 @@ export function validateProjectDocumentCatalogContract(input: { catalog: unknown
   const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact])); const fileById = new Map(files.map((file) => [file.artifactId, file]));
   const catalogArtifact = artifactById.get('UABC-SRC-BCB-DOC-CATALOG-001'); const schemaArtifact = artifactById.get('UABC-SRC-BCB-DOC-SCHEMA-001');
   if (!catalogArtifact || catalogArtifact.kindId !== 'project-document-catalog' || catalogArtifact.path !== indexCatalog.path || catalogArtifact.format !== 'json' || !schemaArtifact || schemaArtifact.kindId !== 'project-document-catalog-schema' || schemaArtifact.path !== indexCatalog.schemaPath || schemaArtifact.format !== 'json-schema') sourceError('Katalog und Katalogschema sind nicht eindeutig positivgelistet.');
-  const markdownArtifacts = artifacts.filter((artifact) => artifact.format === 'markdown');
-  if (markdownArtifacts.length !== catalog.documents.length || files.length !== artifacts.length) sourceError('Der Index und der Dokumentkatalog besitzen keine vollstaendige identische Blobabdeckung.');
+  if (files.length !== artifacts.length) sourceError('Der Projektindex und seine positivgelisteten Quellen besitzen keine vollstaendige identische Blobabdeckung.');
   const documentIds = catalog.documents.map((document) => document.documentId); const artifactIds = catalog.documents.map((document) => document.artifactId); const paths = catalog.documents.map((document) => document.sourcePath);
   if (new Set(documentIds).size !== documentIds.length || new Set(artifactIds).size !== artifactIds.length || new Set(paths).size !== paths.length) sourceError('Der Dokumentkatalog besitzt doppelte Dokumentkennungen oder Pfade.');
   const knownDocumentIds = new Set(documentIds); const definitions = new Map(indexCatalog.definitions.map((definition) => [definition.artifactId, definition]));
