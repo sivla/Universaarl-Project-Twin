@@ -13,7 +13,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-14]
     env:
-      XDG_CONFIG_HOME: ${{ runner.temp }}/xdg
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.xdg
       UABC_PORTABLE_PRODUCER_ROOT: ${{ github.workspace }}/producer
       UABC_REQUIRE_PORTABLE_PRODUCER: '1'
     defaults:
