@@ -54,6 +54,9 @@
 - [x] Kanonische Ticketreferenzen in allen fachlichen Oberflächen und Dokumentinhalten zugänglich mit dem typgerechten Ticketdetail verknüpfen und im Browser nachweisen
 - [x] Projektplan mit belegten Phasen, Aufwandsfortschritt und ehrlicher Terminlücke sowie einem echten Gantt nur bei vollständigen Datumswerten browserbelegen
 - [x] Budgetdashboard mit Gesamtverbrauch, Monatsverlauf und Summen aus untergeordneten Aufgaben nach Phase und Epic ausschließlich aus Angebot und Aufgaben-Worklogs browserbelegen
+- [x] Maschinenlesbaren dreistufigen Readiness-Vertrag mit producerabhängigem Kunden-Go-live und offener Lizenzentscheidung validieren
+- [x] Lokalen Einzeloperator-Lebenszyklus für Katalogwechsel, Sicherung, Update-Preflight, atomare Aktivierung, Rollback und bereinigte Diagnose nachweisen
+- [x] Deutsches Betriebshandbuch und Cockpitdarstellung für Plattform-, Onboarding- und Kundenbereitschaft browsergestützt belegen
 - [ ] Menschliche Freigabe und Archivierung
 - [x] Repository-Trennung aus `sivla/FiBu.git` in das öffentliche Repository `sivla/Universaarl-Project-Twin.git` ohne History-Rewrite ausführen, `main` als Standardzweig setzen und den Arbeitszweig `codex/universaarl-projekt-twin` erhalten; Merge, Tag und Release bleiben extern.
 - [x] Portablen Snapshot-Katalog auf `UABC-PORTABLE-PILOT-0004` mit 161 gebundenen Dateien und 158 Projektquellen umstellen, `UABC-PORTABLE-PILOT-0003` ausschließlich als historische Evidence behandeln und den Rebind lokal fail-closed prüfen.

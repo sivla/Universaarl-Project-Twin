@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "universaarl-component-production-readiness",
+  "projectId": "project-twin",
+  "deploymentBoundary": "local-loopback-single-operator",
+  "assessments": {
+    "platformReady": {
+      "status": "passed",
+      "evidenceMode": "local",
+      "evidence": [
+        { "kind": "operator-guide", "path": "docs/operator-runbook.md" },
+        { "kind": "security-boundary", "path": "openspec/changes/establish-read-only-project-twin-mvp/spec.md" },
+        { "kind": "platform-matrix", "path": ".github/workflows/snapshot-catalog-onboarding.yml" }
+      ],
+      "blockers": null
+    },
+    "onboardingReady": {
+      "status": "passed",
+      "evidenceMode": "local",
+      "evidence": [
+        { "kind": "onboarding-runbook", "path": "docs/operator-runbook.md" },
+        { "kind": "recovery-proof", "path": "tests/operator-lifecycle.test.ts" },
+        { "kind": "readiness-validation", "path": "tests/operator-readiness.test.ts" }
+      ],
+      "blockers": null
+    },
+    "customerGoLiveReady": {
+      "status": "source-dependent",
+      "evidenceMode": "source",
+      "evidence": [
+        { "kind": "readiness-validation", "path": "tests/operator-readiness.test.ts" }
+      ],
+      "blockers": [
+        "Der validierte Kundensnapshot muss Go-live, Abnahme und Schreibfreigabe ausdrücklich belegen."
+      ]
+    }
+  },
+  "distribution": {
+    "status": "internal-only",
+    "licenseDecision": "pending",
+    "evidence": ["docs/operator-runbook.md"]
+  }
+}

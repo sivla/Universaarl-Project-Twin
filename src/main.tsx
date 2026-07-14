@@ -13,6 +13,7 @@ import { ArtifactViewer } from './components/ArtifactViewer';
 import { buildProjectJournal, filterJournalEvents, groupJournalEventsByDay, journalAsOf, journalEventCountSentence, journalSince, journalVisibleText, type JournalEvent, type JournalEventType, type JournalFilters, type JournalObjectType } from './project-journal';
 import { buildBudgetDashboard, type BudgetBreakdown } from './pm-dashboard';
 import { splitKnownTicketReferences } from './ticket-reference';
+import { buildOperatorReadiness } from './operator-readiness';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
@@ -498,6 +499,7 @@ function SpectraPanel({ artifacts, open }: { artifacts: Artifact[]; open: (artif
 
 function BusinessOverview({ state, context, open }: { state: ProjectState; context: ProjectContext; open: (artifact: Artifact) => void }) {
   const overview = buildCurrentOverview(state);
+  const operatorReadiness = buildOperatorReadiness(state);
   const latest = overview.latestMilestone;
   const unknown = 'Unbekannt · im aktuellen Quellvertrag nicht typisiert';
   const tickets = ticketArtifactMap(state);
@@ -506,6 +508,11 @@ function BusinessOverview({ state, context, open }: { state: ProjectState; conte
   const phaseLabel = latest?.phase ?? overview.readinessPhases.at(-1)?.phase ?? 'Noch nicht dokumentiert';
   return <section className="business-overview"><header><div><p>FACHLICHER PROJEKTÜBERBLICK</p><h2>Aktueller Projektstand</h2></div><span>Playthru-Sandbox · validierter Pilotstand</span></header>
     <div className="overview-kpis"><article><span>Aktuelle Phase</span><strong>{phaseLabel}</strong><small>letzter belegter Projektkontext</small></article><article><span>In Arbeit</span><strong>{overview.inProgressTickets.length}</strong><small>Vorgänge</small></article><article className={overview.blockedTickets.length ? 'attention' : ''}><span>Blockiert</span><strong>{overview.blockedTickets.length}</strong><small>benötigen Steuerung</small></article><article><span>Abgeschlossen</span><strong>{overview.completedTickets.length}</strong><small>Vorgänge</small></article></div>
+    <section className="operator-readiness" aria-labelledby="operator-readiness-title">
+      <header><div><p>LOKALE BETRIEBSREIFE</p><h3 id="operator-readiness-title">Drei getrennte Freigabeebenen</h3></div><span>Nur 127.0.0.1 · Einzeloperator</span></header>
+      <div>{([operatorReadiness.platformReady, operatorReadiness.onboardingReady, operatorReadiness.customerGoLiveReady] as const).map((level) => <article key={level.title} data-status={level.status}><span>{level.status === 'bereit' ? 'Bereit' : level.status === 'nicht-bereit' ? 'Nicht bereit' : 'Unbekannt'}</span><h4>{level.title}</h4><p>{level.summary}</p></article>)}</div>
+      <p className="honest-note">LAN, Mehrbenutzerbetrieb, Authentifizierung und TLS-Terminierung werden in diesem lokalen Betriebsmodell nicht unterstützt. Kunden-Go-live wird ausschließlich aus typisierten Producerdaten bewertet.</p>
+    </section>
     <div className="pm-command-grid">
       <article className="pm-command-primary"><p>AKTUELLER FOKUS</p><h3>{latest ? <>{latest.phase} · <TicketText text={latest.action} tickets={tickets} open={open} /></> : 'Aktueller Fokus noch nicht typisiert'}</h3><p>{latest ? <TicketText text={latest.result} tickets={tickets} open={open} /> : unknown}</p>{latest && <small>Stand {sourceDateTimeLabel(latest.time)} · Verantwortung nicht typisiert</small>}<div className="pm-command-links"><a href={projectUrl(context.projectId, 'planung')}>Projektplan öffnen</a><a href={projectUrl(context.projectId, 'tickets')}>Tickets öffnen</a></div></article>
       <article className={overview.blockedTickets.length ? 'pm-command-attention' : ''}><p>STEUERUNGSBEDARF</p><h3>{overview.blockedTickets.length} blockierte Vorgänge</h3>{overview.blockedTickets.length ? <ul>{overview.blockedTickets.map((ticket) => <li key={ticket.id}><TicketLink id={ticket.id} tickets={tickets} open={open} /> · {ticket.summary}<small>{ticket.statusReason?.trim() || 'Blockiergrund noch nicht dokumentiert'}</small></li>)}</ul> : <p>Keine blockierten Vorgänge belegt.</p>}<details><summary>Weitere offene Steuerungsdaten</summary><dl><dt>Risiken</dt><dd>{unknown}</dd><dt>Entscheidungen</dt><dd>{unknown}</dd><dt>Datenlücken</dt><dd>{unknown}</dd></dl></details></article>

@@ -21,6 +21,10 @@ Der Blueprint ist maßgeblich, lässt sich jedoch nur schwer als zusammenhängen
 
 ## Nicht-Ziele
 Keine Statusänderungen oder anderen Rückschreibungen, keine erfundene Historie, keine Rekonstruktion früherer Dokumentinhalte ohne versionierte Quelle, keine eigene Abrechnung, keine Authentifizierungszustände der Quelle, Ablaufspuren, Videos, Mandantenkennungen oder Geheimnisse.
+## Lokale Betriebsbereitschaft
+
+Der Twin erhält einen strikt lokalen Einzeloperator-Vertrag mit drei getrennten Reifestufen: Plattformbereitschaft, Onboardingbereitschaft und ausschließlich producerabhängige Kunden-Go-live-Bereitschaft. Katalogwechsel, Konfigurationssicherung, Update-Preflight, atomare Aktivierung, Rollback und bereinigte Diagnose bleiben außerhalb der Fachdaten und schreiben niemals in den Snapshot zurück. LAN, Mehrbenutzerzugriff, Authentifizierung und TLS-Terminierung sind nicht Bestandteil dieses lokalen Betriebsmodells. Eine öffentliche Distribution bleibt bis zur ausdrücklichen menschlichen Lizenzentscheidung offen.
+
 ## Repository-Trennung
 
 Der Projektstand wird ohne History-Rewrite aus dem gemeinsam genutzten Repository `sivla/FiBu.git` in das eigene öffentliche Repository `sivla/Universaarl-Project-Twin.git` migriert. Der Ausgangscommit `0e6f7c931a073955fd4920247f6ffc49eff6e0f4` und sein Tree `9991b193c0a50eb668ccc1d5519a47968a811e35` bleiben bytegenau in der Historie erhalten. `main` ist der stabile Standardzweig; `codex/universaarl-projekt-twin` bleibt der Arbeitszweig für den laufenden Portfolioabschluss.
