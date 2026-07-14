@@ -67,13 +67,13 @@ describe('Konfiguration des portablen Snapshot-Katalogs', () => {
 });
 
 describe.runIf(producerAvailable)('reales BC-Basic-Snapshot-Release', () => {
-  it('normalisiert Release 0003 mit Index und 158 Projektquellen ohne Git-Laufzeit', async () => {
+  it('normalisiert Release 0004 mit Index und 158 Projektquellen ohne Git-Laufzeit', async () => {
     const previousPath = process.env.PATH;
     process.env.PATH = '';
     try {
       const loaded = await loadSnapshotCatalog(entry);
-      expect(loaded.releaseId).toBe('UABC-PORTABLE-PILOT-0003');
-      expect(loaded.state.source).toMatchObject({ projectId: 'bc-basic', branch: null, commit: '8132f2ce692dfcb8e12a3a4db4a287c643a6376f', dirty: false, catalog: { customerId: 'UABC-CUSTOMER-001', projectId: 'UABC-BC-BASIC-001', releaseId: 'UABC-PORTABLE-PILOT-0003', sourceType: 'filesystem', manifestDigest: 'sha256:5710f0c5315ede59f8af1bbe6a154725a180ef9c87c6502a83f1008892eaf863' } });
+      expect(loaded.releaseId).toBe('UABC-PORTABLE-PILOT-0004');
+      expect(loaded.state.source).toMatchObject({ projectId: 'bc-basic', branch: null, commit: '83a63c0af8775001e4c7f909a46c5b227f3cce3d', dirty: false, catalog: { customerId: 'UABC-CUSTOMER-001', projectId: 'UABC-BC-BASIC-001', releaseId: 'UABC-PORTABLE-PILOT-0004', sourceType: 'filesystem', manifestDigest: 'sha256:38fcef85b101c05aee075a0692e08956a5090796aa2015affd5c687a2503daf3' } });
       expect(loaded.state.source.snapshot?.spectraReleaseBinding).toMatchObject({ releaseTag: 'spectra-v1.2.0-alpha.12', tagCommit: '6b3d9a1bfaf6cd806218a802fdde8f1a4cfa55a1', installableBlueprint: true });
       expect(loaded.state.presentation?.spaces).toHaveLength(3);
       expect(loaded.state.story?.tickets.length).toBeGreaterThan(0);
@@ -107,8 +107,11 @@ describe.runIf(producerAvailable)('reales BC-Basic-Snapshot-Release', () => {
     const source = manifest.files.find((file: { kind: string }) => file.kind === 'project-source');
     const changedIdentity = Buffer.from(`${JSON.stringify({ ...current, customerId: 'FREMDER-KUNDE' }, null, 2)}\n`);
     const changedManifestDigest = Buffer.from(`${JSON.stringify({ ...current, manifestSha256: '0'.repeat(64) }, null, 2)}\n`);
+    const changedConsumerManifest = Buffer.from(`${JSON.stringify({ ...manifest, consumer: { ...manifest.consumer, repositoryUrl: 'https://github.com/fremd/project-twin.git' } }, null, 2)}\n`);
+    const changedConsumerPointer = Buffer.from(`${JSON.stringify({ ...current, manifestSha256: sha(changedConsumerManifest) }, null, 2)}\n`);
     await expect(loadSnapshotCatalogFromTransport(entry, sourceTransport('filesystem', new Map([[pointerPath, changedIdentity]])))).rejects.toBeInstanceOf(SnapshotCatalogError);
     await expect(loadSnapshotCatalogFromTransport(entry, sourceTransport('filesystem', new Map([[pointerPath, changedManifestDigest]])))).rejects.toBeInstanceOf(SnapshotCatalogError);
+    await expect(loadSnapshotCatalogFromTransport(entry, sourceTransport('filesystem', new Map([[pointerPath, changedConsumerPointer], [current.manifestPath, changedConsumerManifest]])))).rejects.toBeInstanceOf(SnapshotCatalogError);
     await expect(loadSnapshotCatalogFromTransport(entry, sourceTransport('filesystem', new Map([[source.path, Buffer.concat([sourceBytes(source.path), Buffer.from('x')])]])))).rejects.toBeInstanceOf(SnapshotCatalogError);
     await expect(loadSnapshotCatalogFromTransport(entry, sourceTransport('filesystem', new Map([[source.path, null]])))).rejects.toBeInstanceOf(SnapshotCatalogError);
     let pointerReads = 0;

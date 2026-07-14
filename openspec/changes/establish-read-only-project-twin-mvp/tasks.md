@@ -56,3 +56,4 @@
 - [x] Budgetdashboard mit Gesamtverbrauch, Monatsverlauf und Summen aus untergeordneten Aufgaben nach Phase und Epic ausschließlich aus Angebot und Aufgaben-Worklogs browserbelegen
 - [ ] Menschliche Freigabe und Archivierung
 - [x] Repository-Trennung aus `sivla/FiBu.git` in das öffentliche Repository `sivla/Universaarl-Project-Twin.git` ohne History-Rewrite ausführen, `main` als Standardzweig setzen und den Arbeitszweig `codex/universaarl-projekt-twin` erhalten; Merge, Tag und Release bleiben extern.
+- [x] Portablen Snapshot-Katalog auf `UABC-PORTABLE-PILOT-0004` mit 161 gebundenen Dateien und 158 Projektquellen umstellen, `UABC-PORTABLE-PILOT-0003` ausschließlich als historische Evidence behandeln und den Rebind lokal fail-closed prüfen.

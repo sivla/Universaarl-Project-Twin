@@ -89,6 +89,13 @@ const manifestSchema = z.object({
   releaseId: idSchema,
   immutable: z.literal(true),
   producer: z.object({ customerId: idSchema, projectIds: z.array(idSchema).length(1), commitShaProvenance: sha40Schema }).strict(),
+  consumer: z.object({
+    consumerId: z.literal('project-twin'),
+    repositoryUrl: z.literal('https://github.com/sivla/Universaarl-Project-Twin.git'),
+    branch: z.literal('codex/universaarl-projekt-twin'),
+    access: z.literal('nur-lesend'),
+    authorizationScope: z.literal('ausschliesslich-validierte-snapshots-lesen'),
+  }).strict(),
   releaseBinding: z.object({
     bindingStatus: z.literal('BOUND_BCPROJECTOS_RELEASE'),
     pendingReason: z.null(),

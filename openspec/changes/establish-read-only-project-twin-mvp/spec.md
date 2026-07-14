@@ -46,7 +46,7 @@ Akzeptanz: Filesystem und HTTPS liefern für identische Bytes denselben Projektz
 
 Der Producer DARF die Fachprojektion nicht als Twin-spezifischen `project-state` vorkompilieren müssen. Für den Vertrag `uabc-portable-snapshot-release-v1` MUSS das Release genau den kanonischen Projektindex sowie alle dort positivgelisteten Projektquellen als unveränderte Bytes enthalten. Der Twin MUSS Pointer, Release- und Spectra-Eignung, Manifest, Projektindex, vollständige Quellenmenge, Pfadabbildung, Größen und SHA-256-Digests validieren, bevor er daraus ausschließlich im Arbeitsspeicher den Projektzustand normalisiert.
 
-Akzeptanz: `UABC-PORTABLE-PILOT-0003` aus der Kundeninstanz wird über Filesystem und denselben simulierten HTTPS-Bytevertrag identisch dargestellt. Ein fehlender Indexeintrag, eine zusätzliche oder fehlende Projektquelle, eine abweichende `sourcePath`/`path`-Abbildung, ein manipuliertes Quellbyte, eine nicht freigegebene Spectra-Bindung oder ein nicht verbraucherfähiger Pointer blockiert deterministisch. Der produktive Aufruf bleibt auch ohne verfügbares Git-Programm grün und ruft keinen Git-Befehl auf.
+Akzeptanz: `UABC-PORTABLE-PILOT-0004` aus der Kundeninstanz wird über Filesystem und denselben simulierten HTTPS-Bytevertrag identisch dargestellt. `UABC-PORTABLE-PILOT-0003` bleibt ausschließlich historische Evidence. Ein fehlender Indexeintrag, eine zusätzliche oder fehlende Projektquelle, eine abweichende `sourcePath`/`path`-Abbildung, ein manipuliertes Quellbyte, eine nicht freigegebene Spectra-Bindung oder ein nicht verbraucherfähiger Pointer blockiert deterministisch. Der produktive Aufruf bleibt auch ohne verfügbares Git-Programm grün und ruft keinen Git-Befehl auf.
 
 ## Offene Freigabe- und Archivgrenze
 
