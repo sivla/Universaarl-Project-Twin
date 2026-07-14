@@ -9,7 +9,7 @@
       "evidenceMode": "local",
       "evidence": [
         { "kind": "operator-guide", "path": "docs/operator-runbook.md" },
-        { "kind": "security-boundary", "path": "openspec/changes/establish-read-only-project-twin-mvp/spec.md" },
+        { "kind": "security-boundary", "path": "openspec/changes/archive/2026-07-14-establish-read-only-project-twin-mvp/spec.md" },
         { "kind": "platform-matrix", "path": ".github/workflows/snapshot-catalog-onboarding.yml" }
       ],
       "blockers": null

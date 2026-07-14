@@ -1,4 +1,4 @@
 schema: project-twin-change
-activeChange: establish-read-only-project-twin-mvp
+activeChange: null
 authority: software-delivery-only
 sourceContract: stable-UABC-identifiers-read-only
