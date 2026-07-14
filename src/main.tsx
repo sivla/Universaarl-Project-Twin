@@ -14,6 +14,7 @@ import { buildProjectJournal, filterJournalEvents, groupJournalEventsByDay, jour
 import { buildBudgetDashboard, type BudgetBreakdown } from './pm-dashboard';
 import { splitKnownTicketReferences } from './ticket-reference';
 import { buildOperatorReadiness } from './operator-readiness';
+import { buildGapMatrix, type GapMatrixStatus } from './gap-matrix';
 import './styles.css';
 import './theme/responsive.css';
 import './theme/contrast.css';
@@ -526,6 +527,12 @@ function BusinessOverview({ state, context, open }: { state: ProjectState; conte
   </section>;
 }
 
+function GapMatrix({ state }: { state: ProjectState }) {
+  const rows = buildGapMatrix(state);
+  const label: Record<GapMatrixStatus, string> = { belegt: 'Belegt', 'teilweise belegt': 'Teilweise belegt', 'nicht belegt': 'Nicht belegt' };
+  return <section className="gap-matrix" aria-labelledby="gap-matrix-title"><header><div><p>QUELLTREUE STEUERUNGSSICHT</p><h2 id="gap-matrix-title">Gap-Matrix bis zur finalen Übergabe</h2></div><span>{rows.filter((row) => row.status === 'belegt').length}/{rows.length} Bereiche vollständig belegt</span></header><p className="honest-note">Die Matrix wertet nur typisierte Felder des validierten Snapshots aus. „Teilweise belegt“ und „Nicht belegt“ sind Producerbedarf; der Twin ergänzt keine Ersatzdaten.</p><div className="gap-matrix-table" role="table" aria-label="Gap-Matrix"><div className="gap-matrix-row gap-matrix-head" role="row"><span>Bereich</span><span>Status</span><span>Beleg und nächster Nachweis</span></div>{rows.map((row) => <article className="gap-matrix-row" role="row" key={row.id}><strong>{row.area}</strong><span className={`gap-status gap-status-${row.status.replaceAll(' ', '-')}`}><i aria-hidden="true" />{label[row.status]}</span><div><p>{row.evidence}</p><small>Nächster Nachweis: {row.next}</small></div></article>)}</div><p className="honest-note">Der aktuelle Pilotstand bleibt ein Zwischenstand: synthetisch beziehungsweise vorbereitet belegte Inhalte sind nicht als produktiver BC-Basic-Abschluss freigegeben.</p></section>;
+}
+
 function SetupWaveOverview({ state }: { state: ProjectState }) {
   const setup = state.setupWave;
   if (!setup) return null;
@@ -553,6 +560,7 @@ function Current({ state, context, open }: { state: ProjectState; context: Proje
   return <>
     <section className="snapshot-intro"><div><p>PROJEKTCOCKPIT</p><h2>{context.projectName}</h2><span className="simulation-badge">Playthru-Sandbox · validierter Pilotstand</span><p>{setupState ? 'Standard-CRONUS-Ausgangsbasis; Pilotaufbau, Zielentscheidung und belastbarer Readback stehen noch aus.' : 'Der validierte Projektstand wird ausschließlich aus dem gebundenen Producercommit gelesen.'}</p>{state.source.channel?.notice && <p className="honest-note">{state.source.channel.notice}</p>}</div><dl><dt>Projektstatus</dt><dd>{state.story?.status ? displayStatus(state.story.status) : 'Unbekannt'}</dd><dt>Aktuelle Phase</dt><dd>{currentPhase ? `${currentPhase.id} · ${currentPhase.summary}` : 'Noch nicht dokumentiert'}</dd><dt>Nächstes Gate</dt><dd>{state.setupWave?.writeGate.nextAllowedStep ?? 'Noch nicht dokumentiert'}</dd><dt>Verantwortung</dt><dd>{responsibleRole ?? 'Noch nicht dokumentiert'}</dd><dt>Snapshotstand</dt><dd>{state.source.channel?.status === 'stale' ? 'Veraltet · letzter gültiger Stand' : `Validiert · ${new Date(state.source.channel?.lastValidatedAt ?? state.source.readAt).toLocaleString('de-DE')}`}</dd></dl></section>
     <BusinessOverview state={state} context={context} open={open} />
+    <GapMatrix state={state} />
     <SetupWaveOverview state={state} />
     <DocumentCards title="Aktueller W0-01-Nur-Lese-Versuch" artifacts={readbackAttempt} open={open} emptyText="Kein aktueller W0-01-Readbackversuch belegt." />
     <DocumentCards title="Neueste validierte Umsetzungsevidence" artifacts={executionEvidence} open={open} emptyText="Keine gesonderte Umsetzungsevidence belegt." />
