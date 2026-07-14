@@ -1987,6 +1987,32 @@ function requiredSource(sources: readonly IndexedProjectSource[], kindId: string
   return matches[0];
 }
 
+const coreFinanceTruthBoundarySchema = z.object({
+  bcReadbackAuthority: z.literal(false), customerTargetRealized: z.literal(false), pilotConfigured: z.literal(false), writesApplied: z.literal(false), writesAuthorized: z.literal(false), packageApplied: z.literal(false), customerAccepted: z.literal(false),
+  liveEvidence: z.object({ tables: z.literal(0), records: z.literal(0), errors: z.literal(0) }).strict(),
+}).strict();
+
+const coreFinanceControlTotalsSchema = z.object({
+  packageTableCount: z.literal(19), packageRecordCount: z.literal(51), manualTableCount: z.literal(7), manualRecordCount: z.literal(18), totalTableCount: z.literal(26), totalRecordCount: z.literal(69),
+  accountRoleCount: z.literal(11), dimensionCount: z.literal(2), dimensionValueCount: z.literal(5), numberSeriesCount: z.literal(9), numberSeriesLineCount: z.literal(9), paymentTermsCount: z.literal(2), realBankIdentifierCount: z.literal(0),
+}).strict();
+
+const coreFinanceTaxAssumptionSchema = z.object({ jurisdiction: z.literal('DE'), standardVatPercent: z.literal(19), truthClass: z.literal('synthetic-project-assumption'), confirmationStatus: z.literal('open'), confirmationRequiredBeforeApply: z.literal(true), legalOrTaxAdviceClaimed: z.literal(false) }).strict();
+
+const coreFinancePayloadContractSchema = z.object({
+  packageId: z.literal('UABC-01-CORE-FINANCE'), status: z.literal('prepared-for-controlled-live-run'), truthBoundary: coreFinanceTruthBoundarySchema,
+  gates: z.object({ status: z.literal('blocked-before-dom-readback') }).passthrough(), taxAssumption: coreFinanceTaxAssumptionSchema, controlTotals: coreFinanceControlTotalsSchema,
+  preparationWorklog: z.object({ taskId: z.literal('UABC-40'), hours: z.literal(2), billable: z.literal(true), netAmount: z.literal(240) }).passthrough(),
+}).passthrough();
+
+const coreFinanceManifestContractSchema = z.object({
+  packageId: z.literal('UABC-01-CORE-FINANCE'), status: z.literal('prepared-for-controlled-live-run'),
+  payload: z.object({ path: z.literal('project/bc-basic/core-finance-payload.yaml'), schemaPath: z.literal('governance/schemas/core-finance-payload.schema.json'), digestAlgorithm: z.literal('SHA-256'), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  truthBoundary: coreFinanceTruthBoundarySchema, gates: z.object({ status: z.literal('blocked-before-dom-readback') }).passthrough(), taxAssumption: coreFinanceTaxAssumptionSchema,
+  controlTotals: coreFinanceControlTotalsSchema, controlDigests: z.object({ accountRolesSha256: z.string().regex(/^[a-f0-9]{64}$/), financeReferencesSha256: z.string().regex(/^[a-f0-9]{64}$/), allRecordReferencesSha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  worklogBinding: z.object({ ticketId: z.literal('UABC-40'), worklogId: z.string().min(1).max(200), hours: z.literal(2), netAmount: z.literal(240) }).strict(),
+}).passthrough();
+
 export function validateSetupWaveProjectionContract(input: { projection: unknown; schemaDocument: unknown }): SetupWaveProjection {
   const projection = schema(input.projection, setupWaveProjectionSchema);
   if (!input.schemaDocument || typeof input.schemaDocument !== 'object' || Array.isArray(input.schemaDocument)) sourceError('Das Setup-Wave-1-Schema ist kein gültiges JSON-Schemaobjekt.');
@@ -2002,16 +2028,46 @@ export function validateSetupWaveProjectionContract(input: { projection: unknown
   return projection;
 }
 
+export function validateCoreFinancePreparationContract(input: { setupWave: SetupWaveProjection; payload: unknown; payloadBytes: Buffer; payloadSchema: unknown; manifest: unknown }) {
+  if (!input.payloadSchema || typeof input.payloadSchema !== 'object' || Array.isArray(input.payloadSchema)) sourceError('Das CORE-FINANCE-Schema ist kein gültiges JSON-Schemaobjekt.');
+  try {
+    const validate = new Ajv2020({ strict: true, allErrors: true }).compile(input.payloadSchema as Record<string, unknown>);
+    if (!validate(input.payload)) sourceError('Der CORE-FINANCE-Payload verletzt sein versioniertes JSON-Schema.');
+  } catch (error) {
+    if (error instanceof AdapterSourceError) throw error;
+    sourceError('Das CORE-FINANCE-Schema kann nicht sicher kompiliert werden.');
+  }
+  const payload = schema(input.payload, coreFinancePayloadContractSchema);
+  const manifest = schema(input.manifest, coreFinanceManifestContractSchema);
+  const preparation = input.setupWave.coreFinancePreparation;
+  const actualPayloadDigest = hash(input.payloadBytes);
+  if (preparation.payloadDigest !== actualPayloadDigest || manifest.payload.digest !== actualPayloadDigest) sourceError('Der CORE-FINANCE-Payload-Digest stimmt nicht mit Projektion, Manifest und Git-Blob überein.');
+  if (preparation.financeReferenceDigest !== manifest.controlDigests.financeReferencesSha256) sourceError('Der CORE-FINANCE-Referenzdigest ist widersprüchlich.');
+  const projectedTotals = { packageTableCount: preparation.packageTableCount, packageRecordCount: preparation.packageRecordCount, manualTableCount: preparation.manualTableCount, manualRecordCount: preparation.manualRecordCount, accountRoleCount: preparation.accountRoleCount, dimensionCount: preparation.dimensionCount, dimensionValueCount: preparation.dimensionValueCount, numberSeriesCount: preparation.numberSeriesCount, numberSeriesLineCount: preparation.numberSeriesLineCount, paymentTermsCount: preparation.paymentTermsCount, realBankIdentifierCount: preparation.realBankIdentifierCount };
+  const payloadTotals = { packageTableCount: payload.controlTotals.packageTableCount, packageRecordCount: payload.controlTotals.packageRecordCount, manualTableCount: payload.controlTotals.manualTableCount, manualRecordCount: payload.controlTotals.manualRecordCount, accountRoleCount: payload.controlTotals.accountRoleCount, dimensionCount: payload.controlTotals.dimensionCount, dimensionValueCount: payload.controlTotals.dimensionValueCount, numberSeriesCount: payload.controlTotals.numberSeriesCount, numberSeriesLineCount: payload.controlTotals.numberSeriesLineCount, paymentTermsCount: payload.controlTotals.paymentTermsCount, realBankIdentifierCount: payload.controlTotals.realBankIdentifierCount };
+  const manifestTotals = { packageTableCount: manifest.controlTotals.packageTableCount, packageRecordCount: manifest.controlTotals.packageRecordCount, manualTableCount: manifest.controlTotals.manualTableCount, manualRecordCount: manifest.controlTotals.manualRecordCount, accountRoleCount: manifest.controlTotals.accountRoleCount, dimensionCount: manifest.controlTotals.dimensionCount, dimensionValueCount: manifest.controlTotals.dimensionValueCount, numberSeriesCount: manifest.controlTotals.numberSeriesCount, numberSeriesLineCount: manifest.controlTotals.numberSeriesLineCount, paymentTermsCount: manifest.controlTotals.paymentTermsCount, realBankIdentifierCount: manifest.controlTotals.realBankIdentifierCount };
+  if (JSON.stringify(projectedTotals) !== JSON.stringify(payloadTotals) || JSON.stringify(projectedTotals) !== JSON.stringify(manifestTotals)) sourceError('Die CORE-FINANCE-Kontrollsummen widersprechen sich.');
+  const packageState = input.setupWave.packages.find((item) => item.packageId === preparation.packageId);
+  if (!packageState || packageState.status !== preparation.status || packageState.tables !== 0 || packageState.records !== 0 || packageState.errors !== 0 || payload.preparationWorklog.taskId !== manifest.worklogBinding.ticketId || payload.preparationWorklog.hours !== manifest.worklogBinding.hours || payload.preparationWorklog.netAmount !== manifest.worklogBinding.netAmount) sourceError('CORE-FINANCE-Vorbereitung, Real-Evidence oder Arbeitsnachweis sind widersprüchlich.');
+  return input.setupWave;
+}
+
 const blockedReadbackValueSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), value: z.null(), page: z.null(), screenshotPath: z.null() }).strict();
 const blockedReadbackValuesSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), values: z.null(), page: z.null(), screenshotPath: z.null() }).strict();
 const blockedReadbackIndicatorsSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), indicators: z.array(z.never()).length(0), page: z.null(), screenshotPath: z.null() }).strict();
 const blockedReadbackCompaniesSchema = z.object({ status: z.literal('nicht-aus-bc-ui-gelesen'), companies: z.array(z.never()).length(0), page: z.null(), screenshotPath: z.null() }).strict();
 const sourceTimestamp = z.string().min(1).max(120).refine((value) => !Number.isNaN(Date.parse(value)));
+const blockedReadbackAttemptItemSchema = z.object({
+  attemptId: z.enum(['UABC-W0-01-ATTEMPT-001', 'UABC-W0-01-ATTEMPT-002']), recordedAt: sourceTimestamp, tabLastOpenedAt: sourceTimestamp, accessPolicy: z.string().min(1).max(160), status: z.literal('blocked-before-dom-readback'),
+  domReadPerformed: z.literal(false), screenshotPerformed: z.literal(false), bcFieldValuesRead: z.literal(false), authenticationStateRead: z.literal(false), writesPerformed: z.literal(false),
+}).strict();
+const blockedReadbackWorklogSchema = z.object({ id: technicalId, taskId: z.literal('UABC-39'), date: sourceDateSchema, role: z.string().min(1).max(160), actorRef: technicalId, actorType: z.literal('human'), actionRole: z.string().min(1).max(200), hours: z.literal(0.25), activity: z.string().min(1).max(2_000), phase: z.literal('P2'), billable: z.literal(true), hourlyRate: z.literal(120), netAmount: z.literal(30) }).strict();
 const currentReadOnlyAttemptSchema = z.object({
   schemaVersion: z.literal(1), evidenceId: technicalId, stepId: z.literal('W0-01-read-company-identity'), classification: z.literal('current-read-only-attempt'), authorityScope: z.literal('browser-access-attempt-only'), currentAuthority: z.literal(true), bcReadbackAuthority: z.literal(false), status: z.literal('blocked-before-dom-readback'),
+  attemptCount: z.literal(2), latestAttemptId: z.literal('UABC-W0-01-ATTEMPT-002'),
   time: z.object({ exactBrowserAttemptStartCaptured: z.literal(false), visibleTabLastOpenedAt: sourceTimestamp, firstPersistentlyCapturedLocalTime: sourceTimestamp, recordedAt: sourceTimestamp, note: z.string().min(1).max(1_000) }).strict(),
   responsibility: z.object({ operationActorRef: technicalId, operationActorType: z.literal('browser-automation'), operationRole: z.string().min(1).max(200), accountableActorRef: technicalId, accountableRole: z.string().min(1).max(200) }).strict(),
-  worklog: z.object({ id: technicalId, taskId: z.literal('UABC-39'), date: sourceDateSchema, role: z.string().min(1).max(160), actorRef: technicalId, actorType: z.literal('human'), actionRole: z.string().min(1).max(200), hours: z.literal(0.25), activity: z.string().min(1).max(2_000), phase: z.literal('P2'), billable: z.literal(true), hourlyRate: z.literal(120), netAmount: z.literal(30) }).strict(),
+  attempts: z.array(blockedReadbackAttemptItemSchema).length(2), worklogs: z.array(blockedReadbackWorklogSchema).length(2),
   visibleTabMetadata: z.object({ title: z.string().min(1).max(160), sanitizedUrl: z.string().min(1).max(500).refine((value) => value.startsWith('https://')), environmentParameter: z.string().min(1).max(120), companyParameter: technicalId, truthBoundary: z.string().min(1).max(1_000) }).strict(),
   userProvidedProjectInformation: z.object({ truthClass: z.literal('user-provided-project-information'), selectedTechnicalCompanyName: technicalId, contentBaseline: z.literal('standard-cronus-demo'), customerTargetRealized: z.literal(false), originMechanismStatus: z.literal('unbekannt-bis-wave0-readback'), copyRenameHypothesis: z.literal('nutzerhinweis-unbestaetigt'), pilotConfigured: z.literal(false), writesApplied: z.literal(false), browserReadbackConfirmed: z.literal(false), boundary: z.string().min(1).max(1_000) }).strict(),
   accessResult: z.object({ policy: z.string().min(1).max(160), blockedBeforeDomRead: z.literal(true), blockedBeforeScreenshot: z.literal(true), blockedBeforeBcFieldRead: z.literal(true), authenticationStateRead: z.literal(false), domReadPerformed: z.literal(false), screenshotPerformed: z.literal(false), screenshots: z.array(z.never()).length(0) }).strict(),
@@ -2022,7 +2078,9 @@ const currentReadOnlyAttemptSchema = z.object({
 }).strict();
 
 export function validateWave0ReadbackAttemptContract(value: unknown) {
-  return schema(value, currentReadOnlyAttemptSchema);
+  const attempt = schema(value, currentReadOnlyAttemptSchema);
+  if (attempt.attempts.map((item) => item.attemptId).join(',') !== 'UABC-W0-01-ATTEMPT-001,UABC-W0-01-ATTEMPT-002' || attempt.latestAttemptId !== attempt.attempts.at(-1)?.attemptId || new Set(attempt.attempts.map((item) => item.attemptId)).size !== 2 || new Set(attempt.worklogs.map((item) => item.id)).size !== 2) sourceError('Die W0-01-Versuchshistorie ist nicht eindeutig.');
+  return attempt;
 }
 
 type CurrentSetupEvidenceArtifact = Pick<Artifact, 'id' | 'sourceType' | 'sourcePath' | 'status' | 'classification' | 'currentAuthority' | 'currentRollupContribution'>;
@@ -2046,7 +2104,11 @@ function setupWaveProjection(reader: CommitBlobReader, sources: readonly Indexed
   const schemaSources = sources.filter((source) => source.declaration.kindId === 'setup-wave-1-projection-schema');
   if (!projectionSources.length && !schemaSources.length) return null;
   if (projectionSources.length !== 1 || schemaSources.length !== 1) sourceError('Setup-Wave-1-Projektion und Schema müssen eindeutig positivgelistet sein.');
-  return validateSetupWaveProjectionContract({ projection: reader.json(projectionSources[0].declaration.path), schemaDocument: reader.json(schemaSources[0].declaration.path) });
+  const setupWave = validateSetupWaveProjectionContract({ projection: reader.json(projectionSources[0].declaration.path), schemaDocument: reader.json(schemaSources[0].declaration.path) });
+  const payloadSource = requiredSource(sources, 'core-finance-payload');
+  const manifestSource = requiredSource(sources, 'core-finance-package-manifest');
+  const payloadSchemaSource = requiredSource(sources, 'core-finance-payload-schema');
+  return validateCoreFinancePreparationContract({ setupWave, payload: selectedYaml(reader, payloadSource), payloadBytes: reader.blob(payloadSource.declaration.path), payloadSchema: reader.json(payloadSchemaSource.declaration.path), manifest: selectedYaml(reader, manifestSource) });
 }
 
 export function validateSpectra09ContractData(input: { release: unknown; conformance: unknown; reconciliation: unknown; provenance: unknown; exportMap: unknown; indexArtifacts: unknown; indexHash: string; projectionHash: string; catalogExtendedIndex?: boolean }) {
@@ -2280,8 +2342,8 @@ function indexedArtifacts(index: ProjectDataIndex, reader: CommitBlobReader, sou
       add({ id: declaration.id, kind: 'evidence', title: 'W0-01 · Firmenidentität nicht aus BC gelesen', status: attempt.status, phase: null, wave: 'W0', workstream: 'BC-Pilot',
         rationale: 'Der nur-lesende Versuch wurde vor DOM, Screenshot und BC-Feldreadback blockiert. Browsername und URL-Parameter sind ausdrücklich kein Nachweis für interne Company-ID, Firmendaten, Country/Region oder CRONUS-Inhalte.',
         activity: ['BC-Readback-Autorität: Nein.', 'Interne Company-ID, Firmendaten, Country/Region, CRONUS-Feldindizien und Gesellschaftsliste: nicht gelesen.', 'Screenshot und Authentifizierungszustand: nicht gelesen.', 'BC-Writes: nicht ausgeführt.', 'W0-01 bleibt der nächste nur-lesende Schritt.'],
-        ticketRefs: [attempt.worklog.taskId], owner: attempt.responsibility.accountableRole, classification: attempt.classification, currentAuthority: attempt.currentAuthority, currentRollupContribution: true,
-        sourceType: declaration.kindId, documentType: declaration.kindId, startDate: attempt.worklog.date, sourcePath: declaration.path });
+        ticketRefs: [attempt.worklogs[0].taskId], owner: attempt.responsibility.accountableRole, classification: attempt.classification, currentAuthority: attempt.currentAuthority, currentRollupContribution: true,
+        sourceType: declaration.kindId, documentType: declaration.kindId, startDate: attempt.worklogs[0].date, sourcePath: declaration.path });
       continue;
     }
     if (declaration.kindId === 'country-company-information-execution-evidence') {

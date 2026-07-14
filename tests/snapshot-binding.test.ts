@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { blueprintSourceBinding, snapshotSourceBinding } from '../src/projects/blueprint-source';
 import { createProjectRegistry, productionRegistry, type ProjectSourceBinding } from '../src/projects/registry';
 import { AdapterSourceError, createTwinState, resolveEvidenceId, evidenceReadStable } from '../src/server/adapter';
-import { dispatchProjectApi } from '../src/server/api';
+import { dispatchProjectApi } from '../src/server/legacy-git-api';
 
 const environment = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');

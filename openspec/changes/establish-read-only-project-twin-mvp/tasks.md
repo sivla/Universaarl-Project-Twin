@@ -25,6 +25,14 @@
 - [x] Laufenden Producerbranch ohne feste Runtime-SHA einmalig auflösen, Kandidaten atomar validieren und den letzten gültigen Stand bei ungültiger Aktualisierung sichtbar halten
 - [x] Finalen Drei-Space-Delivery-Commit mit 121 Artefakten, 43 Dokumenten, 28 Confluence-Seiten, 6/8/8 Hauptseiten, sechs Unterseiten und Jira commitgebunden integrieren und real browserbelegen
 - [x] Idempotenten lokalen Starter mit Health-, Status-, eigentumsgebundenem Stop- und Neustartnachweis für Port 4173 bereitstellen
+- [x] Plattformneutralen npm-ci-Bootstrap, Doctor sowie Node-basierten Start/Status/Stop mit Windows-Nachweis und offen ausgewiesenem macOS-Runnergate bereitstellen
+- [x] Snapshot-Katalog mit identischem Filesystem-/HTTPS-Bytevertrag, unveränderlichen Releases und fail-closed Identitäts-/Digestprüfung als einzigen produktiven Ladepfad nachweisen
+- [x] Produktiven Vite-, API- und Praesentations-Importgraph vom Legacy-Git-Adapter trennen und ohne Repository- oder Arbeitsbaum-Fallback negativ pruefen
+- [x] Extern gespeicherte XDG-Konfiguration, Configure-Befehl und expliziten Kunden-/Projektwechsel ohne Secrets nachweisen
+- [x] Zwei synthetische Kundenfixtures einschließlich Cross-Customer-Leakage, Traversal, Symlink/Junction, Pointerwechsel, No-Writes und fehlendem Git-Fallback negativ prüfen
+- [ ] macOS-Evidence als bereinigtes JSON erzeugen; ohne echten macOS-Runner bleibt das Gate ausdrücklich offen
+- [ ] GitHub-Actions-Matrix auf `windows-latest` und `macos-14` real ausführen; lokale Browser-Evidence bleibt bis dahin `PENDING_PLATFORM_BROWSER_EVIDENCE`
+- [x] Kanonische Phase-Tickets als Projektplan in Projektverlauf und Planung anzeigen und gegen einen erreichbaren validierten Runtimekatalog im Browser nachweisen
 - [x] Ticketübersicht und Ticketdetail ohne Geldbeträge sowie mit vollständigen belegten Jira-Feldern browsergestützt nachweisen
 - [x] Ticket-Hierarchie Phase → Epic → Story/Fehler → Aufgabe, typgerechte Details, eindeutige Suche und ehrliche Actor-/Rollenanzeige browsergestützt nachweisen
 - [x] Aktuellen Stand mit Referenzsimulationsstatus, typisiertem Readiness-Blick und ehrlichen Unknown-Zuständen ohne Rohartefaktzählung browsergestützt nachweisen
@@ -38,5 +46,10 @@
 - [x] Autoritätsgebundene Company-/Setup-Ausführungsevidence gegen den korrigierten Producerstand fail-closed prüfen und aktuelle Karten, Rollups sowie Tagebuch browserbelegen
 - [x] W0-01-Readbackversuch aus dem 139-Artefakte-Snapshot strikt validieren, ohne BC-Feldbeobachtung anzeigen und in Projektstand, Ticket, Tagebuch, Dokumentation sowie Budget browserbelegen
 - [x] Producerstand `8f50573bc6105991a74363d6e3ed672abc0eaeef` mit unbestätigtem Kopie-/Umbenennungshinweis, unbekanntem Entstehungsweg und nicht realisiertem Kundenziel commitgebunden integrieren und repräsentativ browserbelegen
+- [ ] CORE-FINANCE-Vorbereitung aus dem 145-Artefakte-Snapshot commit- und digestgebunden integrieren, Ausführungs- und Abnahmebehauptungen fail-closed blockieren und repräsentativ browserbelegen
+- [x] Alle primären Oberflächen aus PM-Sicht nach ihrer konkreten Steuerungsfrage ordnen, die gute Ticket- und Dokumentationsführung bewahren und doppelte Arbeitsansichten nachrangig machen
+- [x] Kanonische Ticketreferenzen in allen fachlichen Oberflächen und Dokumentinhalten zugänglich mit dem typgerechten Ticketdetail verknüpfen und im Browser nachweisen
+- [x] Projektplan mit belegten Phasen, Aufwandsfortschritt und ehrlicher Terminlücke sowie einem echten Gantt nur bei vollständigen Datumswerten browserbelegen
+- [x] Budgetdashboard mit Gesamtverbrauch, Monatsverlauf und Summen aus untergeordneten Aufgaben nach Phase und Epic ausschließlich aus Angebot und Aufgaben-Worklogs browserbelegen
 - [ ] Menschliche Freigabe und Archivierung
 - [ ] Repository-Trennung aus sivla/FiBu.git in Universaarl-Project-Twin extern freigeben und anschließend ausschließlich auf einem eigenen codex/...-Arbeitszweig vorbereiten; Zielzweig ist main, Merge, Tag und Release bleiben extern.

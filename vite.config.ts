@@ -1,15 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import { blueprintSourceBinding, resolveBlueprintSourceRoot } from './src/projects/blueprint-source';
-import { productionRegistry } from './src/projects/registry';
+import { validatePresentationContract } from './src/server/presentation-validator';
+import path from 'node:path';
 import { dispatchProjectApi } from './src/server/api';
-import { execFileSync } from 'node:child_process';
-import { validatePresentationContract } from './src/server/adapter';
-import { createValidatedBranchChannel } from './src/server/branch-channel';
+import { loadConfiguredCatalogs, parseCatalogConfiguration, readCatalogConfiguration } from './src/server/snapshot-catalog';
 import { artifactViewerFixtureResources, presentationFixtureContext, presentationFixtureState, presentationFixtureVariant, type PresentationFixtureVariant } from './src/testing/presentation-fixture';
 
 export default defineConfig(({ mode }) => {
   return {
+    envDir: false,
     plugins: [react(), {
       name: 'uabc-project-scoped-read-only-api',
       async configureServer(server) {
@@ -40,56 +39,38 @@ export default defineConfig(({ mode }) => {
           });
           return;
         }
-        const sourceRepo = process.env.UABC_SOURCE_REPO;
-        const sourceRoot = resolveBlueprintSourceRoot(process.cwd(), sourceRepo);
-        process.env.UABC_BRANCH_COMMIT_CONTRACT = '1';
-        const stableBranch = (process.env.UABC_STABLE_BRANCH || blueprintSourceBinding.branch).trim();
-        const integrationCommit = process.env.UABC_INTEGRATION_COMMIT?.trim();
-        const integrationTree = process.env.UABC_INTEGRATION_TREE?.trim();
-        const integrationMode = Boolean(integrationCommit || integrationTree);
-        if (integrationMode && (!integrationCommit || !integrationTree || !/^[a-f0-9]{40}$/.test(integrationCommit) || !/^[a-f0-9]{40}$/.test(integrationTree))) throw new Error('Der temporäre Integrationskandidat ist unvollständig oder ungültig.');
-        const git = (args: string[]) => execFileSync('git', ['-c', `safe.directory=${sourceRoot}`, '-C', sourceRoot, ...args], { encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } }).trim();
-        const validateRegistry = async (commit: string, tree: string, branch: string, branchTipRequired: boolean) => {
-          const candidate = productionRegistry(sourceRoot, commit, tree, branch, branchTipRequired);
-          const validation = await dispatchProjectApi('GET', '/api/projects/bc-basic/state', candidate);
-          if (validation.status !== 200) throw new Error('Der Kandidat des Freigabekanals verletzt den commitgebundenen Quellvertrag.');
-          return productionRegistry(sourceRoot, commit, tree, branch, false);
-        };
-        if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(stableBranch) || stableBranch.includes('..') || stableBranch.includes('//')) throw new Error('Der konfigurierte Freigabebranch ist ungültig.');
-        const branchChannel = createValidatedBranchChannel({
-          branch: stableBranch,
-          resolveCandidate: () => {
-            const branchCommit = git(['rev-parse', '--verify', `refs/heads/${stableBranch}^{commit}`]);
-            const commit = integrationMode ? integrationCommit! : branchCommit;
-            if (integrationMode && branchCommit !== commit) throw new Error('Der Delivery-Branch verweist nicht auf den erwarteten Integrationskandidaten.');
-            const tree = git(['rev-parse', '--verify', `${commit}^{tree}`]);
-            if (integrationMode && tree !== integrationTree) throw new Error('Der Integrationskandidat besitzt nicht den erwarteten Tree.');
-            return { commit, tree };
-          },
-          validateCandidate: ({ commit, tree }, branch) => validateRegistry(commit, tree, integrationMode ? blueprintSourceBinding.branch : branch, !integrationMode),
-        });
-        await branchChannel.refresh().catch(() => undefined);
+        const configuredJson = process.env.UNIVERSAARL_TWIN_CONFIG_JSON;
+        const configuredPath = process.env.UNIVERSAARL_TWIN_CONFIG;
+        if (!configuredJson && !configuredPath) throw new Error('Die lokale Snapshot-Katalogkonfiguration fehlt.');
+        const configuration = configuredJson ? parseCatalogConfiguration(JSON.parse(configuredJson)) : readCatalogConfiguration(path.resolve(configuredPath!));
+        let catalogs = await loadConfiguredCatalogs(configuration);
         server.middlewares.use(async (req, res, next) => {
           try {
             const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
             if (!pathname.startsWith('/api/')) return next();
-            const active = await branchChannel.refresh();
             if (pathname === '/api/health') {
               res.statusCode = 200;
               res.setHeader('Cache-Control', 'no-store');
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               res.setHeader('X-Universaarl-Service', 'project-twin');
-              res.end(JSON.stringify({ application: 'project-twin', status: 'bereit', channel: active.channel }));
+              res.end(JSON.stringify({ application: 'project-twin', status: 'bereit', source: 'snapshot-catalog', instanceId: process.env.UABC_TWIN_INSTANCE_ID ?? null, pid: process.pid }));
               return;
             }
-            const result = await dispatchProjectApi(req.method || 'GET', pathname, active.value);
-            if (result.status === 200 && pathname.endsWith('/state') && result.body && typeof result.body === 'object' && 'source' in result.body) {
-              const body = result.body as { source?: Record<string, unknown> };
-              if (body.source) body.source.channel = active.channel;
+            if ((req.method || 'GET') !== 'GET') { res.statusCode = 405; res.end('{"code":"METHODE_NICHT_ERLAUBT"}'); return; }
+            catalogs = await loadConfiguredCatalogs(configuration);
+            res.setHeader('Cache-Control', 'no-store');
+            const result = dispatchProjectApi(req.method || 'GET', pathname, catalogs);
+            res.statusCode = result.status;
+            if (result.binary) {
+              res.setHeader('Content-Type', result.binary.contentType);
+              res.setHeader('Content-Length', result.binary.bytes.length);
+              res.setHeader('X-Content-Type-Options', 'nosniff');
+              if (result.binary.disposition === 'attachment' && result.binary.fileName) res.setHeader('Content-Disposition', `attachment; filename="${result.binary.fileName}"`);
+              res.end(result.binary.bytes);
+            } else {
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              res.end(JSON.stringify(result.body));
             }
-            res.statusCode = result.status; res.setHeader('Cache-Control', 'no-store');
-            if (result.binary) { res.setHeader('Content-Type', result.binary.contentType); res.setHeader('Content-Length', result.binary.bytes.length); res.setHeader('X-Content-Type-Options', 'nosniff'); if ('disposition' in result.binary) res.setHeader('Content-Disposition', `${result.binary.disposition}; filename="${result.binary.fileName}"`); res.end(result.binary.bytes); return; }
-            res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(result.body));
           } catch {
             if (!(req.url || '').startsWith('/api/')) return next();
             res.statusCode = 503; res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end('{"code":"SNAPSHOT_VERTRAG_BLOCKIERT"}');

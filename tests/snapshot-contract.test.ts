@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { blueprintSourceBinding, snapshotSourceBinding } from '../src/projects/blueprint-source';
 import { productionRegistry } from '../src/projects/registry';
-import { dispatchProjectApi } from '../src/server/api';
+import { dispatchProjectApi } from '../src/server/legacy-git-api';
 import { AdapterSourceError, createTwinState, resolveEvidenceId } from '../src/server/adapter';
 
 const environment = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' };

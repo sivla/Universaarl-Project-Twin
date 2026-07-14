@@ -50,7 +50,7 @@ function TicketCard({ ticket, presentation, view, open, artifact, phaseLabel, ch
       {fields.has('role') && <span>{presentation.role && !/^P-\d+$/i.test(presentation.role) ? presentation.role : 'Person/Rolle nicht typisiert'}</span>}
       {fields.has('worklogHours') && <span>{ticket.worklogs.reduce((sum, item) => sum + item.hours, 0)} Std.</span>}
       {isStoryLevel && <span>{childTasks.length} {childTasks.length === 1 ? 'Aufgabe' : 'Aufgaben'} · {childRollup.estimate} Std. Schätzung · {childRollup.actual} Std. Ist · {childRollup.remaining} Std. Rest</span>}
-      {presentation.type === 'epic' || presentation.type === 'phase' ? <span>Schätzung {presentation.estimateHours} Std. · Task-Rollup {presentation.actualHours} Std. Ist / {presentation.remainingHours} Std. Rest</span> : null}
+      {presentation.type === 'epic' || presentation.type === 'phase' ? <span>Schätzung {presentation.estimateHours} Std. · Summe aus Aufgaben {presentation.actualHours} Std. Ist / {presentation.remainingHours} Std. Rest</span> : null}
     </span>
     <button className="ticket-detail-action" onClick={() => artifact && open(artifact)} disabled={!artifact} aria-label={`${presentation.typeLabel}-Ticket ${ticket.id} im Detail öffnen`}>Details</button>
   </article>;
@@ -94,7 +94,7 @@ export function TicketsPage({ state, open }: { state: ProjectState; open: OpenAr
   const views = [...contract.jira.views].sort((left, right) => left.order - right.order);
   const [viewId, setViewId] = useState(views[0].id); const activeView = views.find((view) => view.id === viewId) ?? views[0];
   const [query, setQuery] = useState(''); const [filters, setFilters] = useState<Record<string, string>>({});
-  const { expanded, toggle } = useSessionExpansion(state.source.projectId, state.source.commit, contract);
+  const { expanded, toggle } = useSessionExpansion(state.source.projectId, state.source.catalog?.releaseId ?? state.source.commit ?? state.source.readAt, contract);
   const storyById = new Map(story.tickets.map((ticket) => [ticket.id, ticket]));
   const presentationById = new Map(contract.jira.tickets.map((ticket) => [ticket.ticketId, ticket]));
   const artifactById = new Map(state.artifacts.map((artifact) => [artifact.id, artifact]));

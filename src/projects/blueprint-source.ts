@@ -20,14 +20,16 @@ export type SnapshotSourceBinding = Readonly<{
 }>;
 
 export const officialBcBasicSnapshotAnchor = Object.freeze({
-  commit: '8f50573bc6105991a74363d6e3ed672abc0eaeef',
-  tree: '24b6f4107cef22b7b0cd34ad0982a1b7be2330eb',
+  commit: '2ad348e689854f240083b653b9501af9eaa7b0b1',
+  tree: '1bca3cda2c02b42ad3b66484f26bab939db72f0c',
   bootstrapBranch: 'codex/universaarl-projekt',
   integrationBranch: 'codex/universaarl-projekt',
-  artifactCount: 139,
-  sourceDigest: 'c2ca21a8faace5fbda0946a89aff25b6d045b9219183505080bc9d9da2598a2d',
-  projectionDigest: '867f9132a18488a1389edb02f30a8171078e777c31123263d9addc3c4d78ab06',
-  setupProjectionDigest: 'f181cef8af469fadb1b3085b67650f7c8b1f1c4986f459e89e40d25ed515602d',
+  artifactCount: 145,
+  sourceDigest: '1e28677ff179f45120eada12c449f33d8fa7043d1c4e15529071e392a38b25dc',
+  projectionDigest: 'b551deea8df9797ea26ce6a8b964ca03e9650cbea26d35abd96ada67f4894932',
+  setupProjectionDigest: 'f757373fbea1b914e9f8268fe55cb4e0d483b668cafd9cd2abdafe3fdfbd4da7',
+  coreFinancePayloadDigest: '9759d2f8db7ecb198d130d1ba9da7cfad7f18faa878b0dc66713723f4231c37a',
+  coreFinanceManifestDigest: '4de34af74ba424dc9555a1ae1e513a2e56316e1e65ab419dc97a8fa7812480f8',
   nativeRelationCount: 1040,
   portableEdgeCount: 362,
   documentCount: 43,

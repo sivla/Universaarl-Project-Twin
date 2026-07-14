@@ -35,15 +35,12 @@ function v1Fixture() {
 }
 
 describe('commitgebundene Spectra-Evidence', () => {
-  it('löst den erlaubten Producerbranch ohne festen Runtime-Commit atomar auf', () => {
+  it('lädt ausschließlich den expliziten Snapshot-Katalog ohne Git-Laufzeitquelle', () => {
     const vite = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
-    expect(vite).toContain('process.env.UABC_STABLE_BRANCH || blueprintSourceBinding.branch');
-    expect(vite).toContain('`refs/heads/${stableBranch}^{commit}`');
-    expect(vite).toContain('createValidatedBranchChannel');
-    expect(vite).toContain('const active = await branchChannel.refresh()');
-    expect(vite).not.toContain('officialBcBasicSnapshotAnchor');
-    expect(vite).toContain('return productionRegistry(sourceRoot, commit, tree, branch, false)');
-    expect(vite).toContain("'-c', `safe.directory=${sourceRoot}`");
+    expect(vite).toContain('UNIVERSAARL_TWIN_CONFIG_JSON');
+    expect(vite).toContain("./src/server/snapshot-catalog");
+    expect(vite).not.toContain('createValidatedBranchChannel');
+    expect(vite).not.toMatch(/rev-parse|ls-tree|cat-file|safe\.directory/);
     expect(vite).not.toContain('loadEnv');
     expect(vite).not.toContain('UABC_EXPECTED_COMMIT');
   });

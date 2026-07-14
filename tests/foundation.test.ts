@@ -5,7 +5,7 @@ import { blueprintSourceBinding, resolveBlueprintSourceRoot } from '../src/proje
 import { createProjectRegistry, findProject, productionRegistry as createProductionRegistry, publicProjects } from '../src/projects/registry';
 import { areas, parseRoute, projectUrl } from '../src/navigation/routes';
 import { AdapterSourceError, createTwinState as createBoundTwinState, resolveEvidenceId as resolveBoundEvidenceId, safeBranchDisplay, validateProvenancePath, type AdapterReadOptions } from '../src/server/adapter';
-import { apiErrorCodes, dispatchProjectApi } from '../src/server/api';
+import { apiErrorCodes, dispatchProjectApi } from '../src/server/legacy-git-api';
 import { artifactSchema, boundedList, createProjectRequestGate, displayStatus, displayVerificationType, focusMainAfterMobileMoreNavigation, mobileMoreViewportDecision, paginateList, projectListFromApiBody, projectViewKey, renderLimits, uiErrorCodeFromBody, uiErrorMessage, type ProjectState } from '../src/model';
 
 const gitEnvironment = { ...process.env, GIT_OPTIONAL_LOCKS: '0' };

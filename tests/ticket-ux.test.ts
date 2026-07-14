@@ -57,11 +57,15 @@ describe('ticketfokussierte Aufwandsdarstellung', () => {
 
   it('erhält die validierten Finanzdaten und ihre separate Abrechnungsansicht', () => {
     expect(presentationFixtureState.story?.controls).toMatchObject({ worklogHours: 80, worklogCost: 9600 });
-    expect(billingSource).toContain('Geplantes Budget');
-    expect(billingSource).toContain('Erfasster Betrag');
+    expect(billingSource).toContain('Gesamtbudget');
+    expect(billingSource).toContain('Verbraucht');
+    expect(billingSource).toContain('Verbrauch nach Monat');
+    expect(billingSource).toContain('Nach Phase');
+    expect(billingSource).toContain('Nach Epic');
     expect(billingSource).toContain('<th>Betrag</th>');
     expect(billingSource).toContain('numberFormatter.format(financial.amountEur)');
-    expect(billingSource).toContain("' · Rollup'");
+    expect(billingSource).toContain('Summe aus untergeordneten Aufgaben');
+    expect(billingSource).not.toContain('Rollup');
     expect(billingSource).toMatch(/\bEUR\b/);
   });
 });

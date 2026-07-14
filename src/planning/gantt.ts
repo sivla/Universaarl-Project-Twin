@@ -4,6 +4,14 @@ const day = 86_400_000;
 const timestamp = (value: string) => Date.parse(`${value}T00:00:00Z`);
 
 export type GanttProjection = Readonly<{ startDate: string; endDate: string; totalDays: number; rows: readonly Readonly<{ artifact: Artifact; startDate: string; endDate: string; offsetPercent: number; widthPercent: number }>[] }>;
+export type PhasePlanRow = Readonly<{ artifact: Artifact; epicIds: readonly string[] }>;
+
+export function buildPhasePlan(artifacts: readonly Artifact[]): readonly PhasePlanRow[] {
+  return artifacts.filter((artifact) => artifact.kind === 'phase').map((artifact) => ({
+    artifact,
+    epicIds: artifacts.filter((candidate) => candidate.kind === 'epic' && (candidate.parentId === artifact.id || candidate.phaseId === artifact.id)).map((candidate) => candidate.id),
+  }));
+}
 
 export function buildGanttProjection(artifacts: readonly Artifact[]): GanttProjection | null {
   const phases = artifacts.filter((artifact) => artifact.sourceType === 'project-plan' && artifact.startDate && artifact.dueDate)

@@ -52,16 +52,16 @@ Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anf
 - **WHEN** ein Dokument aktives HTML, Skriptinhalt, ein unsicheres Linkziel oder eine unbekannte Dokumentreferenz enthält
 - **THEN** wird der Inhalt gemäß Quellvertrag fail-closed blockiert oder nachweislich nicht klickbar dargestellt
 
-### Requirement: Konfigurierter Freigabekanal mit letztem gültigem Stand
+### Requirement: Expliziter Snapshot-Katalog
 
-Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anforderung. Der Twin muss den konfigurierten Freigabebranch bei einem Start genau einmal auflösen und einen neuen Commit erst nach vollständiger Validierung atomar aktivieren. Ein fehlgeschlagener Kandidat darf den zuletzt gültigen Stand nicht verändern.
+Der technische OpenSpec-Schlüssel MUST kennzeichnet diese verbindliche Muss-Anforderung. Der Twin muss `current.json`, das unveränderliche Release-Manifest und alle positivgelisteten Payloads eines explizit konfigurierten Kundenprojekts vollständig validieren, bevor er den Projektzustand ausliefert. Git-Repository, Branch und Arbeitsbaum dürfen nicht als produktive Laufzeitquelle dienen.
 
-#### Scenario: Ein gültiger Freigabecommit wird atomar aktiviert
+#### Scenario: Ein gültiges Release wird aus dem Katalog geladen
 
-- **WHEN** der konfigurierte Freigabebranch auf einen vollständig validierten Commit zeigt
-- **THEN** lesen Cockpit, Tickets und Wissensräume ausschließlich Git-Blobs genau dieses Commits und zeigen den Stand als aktuell an
+- **WHEN** `current.json` auf ein vollständig validiertes unveränderliches Release zeigt
+- **THEN** lesen Cockpit, Tickets und Wissensräume ausschließlich die positivgelisteten Payloads genau dieses Releases
 
-#### Scenario: Eine fehlgeschlagene Aktualisierung bewahrt den letzten gültigen Stand
+#### Scenario: Ein ungültiges Release blockiert fail-closed
 
-- **WHEN** der Freigabebranch fehlt oder sein neuer Commit den Quellvertrag verletzt
-- **THEN** bleibt der letzte gültige commitgebundene Stand sichtbar und wird mit einem sicheren deutschen Aktualisierungshinweis als veraltet gekennzeichnet
+- **WHEN** Pointer, Manifest, Identität, Pfad oder Digest den Katalogvertrag verletzen
+- **THEN** antwortet das betroffene Projekt mit HTTP 503, ohne eine andere Kundenquelle oder einen ungeprüften Ersatzstand zu verwenden

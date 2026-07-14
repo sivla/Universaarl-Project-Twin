@@ -1,34 +1,107 @@
-# Universaarl-Projektzwilling
+# Universaarl Project Twin
 
-Schreibgeschützte Anwendungshülle des Projektzwillings mit serverseitigem Projektverzeichnis. Produktiv sind die bestehende Blueprint-Sicht `universaarl` (`UABC`) und das Projekt `bc-basic` (`BCB`) registriert. Beide Einträge sind an dasselbe Blueprint-Repository gebunden; `bc-basic` löst Fachdaten ausschließlich über den technischen Vertrag `exports/project-data/v1/index.yaml` auf. Die Benutzeroberfläche erhält weder den absoluten Quellenpfad noch Dateipfade von Nachweisen.
+Project Twin ist eine strikt read-only arbeitende deutsche Projektansicht. Der Twin liest fachliche Daten ausschließlich aus einem validierten Snapshot-Katalog. Er scannt kein Kundenrepository, startet kein Git, schreibt nicht in die Quelle zurück und speichert keine fachlichen Payloads dauerhaft.
 
-Die versionierte Quellenbindung verwendet standardmäßig den Geschwisterordner **Universaarl Projekt BC Basic**. Das erwartete Remote, der Branch, der Vertragspfad und die fachliche Projekt-ID bleiben durch den Twin fest gebunden. Die Umgebungsvariable UABC_SOURCE_REPO darf ausschließlich den lokalen absoluten Pfad überschreiben.
+## Snapshot-Katalog
 
-## Verträge
+Jeder konfigurierte Katalog besitzt genau einen Einstieg `current.json`. Dieser Zeiger nennt ein unveränderliches Release-Manifest unter `releases/<releaseId>/manifest.json`. Das Manifest bindet Kunden-ID, Projekt-ID, Validierungsstatus sowie die vollständige positive Dateiliste mit Größe, Medientyp und SHA-256-Digest. Die lokale Ordnerquelle und HTTPS verwenden exakt denselben Byte- und Digestvertrag.
 
-## Commitgebundene Quellenbindung
+Eine optionale Commit-SHA im Manifest ist ausschließlich sichtbare Provenienz. Sie wird weder als Leseadresse noch als Laufzeitbindung verwendet. Ohne tatsächlich veröffentlichten Spectra-Release bleibt die Bindung ehrlich `PENDING_BCPROJECTOS_RELEASE`.
 
-Der Twin löst den erlaubten Branch `codex/universaarl-projekt` bei jedem Serverstart genau einmal auf eine vollständige Commit-SHA auf und liest anschließend alle unterstützten fachlichen Dateien als Git-Blobs aus genau diesem Commit. Eine manuelle Commitfreigabe ist nicht erforderlich. Remote, Branch, Index, Allowlist, Referenzen, Digests und eine während des Lesens unveränderte Quelle werden fail-closed geprüft. Absolute lokale Pfade werden weder an UI, DOM oder A11y ausgeliefert noch als dauerhafter Vertrag gespeichert.
+Die lokale Konfiguration enthält nur:
 
-- Kanonische Oberflächenrouten: `/projekte/:projektId/:bereich`
-- Schreibgeschützte Programmierschnittstellen: `GET /api/projects`, `GET /api/projects/:projectId/state`, `GET /api/projects/:projectId/evidence/:evidenceId`
-- `ProjectContext` bezeichnet das aktive Projekt des serverseitigen Verzeichnisses.
-- `SourceSnapshot` bezeichnet die geladene vollständige Git-Commit-SHA samt Einlesezeit.
-- `ProjectTimeContext` ist für spätere fachliche Wiedergabe- und Stichtagsfunktionen reserviert und hier nicht implementiert.
-- Die Route `Arbeit` zeigt ausschließlich normalisierte Jira-Artefakte mit belegtem Typ, Status, Phase, Arbeitsstrom, Aufwand und Abhängigkeiten.
-- Projektverlauf, Planung, Lieferung und Abrechnung zeigen nur Felder und Artefakte, die der jeweilige Projektvertrag ausdrücklich referenziert. Fehlende Quellen erscheinen als ehrlicher Leerzustand.
+- Katalogtyp `filesystem` oder `https`
+- Katalogadresse
+- erwartete Kunden- und Projekt-ID
+- optionalen Anzeigenamen
 
-Nachweise werden nur über opake, projekt- und commitgebundene IDs ausgeliefert. Repository-relative Provenienz bleibt auf die ausdrücklich erlaubten sicheren Wurzelverzeichnisse begrenzt. Es gibt keine schreibende Programmierschnittstelle und keine historische Wiedergabe.
+Sie enthält keine Tokens, Kennwörter oder fachlichen Inhalte. Standardmäßig wird sie im XDG-Konfigurationsverzeichnis unter `universaarl-twin/config.json` abgelegt. CLI-Argumente können einen Registereintrag für einen einzelnen Lauf überschreiben. `.env`-Dateien werden nicht gelesen.
 
-Die dargestellte Quelle ist eine durch die betreibende Person ausgewählte, commitgebundene Momentaufnahme. Ihre Auswahl allein bedeutet keine Freigabe. Solange keine erwartete Freigabe-SHA gebunden und geprüft ist, behauptet der Projektzwilling keinen freigegebenen Zustand.
+## Schnellstart auf macOS
 
-## Lokal starten
+Voraussetzungen über Homebrew:
 
-1. Den kanonischen Blueprint im Geschwisterordner **Universaarl Projekt BC Basic** bereitstellen. Für einen abweichenden lokalen Checkout kann `UABC_SOURCE_REPO` im aufrufenden Prozess oder der Parameter -SourceRepo gesetzt werden; der Starter liest keine `.env.local`.
-2. Einmalig `npm ci` ausführen.
-3. Den Twin anschließend mit genau einem Befehl starten: `npm run twin:start`.
-4. `http://127.0.0.1:4173/` öffnen. Mit `npm run twin:start -- -OpenBrowser` öffnet der Starter die Adresse nach erfolgreicher Health-Prüfung selbst.
+```sh
+brew install node
+node --version
+npm --version
+```
 
-`npm run twin:status` prüft den Health-Endpunkt. `npm run twin:stop` beendet ausschließlich einen Prozess, den dieser Starter selbst mit passender Laufzeitkennung gestartet hat. PID und Protokolle liegen unter dem ignorierten Ordner `.runtime/`. Ist Port 4173 bereits durch einen gesunden Twin belegt, ist der Start idempotent erfolgreich; bei einem fremden oder ungesunden Dienst bricht er verständlich ab und beendet nichts.
+Repository klonen und Abhängigkeiten deterministisch installieren:
 
-Die neue Arbeitsansicht ist unter `http://127.0.0.1:4173/projekte/bc-basic/arbeit` erreichbar. Der Projekt-Twin berechnet weder Termine noch Aufwand oder Rechnungen und besitzt keine schreibende Route. Nicht im Quellenvertrag belegte Meeting-, Planungs-, Dokumentations- oder Abrechnungsdaten werden nicht ergänzt.
+```sh
+git clone <OEFFENTLICHE-REPOSITORY-ADRESSE> Universaarl-Project-Twin
+cd Universaarl-Project-Twin
+npm ci
+npm run twin:bootstrap
+```
+
+Einen separat bereitgestellten lokalen Snapshot-Katalog konfigurieren:
+
+```sh
+npm run twin:configure -- \
+  --catalog-id mein-projekt \
+  --catalog-type filesystem \
+  --catalog-address "/absoluter/pfad/zum/snapshot-katalog" \
+  --customer-id MEIN-KUNDE \
+  --project-id MEIN-PROJEKT \
+  --display-name "Mein Projekt"
+```
+
+Für einen veröffentlichten HTTPS-Katalog wird ausschließlich Typ und Adresse geändert:
+
+```sh
+npm run twin:configure -- \
+  --catalog-id mein-projekt \
+  --catalog-type https \
+  --catalog-address "https://beispiel.invalid/snapshots/mein-projekt/" \
+  --customer-id MEIN-KUNDE \
+  --project-id MEIN-PROJEKT
+```
+
+Anschließend:
+
+```sh
+npm run twin:doctor
+npm run twin:start
+npm run twin:status
+```
+
+Die Oberfläche ist unter `http://127.0.0.1:4173/` erreichbar. `npm run twin:start -- --open` öffnet sie nach erfolgreicher Health-Prüfung. Beenden:
+
+```sh
+npm run twin:stop
+```
+
+Start und Status sind idempotent. Stop beendet ausschließlich einen durch PID und Laufzeitkennung nachgewiesenen eigenen Prozess. Ein fremder oder ungesunder Dienst auf Port 4173 wird niemals beendet.
+
+## Synthetische Demo
+
+Die Demo enthält zwei vollständig synthetische Kundenkataloge und keine realen Kundeninhalte:
+
+```sh
+npm run twin:demo-catalog
+npm run twin:start -- --config ".runtime/synthetischer-katalog/config.json"
+```
+
+## Plattformnachweis
+
+Windows-Pfad-, Prozess- und Shellsemantik sind automatisiert geprüft. Das Evidence-Skript schreibt ausschließlich bereinigtes JSON:
+
+```sh
+npm run twin:evidence:macos
+```
+
+Auf einem Nicht-macOS-System lautet der Status ausdrücklich `PENDING_MACOS_RUNNER`. Eine macOS-Freigabe wird erst nach einem echten Fresh-Clone-Lauf mit `npm ci`, Configure, Doctor, Start, Health, Filesystem-/HTTPS-Parität, Stop und No-Writes-Nachweis behauptet.
+
+Die bisherigen PowerShell-Aliase bleiben als Windows-Fallback vorhanden. Der normale, plattformneutrale Weg verwendet den Node-Starter.
+
+## API und Sicherheitsgrenze
+
+- `GET /api/projects`
+- `GET /api/projects/:projectId/state`
+- `GET /api/projects/:projectId/evidence/:evidenceId`
+- `GET /api/projects/:projectId/resources/:resourceId/preview`
+- `GET /api/projects/:projectId/resources/:resourceId/download`
+
+Andere Methoden sind nicht erlaubt. Fremde Kunden-/Projektidentitäten, unsichere Pfade, Symlinks oder Junctions, fehlende Releases, falsche Digests, unbekannte Referenzen und ein während des Lesens verändertes `current.json` blockieren fail-closed mit HTTP 503.

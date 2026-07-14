@@ -1,0 +1,63 @@
+name: Snapshot-Katalog-Onboarding
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  katalog:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+    env:
+      XDG_CONFIG_HOME: ${{ runner.temp }}/xdg
+    steps:
+      - name: Frischen Stand auschecken
+        uses: actions/checkout@v4
+      - name: Node.js bereitstellen
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten installieren
+        run: npm ci
+      - name: Bootstrap ohne lokale Quelle prüfen
+        run: npm run twin:bootstrap
+      - name: Synthetische Zwei-Kunden-Kataloge erzeugen
+        run: npm run twin:demo-catalog -- "${{ runner.temp }}/twin-katalog"
+      - name: Externe XDG-Konfiguration erzeugen
+        shell: bash
+        run: |
+          npm run twin:configure -- --catalog-id projekt-a --catalog-type filesystem --catalog-address "${RUNNER_TEMP}/twin-katalog/kunde-a" --customer-id DEMO-KUNDE-A --project-id DEMO-PROJEKT-A --display-name "Synthetisches Pilotprojekt"
+          npm run twin:configure -- --catalog-id projekt-b --catalog-type filesystem --catalog-address "${RUNNER_TEMP}/twin-katalog/kunde-b" --customer-id DEMO-KUNDE-B --project-id DEMO-PROJEKT-B --display-name "Synthetisches Vergleichsprojekt"
+      - name: Doctor und Vertragsmatrix
+        shell: bash
+        run: |
+          npm run twin:doctor
+          npx vitest run tests/snapshot-catalog.test.ts tests/local-starter-portable.test.ts
+      - name: Twin starten und Status prüfen
+        shell: bash
+        run: |
+          npm run twin:start -- --port 4173 --timeout 60
+          npm run twin:status -- --port 4173
+      - name: Echter Browser-Smoke
+        run: node scripts/browser-smoke.mjs http://127.0.0.1:4173/ http://127.0.0.1:4173/projekte/projekt-a/aktueller-stand
+      - name: Twin sicher beenden
+        if: always()
+        run: npm run twin:stop -- --port 4173
+      - name: Bereinigte Evidence schreiben
+        if: always()
+        shell: bash
+        env:
+          UNIVERSAARL_CATALOG_GATES: ${{ job.status == 'success' && 'passed' || 'pending' }}
+        run: node scripts/collect-ci-evidence.mjs "${RUNNER_TEMP}/snapshot-katalog-${{ matrix.os }}.json"
+      - name: Evidence hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-katalog-${{ matrix.os }}
+          path: ${{ runner.temp }}/snapshot-katalog-${{ matrix.os }}.json
+          if-no-files-found: error

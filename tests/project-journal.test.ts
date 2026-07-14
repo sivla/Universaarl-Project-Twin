@@ -143,7 +143,12 @@ describe('commitgebundenes Projekttagebuch', () => {
     expect(journalUi).toContain('setPage(1)');
     expect(journalUi).toContain('Vorherige Seite');
     expect(journalUi).toContain('Nächste Seite');
-    expect(journalUi).toContain('Dokument- und Seiteninhalte werden ohne versionierte Inhaltshistorie nicht rückwirkend rekonstruiert');
+    expect(journalUi).toContain('Seiteninhalte ohne versionierte Historie werden nicht rückwirkend rekonstruiert');
+    expect(journalUi).toContain('journal-kpis');
+    expect(journalUi).toContain('journal-perspectives');
+    expect(journalUi).toContain('Ansicht filtern');
+    expect(ui).toContain('Evidence und Verweise');
+    expect(journalUi).toContain("group.events.length === 1 ? 'Ereignis' : 'Ereignisse'");
     expect(journalUi).not.toMatch(/(?:journal\.events|filtered|pageData\.items)\.slice\(0,/);
     expect(journalVisibleText('Ticketkosten 9.600 EUR')).toBe('Budgetänderung – Details in Abrechnung');
     expect(journalVisibleText('Ticketkosten 9.600 €')).toBe('Budgetänderung – Details in Abrechnung');

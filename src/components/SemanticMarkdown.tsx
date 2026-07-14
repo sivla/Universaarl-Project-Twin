@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ProjectDocument } from '../model';
+import { splitKnownTicketReferences } from '../ticket-reference';
 
 export function markdownHeadingId(text: string, index: number) {
   const normalized = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -16,7 +17,15 @@ function resolveRelativePath(sourcePath: string, target: string) {
   return resolved.join('/');
 }
 
-function InlineMarkdown({ text, sourcePath, documents, onOpenDocument }: { text: string; sourcePath: string; documents: readonly ProjectDocument[]; onOpenDocument: (id: string) => void }) {
+type InlineProps = { text: string; sourcePath: string; documents: readonly ProjectDocument[]; onOpenDocument: (id: string) => void; ticketIds?: readonly string[]; onOpenTicket?: (id: string) => void };
+
+function PlainText({ text, ticketIds = [], onOpenTicket }: Pick<InlineProps, 'text' | 'ticketIds' | 'onOpenTicket'>) {
+  return <>{splitKnownTicketReferences(text, ticketIds).map((part, index) => part.kind === 'ticket' && onOpenTicket
+    ? <button key={`${part.value}-${index}`} type="button" className="ticket-inline-link" onClick={() => onOpenTicket(part.value)} aria-label={`Ticket ${part.value} öffnen`}><code>{part.value}</code></button>
+    : <React.Fragment key={index}>{part.value}</React.Fragment>)}</>;
+}
+
+function InlineMarkdown({ text, sourcePath, documents, onOpenDocument, ticketIds, onOpenTicket }: InlineProps) {
   const parts = text.split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
   return <>{parts.map((part, index) => {
     const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/); if (link) {
@@ -27,7 +36,7 @@ function InlineMarkdown({ text, sourcePath, documents, onOpenDocument }: { text:
     if (part.startsWith('`')) return <code key={index}>{part.slice(1, -1)}</code>;
     if (part.startsWith('**')) return <strong key={index}>{part.slice(2, -2)}</strong>;
     if (part.startsWith('*')) return <em key={index}>{part.slice(1, -1)}</em>;
-    return <React.Fragment key={index}>{part}</React.Fragment>;
+    return <React.Fragment key={index}><PlainText text={part} ticketIds={ticketIds} onOpenTicket={onOpenTicket} /></React.Fragment>;
   })}</>;
 }
 
@@ -43,21 +52,21 @@ function parseList(lines: string[]) {
   return roots;
 }
 
-function MarkdownList({ entries, sourcePath, documents, onOpenDocument }: { entries: ListEntry[]; sourcePath: string; documents: readonly ProjectDocument[]; onOpenDocument: (id: string) => void }) {
+function MarkdownList({ entries, sourcePath, documents, onOpenDocument, ticketIds, onOpenTicket }: { entries: ListEntry[] } & Omit<InlineProps, 'text'>) {
   const ordered = entries[0]?.ordered ?? false; const List = ordered ? 'ol' : 'ul';
-  return <List>{entries.map((entry, index) => <li key={index} className={entry.checked === null ? undefined : 'documentation-check-item'}>{entry.checked !== null && <input type="checkbox" checked={entry.checked} readOnly aria-label={entry.checked ? 'Erledigt' : 'Offen'} />}<InlineMarkdown text={entry.text} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} />{entry.children.length > 0 && <MarkdownList entries={entry.children} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} />}</li>)}</List>;
+  return <List>{entries.map((entry, index) => <li key={index} className={entry.checked === null ? undefined : 'documentation-check-item'}>{entry.checked !== null && <input type="checkbox" checked={entry.checked} readOnly aria-label={entry.checked ? 'Erledigt' : 'Offen'} />}<InlineMarkdown text={entry.text} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} />{entry.children.length > 0 && <MarkdownList entries={entry.children} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} />}</li>)}</List>;
 }
 
-export function SemanticMarkdown({ content, sourcePath, documents, onOpenDocument }: { content: string; sourcePath: string; documents: readonly ProjectDocument[]; onOpenDocument: (id: string) => void }) {
+export function SemanticMarkdown({ content, sourcePath, documents, onOpenDocument, ticketIds = [], onOpenTicket }: { content: string; sourcePath: string; documents: readonly ProjectDocument[]; onOpenDocument: (id: string) => void; ticketIds?: readonly string[]; onOpenTicket?: (id: string) => void }) {
   const lines = content.split(/\r?\n/); const nodes: React.ReactNode[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]; if (!line.trim()) continue;
     if (line.startsWith('```')) { const language = line.slice(3).trim(); const code: string[] = []; index += 1; while (index < lines.length && !lines[index].startsWith('```')) { code.push(lines[index]); index += 1; } nodes.push(<figure className="documentation-code" key={`code-${index}`}><figcaption>{language || 'Code- oder Evidenceblock'}</figcaption><pre><code>{code.join('\n')}</code></pre></figure>); continue; }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/); if (heading) { const id = markdownHeadingId(heading[2].trim(), index); const value = <InlineMarkdown text={heading[2].trim()} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} />; nodes.push(heading[1].length === 1 ? <h2 id={id} key={id}>{value}</h2> : heading[1].length === 2 ? <h3 id={id} key={id}>{value}</h3> : <h4 id={id} key={id}>{value}</h4>); continue; }
-    if (/^\|.*\|\s*$/.test(line) && index + 1 < lines.length && /^\|(?:\s*:?-+:?\s*\|)+\s*$/.test(lines[index + 1])) { const tableLines = [line]; index += 2; while (index < lines.length && /^\|.*\|\s*$/.test(lines[index])) { tableLines.push(lines[index]); index += 1; } index -= 1; const rows = tableLines.map((row) => row.split('|').slice(1, -1).map((cell) => cell.trim())); nodes.push(<div className="documentation-table-wrap" key={`table-${index}`}><table><thead><tr>{rows[0].map((cell, cellIndex) => <th key={cellIndex}><InlineMarkdown text={cell} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} /></th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}><InlineMarkdown text={cell} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} /></td>)}</tr>)}</tbody></table></div>); continue; }
-    if (/^\s*(?:[-*]|\d+\.)\s+/.test(line)) { const listLines = [line]; while (index + 1 < lines.length && /^\s*(?:[-*]|\d+\.)\s+/.test(lines[index + 1])) listLines.push(lines[++index]); nodes.push(<MarkdownList key={`list-${index}`} entries={parseList(listLines)} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} />); continue; }
-    if (/^>\s?/.test(line)) { const quote: string[] = [line.replace(/^>\s?/, '')]; while (index + 1 < lines.length && /^>\s?/.test(lines[index + 1])) quote.push(lines[++index].replace(/^>\s?/, '')); nodes.push(<aside className="documentation-note" key={`note-${index}`}><InlineMarkdown text={quote.join(' ')} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} /></aside>); continue; }
-    nodes.push(<p key={`paragraph-${index}`}><InlineMarkdown text={line} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} /></p>);
+    const heading = line.match(/^(#{1,3})\s+(.+)$/); if (heading) { const id = markdownHeadingId(heading[2].trim(), index); const value = <InlineMarkdown text={heading[2].trim()} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} />; nodes.push(heading[1].length === 1 ? <h2 id={id} key={id}>{value}</h2> : heading[1].length === 2 ? <h3 id={id} key={id}>{value}</h3> : <h4 id={id} key={id}>{value}</h4>); continue; }
+    if (/^\|.*\|\s*$/.test(line) && index + 1 < lines.length && /^\|(?:\s*:?-+:?\s*\|)+\s*$/.test(lines[index + 1])) { const tableLines = [line]; index += 2; while (index < lines.length && /^\|.*\|\s*$/.test(lines[index])) { tableLines.push(lines[index]); index += 1; } index -= 1; const rows = tableLines.map((row) => row.split('|').slice(1, -1).map((cell) => cell.trim())); nodes.push(<div className="documentation-table-wrap" key={`table-${index}`}><table><thead><tr>{rows[0].map((cell, cellIndex) => <th key={cellIndex}><InlineMarkdown text={cell} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} /></th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}><InlineMarkdown text={cell} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} /></td>)}</tr>)}</tbody></table></div>); continue; }
+    if (/^\s*(?:[-*]|\d+\.)\s+/.test(line)) { const listLines = [line]; while (index + 1 < lines.length && /^\s*(?:[-*]|\d+\.)\s+/.test(lines[index + 1])) listLines.push(lines[++index]); nodes.push(<MarkdownList key={`list-${index}`} entries={parseList(listLines)} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} />); continue; }
+    if (/^>\s?/.test(line)) { const quote: string[] = [line.replace(/^>\s?/, '')]; while (index + 1 < lines.length && /^>\s?/.test(lines[index + 1])) quote.push(lines[++index].replace(/^>\s?/, '')); nodes.push(<aside className="documentation-note" key={`note-${index}`}><InlineMarkdown text={quote.join(' ')} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} /></aside>); continue; }
+    nodes.push(<p key={`paragraph-${index}`}><InlineMarkdown text={line} sourcePath={sourcePath} documents={documents} onOpenDocument={onOpenDocument} ticketIds={ticketIds} onOpenTicket={onOpenTicket} /></p>);
   }
   return <div className="documentation-markdown semantic-markdown">{nodes}</div>;
 }

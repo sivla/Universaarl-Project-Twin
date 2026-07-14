@@ -81,12 +81,20 @@ export const setupWaveProjectionSchema = z.object({
     targetState: z.object({ classification: z.literal('bc-basic-target-not-applied'), displayName: z.string().min(1).max(200), configurationScope: z.string().min(40).max(1_000), laterLockedWaves: z.tuple([z.literal('UABC-02-TRADE-MASTER'), z.literal('UABC-03-OPENING-DATA')]) }).strict(),
     appliedDifference: z.object({ status: z.literal('none-evidenced'), readbackStatus: z.literal('pending'), readbackEvidenceCount: z.literal(0) }).strict(),
     wave0ReadbackAttempt: z.object({
-      status: z.literal('blocked-before-dom-readback'), evidencePath: sourceRelativePathSchema, bcReadbackAuthority: z.literal(false), bcFieldValuesRead: z.literal(false), screenshotCaptured: z.literal(false), writesPerformed: z.literal(false),
+      status: z.literal('blocked-before-dom-readback'), evidencePath: sourceRelativePathSchema, attemptCount: z.literal(2), latestAttemptId: z.literal('UABC-W0-01-ATTEMPT-002'), latestAttemptAt: z.string().min(1).max(120).refine((value) => !Number.isNaN(Date.parse(value))), bcReadbackAuthority: z.literal(false), bcFieldValuesRead: z.literal(false), screenshotCaptured: z.literal(false), writesPerformed: z.literal(false),
       visibleTabTarget: z.object({ title: z.string().min(1).max(160), environmentParameter: z.string().min(1).max(120), companyParameter: sourceTechnicalIdSchema }).strict(),
     }).strict(),
     companyStrategyGate: z.object({ status: z.literal('blocked-pending-wave0-and-reset-evidence'), selectedOption: z.null(), allowedOptions: z.tuple([z.literal('controlled-reuse-of-dedicated-cronus-copy'), z.literal('clean-new-company-or-copy')]), requiredEvidence: z.array(z.string().min(8).max(200)).length(6), decisionEvidenceCount: z.literal(0), decisionAuthority: z.literal('project/bc-basic/pilot-setup-baseline.yaml#/companyInformation/companyStrategyDecision'), nextExecutableStep: z.literal('W0-01-read-company-identity'), writesAuthorized: z.literal(false) }).strict(),
   }).strict(),
   packages: z.array(z.object({ packageId: sourceTechnicalIdSchema, status: z.string().min(1).max(120), tables: z.number().int().nonnegative(), records: z.number().int().nonnegative(), errors: z.number().int().nonnegative() }).strict()).min(1).max(50),
+  coreFinancePreparation: z.object({
+    packageId: z.literal('UABC-01-CORE-FINANCE'), status: z.literal('prepared-for-controlled-live-run'),
+    packageTableCount: z.literal(19), packageRecordCount: z.literal(51), manualTableCount: z.literal(7), manualRecordCount: z.literal(18),
+    accountRoleCount: z.literal(11), dimensionCount: z.literal(2), dimensionValueCount: z.literal(5), numberSeriesCount: z.literal(9), numberSeriesLineCount: z.literal(9), paymentTermsCount: z.literal(2), realBankIdentifierCount: z.literal(0),
+    payloadDigest: z.string().regex(/^[a-f0-9]{64}$/), financeReferenceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    taxAssumption: z.object({ percent: z.literal(19), truthClass: z.literal('synthetic-project-assumption'), confirmationStatus: z.literal('open') }).strict(),
+    performed: z.literal(false), applied: z.literal(false), accepted: z.literal(false), requiredGatesClosed: z.literal(false),
+  }).strict(),
   preflight: z.object({ status: z.string().min(1).max(120), wave0Status: z.string().min(1).max(120), workingDate: sourceDateSchema, operator: z.object({ userId: z.string().min(1).max(160), permissionSet: z.string().min(1).max(120) }).strict(), locale: z.string().min(1).max(120), resetPoint: z.object({ status: z.string().min(1).max(120), requiredBeforeAnyWrite: z.boolean() }).strict() }).strict(),
   writeGate: z.object({ writesAuthorized: z.literal(false), noGoSteps: z.array(sourceTechnicalIdSchema).min(1).max(100), nextAllowedStep: z.string().min(1).max(500) }).strict(),
   provenance: z.array(z.object({ path: sourceRelativePathSchema, role: z.string().min(1).max(240) }).strict()).min(1).max(50),
@@ -153,10 +161,11 @@ export const storyProjectionSchema = z.object({ storyId: sourceTechnicalIdSchema
 
 export const projectStateSchema = z.object({
   source: z.object({
-    projectId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), branch: z.string().min(1).max(120), commit: z.string().regex(/^[a-f0-9]{40}$/), dirty: z.boolean(),
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), branch: z.string().min(1).max(120).nullable().default(null), commit: z.string().regex(/^[a-f0-9]{40}$/).nullable().default(null), dirty: z.boolean(),
     headFingerprint: z.string().regex(/^[a-f0-9]{64}$/), indexFingerprint: z.string().regex(/^[a-f0-9]{64}$/), statusFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     snapshot: z.object({ schemaVersion: z.literal(1), producerId: z.literal('blueprint'), producerCommitSha: z.string().regex(/^[a-f0-9]{40}$/), indexPath: sourceRelativePathSchema, payloadBundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), validationStatus: z.literal('validated'), spectraReleaseBinding: z.object({ productId: z.literal('spectra'), technicalRepositoryName: z.literal('BCProjectOS'), repositoryUrl: z.literal('https://github.com/sivla/BCProjectOS.git'), releaseVersion: z.string().min(1), releaseTag: z.string().regex(/^spectra-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/), tagCommit: z.string().regex(/^[a-f0-9]{40}$/), manifestPath: sourceRelativePathSchema, manifestSourceCommit: z.string().regex(/^[a-f0-9]{40}$/), consumerMode: z.literal('INSTALLABLE_BLUEPRINT'), installableBlueprint: z.literal(true) }).strict() }).nullable().default(null),
     channel: z.object({ branch: z.string().min(1).max(200), status: z.enum(['current', 'stale']), lastValidatedAt: z.string().datetime(), notice: z.string().min(1).max(300).nullable() }).strict().nullable().default(null),
+    catalog: z.object({ customerId: sourceTechnicalIdSchema, projectId: sourceTechnicalIdSchema, releaseId: sourceTechnicalIdSchema, sourceType: z.enum(['filesystem', 'https']), manifestDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), updatedAt: sourceDateTimeSchema }).strict().nullable().default(null),
     readAt: z.string().datetime(),
   }),
   artifacts: z.array(artifactSchema), evidenceItems: z.array(evidenceItemSchema), resources: z.array(projectResourceSchema).default([]), documents: z.array(projectDocumentSchema).default([]), story: storyProjectionSchema.nullable().default(null), presentation: presentationContractSchema.nullable().default(null), setupWave: setupWaveProjectionSchema.nullable().default(null), workstreams: z.array(z.string()), gaps: z.array(z.string()), warnings: z.array(z.string()),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AdapterSourceError, validatePresentationContract } from '../src/server/adapter';
+import { validatePresentationContract } from '../src/server/presentation-validator';
+import { AdapterSourceError } from '../src/server/source-contract-error';
 import { presentationFixture, presentationFixtureContext, presentationFixtureInput, presentationFixtureState, presentationFixtureVariant, type PresentationFixtureVariant } from '../src/testing/presentation-fixture';
 
 describe('producerdefinierter Präsentationsvertrag', () => {

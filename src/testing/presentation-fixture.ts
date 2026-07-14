@@ -1,5 +1,5 @@
 import { artifactSchema, projectDocumentSchema, projectStateSchema, type PresentationContract, type ProjectState } from '../model';
-import { validatePresentationContract } from '../server/adapter';
+import { validatePresentationContract } from '../server/presentation-validator';
 
 const ticket = (id: string, type: 'phase' | 'epic' | 'story' | 'bug' | 'task', status: string, summary: string, parent: string | null, priority: string, phaseId: string | null, phaseRefs: string[], estimateHours: number, actualHours: number, billable: boolean, worklogPhase: string | null = null) => ({ story: {
   id, type, status, summary, assignee: 'Projektteam', priority, parent, dependencies: [], phaseId, phaseRefs, billingSource: billable ? 'task-worklogs' : 'task-rollup-only', estimateHours, remainingHours: 0, netAmount: actualHours * 120, billable,

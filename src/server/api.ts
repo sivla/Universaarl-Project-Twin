@@ -1,47 +1,45 @@
-import { AdapterSourceError, createTwinState, resolveEvidenceId, resolveResourceId, type EvidenceBlob, type ResourceBlob } from './adapter';
-import { findProject, publicProjects, type ProjectEntry } from '../projects/registry';
 import { renderLimits } from '../model';
+import type { LoadedCatalog } from './snapshot-catalog';
 
-export type ApiResult = { status: number; body: unknown; binary?: EvidenceBlob | ResourceBlob };
-type StateReader = typeof createTwinState;
+export type CatalogApiBinary = {
+  contentType: string;
+  bytes: Buffer;
+  fileName?: string;
+  disposition?: 'inline' | 'attachment';
+};
+
+export type ApiResult = { status: number; body: unknown; binary?: CatalogApiBinary };
 
 export const apiErrorCodes = ['METHODE_NICHT_ERLAUBT', 'ENDPUNKT_NICHT_GEFUNDEN', 'ANFRAGE_UNGUELTIG', 'PROJEKT_NICHT_GEFUNDEN', 'PROJEKTLISTE_ZU_GROSS', 'QUELLE_NICHT_VERFUEGBAR', 'SNAPSHOT_VERTRAG_BLOCKIERT', 'NACHWEIS_NICHT_GEFUNDEN', 'API_NICHT_VERFUEGBAR'] as const;
 export type ApiErrorCode = typeof apiErrorCodes[number];
 const safeError = (code: ApiErrorCode, status: number): ApiResult => ({ status, body: { code } });
 
-export async function dispatchProjectApi(method: string, pathname: string, registry: readonly ProjectEntry[], readState: StateReader = createTwinState): Promise<ApiResult> {
+/** Reine read-only API über bereits vollständig validierte Snapshot-Kataloge. */
+export function dispatchProjectApi(method: string, pathname: string, catalogs: readonly LoadedCatalog[]): ApiResult {
   try {
     if (method !== 'GET') return safeError('METHODE_NICHT_ERLAUBT', 405);
-    if (pathname === '/api/projects') { const projects = publicProjects(registry); return projects.length <= renderLimits.projects ? { status: 200, body: { projects } } : safeError('PROJEKTLISTE_ZU_GROSS', 503); }
-    const match = pathname.match(/^\/api\/projects\/([^/]+)\/(state|evidence\/([^/]+)|resources\/([^/]+)\/(preview|download))$/);
+    if (pathname === '/api/projects') {
+      if (catalogs.length > renderLimits.projects) return safeError('PROJEKTLISTE_ZU_GROSS', 503);
+      return { status: 200, body: { projects: catalogs.map(({ entry }) => ({ id: entry.id, key: entry.id.toUpperCase().replaceAll('-', '').slice(0, 12), name: entry.displayName ?? entry.expectedProjectId })) } };
+    }
+    const match = pathname.match(/^\/api\/projects\/([a-z][a-z0-9-]+)\/(state|evidence\/([A-Za-z0-9._-]+)|resources\/([A-Za-z0-9._-]+)\/(preview|download))$/);
     if (!match) return safeError('ENDPUNKT_NICHT_GEFUNDEN', 404);
-    let projectId: string; let evidenceId = '';
-    try { projectId = decodeURIComponent(match[1]); evidenceId = match[3] ? decodeURIComponent(match[3]) : ''; }
-    catch { return safeError('ANFRAGE_UNGUELTIG', 400); }
-    const project = findProject(registry, projectId);
-    if (!project) return safeError('PROJEKT_NICHT_GEFUNDEN', 404);
-    if (!project.sourceContract) return safeError('SNAPSHOT_VERTRAG_BLOCKIERT', 503);
-    if (match[2] === 'state') {
-      try { return { status: 200, body: await readState(project.id, project.sourceRoot, { ...(project.sourceBinding ? { sourceBinding: project.sourceBinding } : {}), ...(project.sourceContract ? { projectDataContract: project.sourceContract } : {}) }) }; }
-      catch (error) { return project.sourceContract && error instanceof AdapterSourceError ? safeError('SNAPSHOT_VERTRAG_BLOCKIERT', 503) : safeError('QUELLE_NICHT_VERFUEGBAR', 503); }
-    }
-    if (!/^ev_[a-f0-9]{24}$/.test(evidenceId)) return safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
-    let binary: EvidenceBlob | null;
-    try {
-      binary = resolveEvidenceId(project.id, project.sourceRoot, evidenceId, { ...(project.sourceBinding ? { sourceBinding: project.sourceBinding } : {}), ...(project.sourceContract ? { projectDataContract: project.sourceContract } : {}) });
-    } catch (error) {
-      if (project.sourceContract && error instanceof AdapterSourceError) return safeError('SNAPSHOT_VERTRAG_BLOCKIERT', 503);
-      throw error;
-    }
-    if (match[4]) {
-      let resourceId: string; try { resourceId = decodeURIComponent(match[4]); } catch { return safeError('ANFRAGE_UNGUELTIG', 400); }
-      if (!/^rs_[a-f0-9]{24}$/.test(resourceId)) return safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
-      try {
-        const binary = resolveResourceId(project.id, project.sourceRoot, resourceId, match[5] as 'preview' | 'download', { ...(project.sourceBinding ? { sourceBinding: project.sourceBinding } : {}), projectDataContract: project.sourceContract });
-        return binary ? { status: 200, body: null, binary } : safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
-      } catch (error) { return error instanceof AdapterSourceError ? safeError('SNAPSHOT_VERTRAG_BLOCKIERT', 503) : safeError('API_NICHT_VERFUEGBAR', 500); }
-    }
-    return binary ? { status: 200, body: null, binary } : safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
+    const catalog = catalogs.find(({ entry }) => entry.id === match[1]);
+    if (!catalog) return safeError('PROJEKT_NICHT_GEFUNDEN', 404);
+    if (match[2] === 'state') return { status: 200, body: catalog.state };
+    const payloadId = match[3] ?? match[4];
+    const payload = catalog.payloads.get(payloadId);
+    const expectedRole = match[3] ? 'evidence' : 'resource';
+    if (!payload || payload.metadata.role !== expectedRole) return safeError('NACHWEIS_NICHT_GEFUNDEN', 404);
+    return {
+      status: 200,
+      body: null,
+      binary: {
+        contentType: payload.metadata.mediaType,
+        bytes: payload.bytes,
+        ...(match[5] === 'download' ? { fileName: payload.metadata.id, disposition: 'attachment' as const } : { disposition: 'inline' as const }),
+      },
+    };
   } catch {
     return safeError('API_NICHT_VERFUEGBAR', 500);
   }

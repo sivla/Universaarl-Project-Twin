@@ -32,17 +32,17 @@ Die Tagesansicht MUSS stabil chronologisch sortieren und nach Zeitraum, Ereignis
 
 Akzeptanz: Vor Projektbeginn bleibt der Zeitpunktstand leer, zwischen zwei Statusübergängen gilt der letzte bis dahin belegte Status und nach dem letzten Ereignis der letzte explizite Status. Gleichzeitige Ereignisse besitzen eine deterministische Reihenfolge. Systemautomation wird von Menschen getrennt; eine systemische Freigabeaussage wird ausdrücklich nicht als menschliche Freigabe dargestellt. Ticketbezogene Tagebuchtexte zeigen keine Geldbeträge und verweisen für Budgetdetails ausschließlich auf den getrennten Budgetbereich.
 
-## Commitgebundener Branchvertrag
+## Validierter Snapshot-Katalog
 
-Die produktive Registry MUSS das Kundenprojekt `bc-basic`, das Repository und den Branch `codex/universaarl-projekt` ausdrücklich binden. Der Branch wird bei jedem Serverstart automatisch und genau einmal zu einer vollständigen 40-stelligen Commit-SHA aufgelöst; eine manuelle Commitfreigabe ist nicht erforderlich. Danach liest der Twin ausschließlich Git-Blobs dieser SHA; ein beweglicher Branch-HEAD, Arbeitsbaum, generischer Tree-Scan oder Rückfall auf zuletzt bekannte Werte ist unzulässig.
+Die produktive Registry MUSS jedes sichtbare Projekt über eine explizite Katalogkennung, den Transport `filesystem` oder `https`, die erwartete Kunden-ID und die erwartete Projekt-ID binden. Beide Transporte MÜSSEN denselben Bytevertrag aus `current.json`, unveränderlichem Release-Manifest und positivgelisteten Payloads verwenden. Der produktive Ladepfad DARF weder ein Git-Repository noch Branch, Arbeitsbaum, Commitresolver, Verzeichnisscan oder zuletzt bekannte Fachwerte als Quelle verwenden.
 
-`exports/project-data/v1/index.yaml` ist im Branchmodus der einzige aktuelle Daten- und Allowlistvertrag. Er MUSS Projektidentität, Vertragsversion, `readOnly`, `contractRole`, `pathSemantics`, `allowedBranch` und `validationStatus` exakt erfüllen. Jeder positivgelistete Pfad wird als Blob mit sicherem Modus, Existenz, Größe, Format, Referenzen und vorhandenem Digest geprüft. Unsichere, doppelte, nicht positivgelistete oder fehlende Pfade blockieren fail-closed. `snapshot-manifest.json`, `producerCommitSha`, Parent-A, A/B-Diff und das alte Snapshot-Schema werden im Branchmodus überhaupt nicht geöffnet, geparst oder kompiliert.
+`current.json` MUSS genau ein unveränderliches Release auswählen. Manifest, Snapshot-Schema, Kunden- und Projektidentität, sichere relative Pfade, Größen und SHA-256-Digests MÜSSEN vor jeder Projektion vollständig übereinstimmen. Unsichere, doppelte, nicht positivgelistete, fehlende oder während des Lesens veränderte Ressourcen blockieren fail-closed. Eine Commit-SHA DARF ausschließlich als optionale Manifestprovenienz erscheinen und begründet keine Laufzeitbindung.
 
-Akzeptanz: Nicht im Index referenzierte Fachdaten werden für `bc-basic` nicht normalisiert. Die commitgebundene Storyquelle darf strukturierte Angebotsversionen, Seiten, Tickets, Timeline, Hypercare, Evidence, Entscheidungen, Risiken und Gates liefern; fehlende Werte bleiben leer. Der Twin speichert keine Kopie der fachlichen Projektdaten.
+Akzeptanz: Nicht im Release-Manifest referenzierte Fachdaten werden nicht normalisiert. Ein validierter Payload darf strukturierte Angebotsversionen, Seiten, Tickets, Timeline, Hypercare, Evidence, Entscheidungen, Risiken und Gates liefern; fehlende Werte bleiben leer. Der Twin speichert keine Kopie der fachlichen Projektdaten.
 
-Die sichtbare Provenienz besteht im Branchmodus aus Projekt-ID, erlaubtem Branch, gepinnter Commit-SHA, Indexstatus und den positivgelisteten Story-/Spectra-Evidence. Eine synthetische Simulation darf bestandene Simulationsgates anzeigen, muss aber klar als Sandbox ohne reale Kunden-, BC-, Steuer- oder Produktivaktivität gekennzeichnet werden. Eine direkte Laufzeitabhängigkeit zu Spectra oder BCProjectOS entsteht nicht.
+Die sichtbare Provenienz besteht aus Kunden-ID, Projekt-ID, Release-ID, Katalogtyp, Aktualisierungszeitpunkt, Manifestdigest und optionaler Commitprovenienz. Eine direkte Laufzeitabhängigkeit zu Git, Spectra oder BCProjectOS entsteht nicht.
 
-Akzeptanz: Ein blockierter Branchvertrag benennt Repository-, Branch-, Commit-, Index-, Allowlist-, Referenz- und Digestprüfung, ohne das im Branchmodus abgeschaffte Snapshotmanifest als Voraussetzung darzustellen. Positivgelistete und validierte Spectra-Dokumenttypen werden als unterstützt und natürlich deutsch bezeichnet.
+Akzeptanz: Filesystem und HTTPS liefern für identische Bytes denselben Projektzustand. Cross-Customer-Leakage, Traversal, Symlink oder Junction, falsche Groß-/Kleinschreibung auf einem case-sensitiven Dateisystem, fehlende Releases, Digestabweichung, Pointerwechsel, Verzeichnisscan, Git-Fallback und Writeversuch werden deterministisch blockiert.
 
 ## Offene Freigabe- und Archivgrenze
 
@@ -94,6 +94,10 @@ Die erlaubten Tickettypen sind ausschließlich `phase`, `epic`, `story` und `tas
 
 Akzeptanz: Fixturetests beweisen Phase, Epic, Story und Aufgabe sowie Zyklen, doppelte IDs oder Reihenfolgen, unbekannte Referenzen, ungültige Initialzustände, Iconschlüssel und unzulässige Abrechnung auf Elternvorgängen. Der Browser zeigt Board und hierarchische Liste, Auf- und Einklappen, Filter, Ticketdetail, Timelinekennzeichen und einen echten 503-Fall.
 
+Jede sichtbare Referenz auf ein kanonisches Ticket MUSS als zugängliche Navigation zum typgerechten Ticketdetail angeboten werden. Das gilt auch für Cockpit, Projekttagebuch, Stichtagsstatus, Projektverlauf, Planung, Lieferung, Abhängigkeiten und Dokumentinhalte. Nur IDs aus der validierten Ticketmenge werden verlinkt; ähnlich aussehender Freitext oder unbekannte Kennungen bleiben unverändert und erzeugen keine Navigation.
+
+Akzeptanz: Ein fokussierter Vertragstest belegt exakte, überlappungsfreie Erkennung bekannter Ticket-IDs und lässt unbekannte beziehungsweise verlängerte Kennungen unberührt. Der Browser öffnet aus einem Tagebucheintrag wie „UABC-1: In Arbeit“ das Ticketdetail über den Link `UABC-1`.
+
 ### Ticketfokussierte Darstellung trennt Aufwand und Geld
 
 Die Ticketübersicht und das Ticketdetail MÜSSEN belegte Schätz-, Ist- und Reststunden anzeigen können, DÜRFEN jedoch keine EUR-Beträge oder Ticketkosten darstellen. Typ, Status, Priorität, Verantwortung, Beschreibung, Akzeptanzkriterien, Abhängigkeiten, Historie, Kommentare, Worklogs sowie Dokument- und Evidence-Verweise werden ausschließlich aus dem validierten Quellenvertrag gezeigt. Die separate Abrechnungsansicht MUSS die belegten Budget-, Betrags- und Rollupwerte in EUR sichtbar halten; unbekannte Geldwerte bleiben als nicht belegt gekennzeichnet.
@@ -106,17 +110,36 @@ Der Renderer MUSS sichere Markdownüberschriften, interne Links, semantische Tab
 
 Akzeptanz: Repräsentative Fixtureseiten für Verifikation, Support, Unternehmen, Prozesse, UAT, Cutover/Hypercare, Produktbuch und Consultant-Handbuch bleiben auf Desktop lesbar; ein einfacher Responsive-Smoke verhindert horizontalen Seitenüberlauf.
 
-## Konfigurierter Freigabekanal und letzter gültiger Stand
+## Source-driven Projektplan in Phasen
 
-Der Twin MUSS einen Repositoryalias und einen konfigurierbaren Freigabebranch verwenden. In der aktuellen Multi-Branch-Zuordnung ist ausschließlich `codex/universaarl-projekt` der erlaubte BC-Producerbranch; `main` oder `master` DÜRFEN erst nach einer ausdrücklichen späteren Repositoryzuordnung konfiguriert werden. Bei Serverstart und Request wird seine Spitze je Aktualisierungsversuch genau einmal auf eine vollständige Commit-SHA aufgelöst. Index, Katalog, Allowlist, Blobs, Modi, Digests und Referenzen MÜSSEN vollständig grün sein, bevor dieser Commit atomar zum aktiven Stand wird. Alle Daten eines Lesevorgangs MÜSSEN ausschließlich aus Git-Blobs dieser einen SHA stammen; der Producer-Arbeitsbaum wird weder gelesen noch als Gültigkeitssignal verwendet.
+Der Projektverlauf und die Planung MÜSSEN die kanonischen Phase-Tickets als gemeinsamen Projektplan anzeigen. Reihenfolge, Status, Planstunden, Iststunden und zugeordnete Epics stammen ausschließlich aus dem validierten Snapshot. Ein altes `project-plan`-Dokument oder vollständige Datumswerte DÜRFEN keine Voraussetzung für die sichtbare Phasenstruktur sein. Eine Gantt-Zeitachse erscheint nur, wenn Beginn und Ende ausdrücklich belegt sind; fehlende Termine werden nicht ergänzt.
 
-Akzeptanz: Ein fehlender, während des Lesens bewegter oder ungültiger neuer Kandidat verändert den zuletzt gültigen commitgebundenen Stand derselben Serverlaufzeit nicht. Existiert noch kein gültiger Stand, antwortet die API weiterhin mit HTTP 503. Die Oberfläche zeigt neutral Freigabebranch, Aktualität und letzten erfolgreichen Aktualisierungszeitpunkt; SHA und Digest bleiben in nachgelagerten technischen Details. Es gibt keinen festen manuellen Commitfallback im Normalbetrieb.
+Akzeptanz: Ein Snapshot mit kanonischen Phase-Tickets, aber ohne alten Projektplan und ohne vollständige Termine zeigt alle Phasen im Projektverlauf und in der Planung. Ein fokussierter Test belegt Reihenfolge und Epic-Zuordnung; der echte Browsernachweis bleibt bis zu einem erreichbaren validierten Runtimekatalog offen.
+
+## Explizites Katalogregister und Projektwechsel
+
+Der Twin MUSS Kunden- und Projektwechsel ausschließlich aus einem expliziten lokalen Katalogregister ausführen. Die Konfiguration enthält nur Katalogtyp, Katalogadresse, erwartete Kunden-ID, erwartete Projekt-ID und optional einen Anzeigenamen. Sie liegt außerhalb des Repositorys nach XDG-Konvention; Kommandozeilenargumente dürfen sie für einen Lauf sicher überschreiben. `.env`-Dateien, Secrets, Git-Repositories und Kundendirectory-Scans DÜRFEN nicht verwendet werden.
+
+Akzeptanz: Der Wechsel zwischen zwei synthetischen Kundenprojekten mischt weder Payloads noch Diagnosen. Eine fremde Kunden-ID oder Projekt-ID blockiert mit HTTP 503. Der Twin speichert keine Fachdaten dauerhaft und schreibt weder in Katalog noch Release.
 
 ## Stabiler lokaler Betrieb
 
-Ein repositoryeigener PowerShell-Starter MUSS den Twin mit einem offensichtlichen npm-Befehl ausschließlich auf 127.0.0.1:4173 und dem konfigurierten Freigabebranch starten. Er DARF keine `.env.local` lesen, keinen festen Commit voraussetzen und keine Secrets speichern. PID und Protokolle MÜSSEN in einem ignorierten Laufzeitordner liegen. Erfolg DARF erst nach einer begrenzten Health-Prüfung mit HTTP 200 gemeldet werden.
+Ein repositoryeigener Node-Starter MUSS den Twin nach `npm ci` mit offensichtlichen npm-Befehlen auf Windows und macOS ausschließlich lokal starten, konfigurieren, diagnostizieren, abfragen und stoppen. Die bestehenden PowerShell-Befehle bleiben kompatible Wrapper, sind aber keine Laufzeitvoraussetzung. Der Starter DARF keine `.env`-Datei lesen, keinen Commit voraussetzen und keine Secrets speichern. PID und Protokolle MÜSSEN in einem ignorierten Laufzeitordner liegen. Erfolg DARF erst nach einer begrenzten Health-Prüfung mit HTTP 200 gemeldet werden.
 
-Akzeptanz: Ein bereits gesunder Twin führt zu einem idempotenten Erfolg. Ein fremder oder ungesunder Dienst auf Port 4173 wird deutsch gemeldet und niemals beendet. Status und Stop verwenden eine eindeutige Laufzeitkennung; Stop beendet ausschließlich den nachweislich durch denselben Starter erzeugten Prozessbaum. Start, Status, Stop und Neustart sind direkt und real nachgewiesen, während die URL ohne Browserautomatisierung prüfbar bleibt.
+Akzeptanz: Ein bereits gesunder Twin führt zu einem idempotenten Erfolg. Ein fremder oder ungesunder Dienst auf Port 4173 wird deutsch gemeldet und niemals beendet. Status und Stop verwenden eine eindeutige Laufzeitkennung; Stop beendet ausschließlich den nachweislich durch denselben Starter erzeugten Prozessbaum. Eine CI-Matrix führt den Ablauf auf `windows-latest` und `macos-14` mit synthetischen Katalogen aus. Ein nicht wirklich ausgeführtes macOS-Gate bleibt `PENDING` und wird niemals als PASS ausgegeben.
 ### Anforderung: Katalogisierte Lieferressourcen
 
-Der Twin DARF Lieferdateien, Nachweise, Screenshots, Klickanleitungen, Schulungsunterlagen, Kundenhandbücher und Transkripte nur aus einem optionalen, im Projektindex positivgelisteten Ressourcenkatalog anzeigen. Jede Ressource MUSS an denselben gepinnten Commit, einen positivgelisteten Git-Blob mit Modus 100644, sichere relative Pfade, Größe, SHA-256, erlaubten Medientyp und bekannte Fachreferenzen gebunden sein. Vorschau und Download MÜSSEN dieselbe Bindungsprüfung wiederholen und bei Vertragsfehlern fail-closed blockieren. Fehlt der Katalog, MUSS die Lieferung einen präzisen Quellenbedarf statt einer erfundenen Datei oder generischen Artefaktmaske anzeigen.
+Der Twin DARF Lieferdateien, Nachweise, Screenshots, Klickanleitungen, Schulungsunterlagen, Kundenhandbücher und Transkripte nur aus dem im unveränderlichen Release-Manifest positivgelisteten Ressourcenkatalog anzeigen. Jede Ressource MUSS an dieselbe Release-ID, einen positivgelisteten Payload, einen sicheren relativen Pfad, Größe, SHA-256, erlaubten Medientyp und bekannte Fachreferenzen gebunden sein. Vorschau und Download MÜSSEN dieselbe Bindungsprüfung wiederholen und bei Vertragsfehlern fail-closed blockieren. Fehlt der Katalog, MUSS die Lieferung einen präzisen Quellenbedarf statt einer erfundenen Datei oder generischen Artefaktmaske anzeigen.
+# PM-orientierte Projektsteuerung
+
+## Anforderung: Jede Hauptansicht beantwortet eine fachliche Steuerungsfrage
+
+Der Twin MUSS die Hauptnavigation und die Einleitung jeder Ansicht so ordnen, dass Projektleitung, Beratung und Solution Architecture den Zweck der Oberfläche unmittelbar erkennen. Die Ticket- und Dokumentationsansichten bleiben fachlich führend; eine zusätzliche Arbeitsliste darf kein zweites Backlog erzeugen.
+
+## Anforderung: Projektplan ohne erfundene Termine
+
+Der Twin MUSS die source-driven Phasen mit Status, geplantem Aufwand, Istaufwand und verbleibendem Aufwand sichtbar darstellen. Ein Datums-Gantt DARF nur Start- und Endtermine aus dem validierten Snapshot verwenden. Fehlt ein Endtermin, MUSS die Oberfläche die Terminlücke ausdrücklich nennen und DARF einen Aufwandsbalken nicht als Zeitplan ausgeben.
+
+## Anforderung: Grafische Budgetsteuerung
+
+Der Twin MUSS geplantes Budget, verbrauchten Betrag, verfügbaren Rest und prozentualen Verbrauch grafisch darstellen. Die Monatsansicht MUSS aus datierten Worklogs abrechenbarer Aufgaben entstehen. Phasen- und Epicwerte MÜSSEN als Summe aus untergeordneten Aufgaben gekennzeichnet sein und DÜRFEN nicht zusätzlich abgerechnet werden. Fehlt eine Monatsbudgetierung, MUSS dies sichtbar bleiben.
